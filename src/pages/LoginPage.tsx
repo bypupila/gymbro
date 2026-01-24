@@ -67,144 +67,140 @@ export const LoginPage: React.FC = () => {
         setIsLoading(true);
         const userId = `user_${username.toLowerCase().replace(/\s+/g, '_')}`;
 
+        // Just create local guest session
+        setUserId(userId);
+        setDatosPersonales({ nombre: username });
+        navigate('/');
+        setIsLoading(false);
+    };
+
+    const handleGoogleLogin = async () => {
+        setIsLoading(true);
+        setError('');
         try {
-            // Set User ID in store
-            setUserId(userId);
-
-            // Try to download existing data for this user
-            const data = await cloudService.downloadData(userId);
-
-            if (data) {
-                // If data exists, hydrate the store
-                setDatosPersonales(data.usuario);
-                if (data.horario) setHorario(data.horario);
-                if (data.rutina) setRutina(data.rutina);
-                if (data.pareja) setDatosPareja(data.pareja);
-                // We use useUserStore.setState to force full hydration if needed, 
-                // but setting individual parts is safer with the current store structure actions.
-                // However, directly calling setState with the whole object is better for full restore.
-                useUserStore.setState({ perfil: data });
-            } else {
-                // New user - just set the name
-                setDatosPersonales({ nombre: username });
-            }
-
-            // Navigate to home
-            navigate('/');
-        } catch (err) {
-            console.error(err);
-            setError('Error al conectar. ¿Tienes internet?');
-        } finally {
+            await authClient.signIn.social({
+                provider: "google",
+                // window.location.origin will be "http://localhost:XXXX" in dev 
+                // and "https://gym.bypupila.com" in production automatically.
+                callbackURL: window.location.origin
+            });
+            // Redirect happens automatically
+        } catch (err: any) {
+            console.error("Google Auth Error", err);
+            setError("Error al iniciar con Google");
             setIsLoading(false);
         }
     };
 
-    return (
-        <div style={styles.container}>
-            <div style={styles.content}>
-                <div style={styles.iconContainer}>
-                    <Users size={64} color={Colors.primary} />
-                </div>
+    // Manual guest login logic ended above.
+};
 
-                <h1 style={styles.title}>GymBro</h1>
-                <p style={styles.subtitle}>Tu progreso, a salvo.</p>
+return (
+    <div style={styles.container}>
+        <div style={styles.content}>
+            <div style={styles.iconContainer}>
+                <Users size={64} color={Colors.primary} />
+            </div>
 
-                {authMode === 'social' && (
-                    <>
-                        <div style={styles.authOptions}>
-                            <button
-                                style={{ ...styles.socialButton, backgroundColor: '#fff', color: '#000', width: '100%' }}
-                                onClick={async () => {
-                                    try {
-                                        setIsLoading(true);
-                                        const { error } = await authClient.signIn.social({
-                                            provider: 'google',
-                                            callbackURL: window.location.origin
-                                        });
-                                        if (error) {
-                                            alert('Google Auth falló: ' + error.message);
-                                            setIsLoading(false);
-                                        }
-                                    } catch (err: any) {
-                                        console.error(err);
-                                        alert('Error de conexión con Neon Auth. Asegúrate de que el dominio está permitido en el panel de Neon.');
+            <h1 style={styles.title}>GymBro</h1>
+            <p style={styles.subtitle}>Tu progreso, a salvo.</p>
+
+            {authMode === 'social' && (
+                <>
+                    <div style={styles.authOptions}>
+                        <button
+                            style={{ ...styles.socialButton, backgroundColor: '#fff', color: '#000', width: '100%' }}
+                            onClick={async () => {
+                                try {
+                                    setIsLoading(true);
+                                    const { error } = await authClient.signIn.social({
+                                        provider: 'google',
+                                        callbackURL: window.location.origin
+                                    });
+                                    if (error) {
+                                        alert('Google Auth falló: ' + error.message);
                                         setIsLoading(false);
                                     }
-                                }}
-                            >
-                                <img src="https://www.google.com/favicon.ico" width="20" alt="Google" />
-                                Continuar con Google
-                            </button>
-                        </div>
-                        <button style={styles.textLink} onClick={() => setAuthMode('manual')}>
-                            Usar email y contraseña
-                        </button>
-                        <div style={styles.separator}>
-                            <div style={styles.line}></div>
-                            <span style={styles.separatorText}>o</span>
-                            <div style={styles.line}></div>
-                        </div>
-                        <button style={styles.ghostButton} onClick={() => setAuthMode('name')}>
-                            Entrar sin cuenta (solo local)
-                        </button>
-                    </>
-                )}
-
-                {authMode === 'manual' && (
-                    <div style={{ width: '100%' }}>
-                        <h2 style={styles.modeTitle}>{isSignUp ? 'Crear Cuenta' : 'Iniciar Sesión'}</h2>
-                        <input
-                            style={styles.inputSimple}
-                            type="email"
-                            placeholder="Email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                        />
-                        <input
-                            style={styles.inputSimple}
-                            type="password"
-                            placeholder="Contraseña"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                        {error && <p style={styles.error}>{error}</p>}
-                        <button style={styles.button} onClick={handleEmailAuth} disabled={isLoading}>
-                            {isLoading ? 'Cargando...' : (isSignUp ? 'Registrarse' : 'Entrar')}
-                        </button>
-                        <button style={styles.textLink} onClick={() => setIsSignUp(!isSignUp)}>
-                            {isSignUp ? '¿Ya tienes cuenta? Entra aquí' : '¿No tienes cuenta? Regístrate'}
-                        </button>
-                        <button style={styles.textLink} onClick={() => setAuthMode('social')}>
-                            Volver
+                                } catch (err: any) {
+                                    console.error(err);
+                                    alert('Error de conexión con Neon Auth. Asegúrate de que el dominio está permitido en el panel de Neon.');
+                                    setIsLoading(false);
+                                }
+                            }}
+                        >
+                            <img src="https://www.google.com/favicon.ico" width="20" alt="Google" />
+                            Continuar con Google
                         </button>
                     </div>
-                )}
-
-                {authMode === 'name' && (
-                    <div style={{ width: '100%' }}>
-                        <div style={styles.inputContainer}>
-                            <UserCircle2 size={24} color={Colors.textSecondary} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
-                            <input
-                                style={styles.input}
-                                placeholder="Tu Nombre (Ej: Juan, Maria)"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                            />
-                        </div>
-                        {error && <p style={styles.error}>{error}</p>}
-                        <button style={styles.button} onClick={handleLogin} disabled={isLoading}>
-                            {isLoading ? 'Entrando...' : 'Continuar como Invitado'}
-                            {!isLoading && <ArrowRight size={20} />}
-                        </button>
-                        <button style={styles.textLink} onClick={() => setAuthMode('social')}>
-                            Volver
-                        </button>
+                    <button style={styles.textLink} onClick={() => setAuthMode('manual')}>
+                        Usar email y contraseña
+                    </button>
+                    <div style={styles.separator}>
+                        <div style={styles.line}></div>
+                        <span style={styles.separatorText}>o</span>
+                        <div style={styles.line}></div>
                     </div>
-                )}
-            </div>
+                    <button style={styles.ghostButton} onClick={() => setAuthMode('name')}>
+                        Entrar sin cuenta (solo local)
+                    </button>
+                </>
+            )}
+
+            {authMode === 'manual' && (
+                <div style={{ width: '100%' }}>
+                    <h2 style={styles.modeTitle}>{isSignUp ? 'Crear Cuenta' : 'Iniciar Sesión'}</h2>
+                    <input
+                        style={styles.inputSimple}
+                        type="email"
+                        placeholder="Email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                    />
+                    <input
+                        style={styles.inputSimple}
+                        type="password"
+                        placeholder="Contraseña"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                    />
+                    {error && <p style={styles.error}>{error}</p>}
+                    <button style={styles.button} onClick={handleEmailAuth} disabled={isLoading}>
+                        {isLoading ? 'Cargando...' : (isSignUp ? 'Registrarse' : 'Entrar')}
+                    </button>
+                    <button style={styles.textLink} onClick={() => setIsSignUp(!isSignUp)}>
+                        {isSignUp ? '¿Ya tienes cuenta? Entra aquí' : '¿No tienes cuenta? Regístrate'}
+                    </button>
+                    <button style={styles.textLink} onClick={() => setAuthMode('social')}>
+                        Volver
+                    </button>
+                </div>
+            )}
+
+            {authMode === 'name' && (
+                <div style={{ width: '100%' }}>
+                    <div style={styles.inputContainer}>
+                        <UserCircle2 size={24} color={Colors.textSecondary} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
+                        <input
+                            style={styles.input}
+                            placeholder="Tu Nombre (Ej: Juan, Maria)"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                        />
+                    </div>
+                    {error && <p style={styles.error}>{error}</p>}
+                    <button style={styles.button} onClick={handleLogin} disabled={isLoading}>
+                        {isLoading ? 'Entrando...' : 'Continuar como Invitado'}
+                        {!isLoading && <ArrowRight size={20} />}
+                    </button>
+                    <button style={styles.textLink} onClick={() => setAuthMode('social')}>
+                        Volver
+                    </button>
+                </div>
+            )}
         </div>
-    );
+    </div>
+);
 };
 
 const styles: Record<string, React.CSSProperties> = {
