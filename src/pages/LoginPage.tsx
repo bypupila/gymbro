@@ -9,6 +9,14 @@ import { authClient } from '@/services/auth';
 
 export const LoginPage: React.FC = () => {
     const navigate = useNavigate();
+    const { data: session } = authClient.useSession();
+
+    React.useEffect(() => {
+        if (session) {
+            navigate('/', { replace: true });
+        }
+    }, [session, navigate]);
+
     const { setUserId, setDatosPersonales, setHorario, setRutina, setDatosPareja } = useUserStore();
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
