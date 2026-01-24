@@ -334,105 +334,108 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                     </div>
                 </div>
             ) : (
-                <div style={styles.exerciseHeader}>
-                    <div
-                        style={{ ...styles.exerciseOrder, cursor: 'grab', touchAction: 'none' }}
-                        onPointerDown={(e) => dragControls?.start(e)}
-                    >
-                        <Grip size={16} color={Colors.textTertiary} />
-                        <span style={styles.exerciseNumber}>{idx + 1}</span>
+                <div style={styles.exerciseContentWrapper}>
+                    <div style={styles.exerciseImageWrapper}>
+                        <img
+                            src={getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
+                            alt={ejercicio.nombre}
+                            style={styles.exerciseImage}
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
+                            }}
+                        />
+                        {ejercicio.categoria === 'calentamiento' && (
+                            <div style={styles.calentamientoBadge}>🔥</div>
+                        )}
                     </div>
-                    <div style={styles.exerciseInfo}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            {ejercicio.grupoMuscular && (
-                                <span style={{
-                                    fontSize: '11px',
-                                    fontWeight: 900,
-                                    padding: '4px 12px',
-                                    borderRadius: '12px',
-                                    background: GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.color || Colors.primary,
-                                    color: '#000',
-                                    textTransform: 'uppercase',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                                }}>
-                                    {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.emoji} {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}
-                                </span>
-                            )}
-                            <span style={{
-                                fontSize: '10px',
-                                fontWeight: 800,
-                                padding: '2px 8px',
-                                borderRadius: '6px',
-                                background: ejercicio.categoria === 'calentamiento' ? `${Colors.accent}20` : `${Colors.primary}20`,
-                                color: ejercicio.categoria === 'calentamiento' ? Colors.accent : Colors.primary,
-                                textTransform: 'uppercase',
-                            }}>
-                                {ejercicio.categoria === 'calentamiento' ? '🔥 Calentamiento' : '💪 Rutina'}
-                            </span>
-                            {ejercicio.enfocadoA && ejercicio.enfocadoA !== 'ambos' && (
-                                <span style={{
-                                    fontSize: '10px',
-                                    fontWeight: 800,
-                                    padding: '2px 8px',
-                                    borderRadius: '6px',
-                                    background: ejercicio.enfocadoA === 'mujer' ? '#FF408120' : '#2196F320',
-                                    color: ejercicio.enfocadoA === 'mujer' ? '#FF4081' : '#2196F3',
-                                    textTransform: 'uppercase',
-                                }}>
-                                    {ejercicio.enfocadoA === 'mujer' ? '♀️' : '♂️'} {ejercicio.enfocadoA}
-                                </span>
-                            )}
+
+                    <div style={styles.exerciseHeader}>
+                        <div
+                            style={{ ...styles.exerciseOrder, cursor: 'grab', touchAction: 'none' }}
+                            onPointerDown={(e) => dragControls?.start(e)}
+                        >
+                            <Grip size={16} color={Colors.textTertiary} />
+                            <span style={styles.exerciseNumber}>{idx + 1}</span>
                         </div>
-                        <h4 style={{ ...styles.exerciseName, fontSize: '18px', marginBottom: '4px' }}>{ejercicio.nombre}</h4>
-                        <div style={styles.exerciseDetails}>
-                            <span style={styles.detailChip}>
-                                {ejercicio.series} series
-                            </span>
-                            <span style={styles.detailChip}>
-                                {ejercicio.repeticiones ? `${ejercicio.repeticiones} reps` : ''}
-                                {ejercicio.repeticiones && ejercicio.segundos ? ' + ' : ''}
-                                {ejercicio.segundos ? `${ejercicio.segundos} seg` : ''}
-                            </span>
-                            <span style={styles.detailChip}>
-                                {ejercicio.descanso}s 💤
-                            </span>
+                        <div style={styles.exerciseInfo}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                {ejercicio.grupoMuscular && (
+                                    <span style={{
+                                        fontSize: '11px',
+                                        fontWeight: 900,
+                                        padding: '4px 12px',
+                                        borderRadius: '12px',
+                                        background: GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.color || Colors.primary,
+                                        color: '#000',
+                                        textTransform: 'uppercase',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                    }}>
+                                        {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.emoji} {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}
+                                    </span>
+                                )}
+                            </div>
+                            <h4 style={{ ...styles.exerciseName, fontSize: '18px', marginBottom: '4px' }}>{ejercicio.nombre}</h4>
+                            <div style={styles.exerciseDetails}>
+                                <span style={styles.detailChip}>
+                                    {ejercicio.series} series
+                                </span>
+                                <span style={styles.detailChip}>
+                                    {ejercicio.repeticiones ? `${ejercicio.repeticiones} reps` : ''}
+                                    {ejercicio.repeticiones && ejercicio.segundos ? ' + ' : ''}
+                                    {ejercicio.segundos ? `${ejercicio.segundos} seg` : ''}
+                                </span>
+                                <span style={styles.detailChip}>
+                                    {ejercicio.descanso}s 💤
+                                </span>
+                            </div>
                         </div>
-                    </div>
-                    <div style={styles.exerciseActions}>
-                        <button
-                            style={styles.actionBtn}
-                            onClick={() => handleMoveExercise(originalIndex, 'up')}
-                            disabled={originalIndex === 0}
-                        >
-                            <ChevronUp size={18} color={originalIndex === 0 ? Colors.textTertiary : Colors.text} />
-                        </button>
-                        <button
-                            style={styles.actionBtn}
-                            onClick={() => handleMoveExercise(originalIndex, 'down')}
-                            disabled={originalIndex === rutina.ejercicios.length - 1}
-                        >
-                            <ChevronDown size={18} color={originalIndex === rutina.ejercicios.length - 1 ? Colors.textTertiary : Colors.text} />
-                        </button>
-                        <button
-                            style={styles.actionBtn}
-                            onClick={() => handleStartEdit(ejercicio)}
-                        >
-                            <Edit3 size={18} color={Colors.primary} />
-                        </button>
-                        <button
-                            style={styles.actionBtn}
-                            onClick={() => handleDeleteExercise(ejercicio.id)}
-                        >
-                            <Trash2 size={18} color={Colors.error} />
-                        </button>
+                        <div style={styles.exerciseActions}>
+                            <button
+                                style={styles.actionBtn}
+                                onClick={() => handleMoveExercise(originalIndex, 'up')}
+                                disabled={originalIndex === 0}
+                            >
+                                <ChevronUp size={18} color={originalIndex === 0 ? Colors.textTertiary : Colors.text} />
+                            </button>
+                            <button
+                                style={styles.actionBtn}
+                                onClick={() => handleMoveExercise(originalIndex, 'down')}
+                                disabled={originalIndex === rutina.ejercicios.length - 1}
+                            >
+                                <ChevronDown size={18} color={originalIndex === rutina.ejercicios.length - 1 ? Colors.textTertiary : Colors.text} />
+                            </button>
+                            <button
+                                style={styles.actionBtn}
+                                onClick={() => handleStartEdit(ejercicio)}
+                            >
+                                <Edit3 size={18} color={Colors.primary} />
+                            </button>
+                            <button
+                                style={styles.actionBtn}
+                                onClick={() => handleDeleteExercise(ejercicio.id)}
+                            >
+                                <Trash2 size={18} color={Colors.error} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
         </Card>
     );
+};
+
+const getExerciseImage = (name: string, group?: string) => {
+    const n = name.toLowerCase();
+    if (n.includes('press') || n.includes('banco') || n.includes('pecho')) return 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500&auto=format&fit=crop';
+    if (n.includes('sentadilla') || n.includes('squat') || n.includes('pierna')) return 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=500&auto=format&fit=crop';
+    if (n.includes('curl') || n.includes('bicep')) return 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=500&auto=format&fit=crop';
+    if (n.includes('espalda') || n.includes('rem') || n.includes('row')) return 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=500&auto=format&fit=crop';
+    if (n.includes('hombro') || n.includes('vuelo')) return 'https://images.unsplash.com/photo-1541534741688-6078c64b5913?w=500&auto=format&fit=crop';
+    if (n.includes('abdomen') || n.includes('crunch') || n.includes('plancha')) return 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=500&auto=format&fit=crop';
+    return 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
 };
 
 const generateSafeId = () => {
@@ -770,6 +773,13 @@ export const RoutineDetailPage: React.FC = () => {
                 ))}
             </div>
 
+            <Card style={styles.warningBox}>
+                <AlertTriangle size={20} color={Colors.warning} />
+                <span style={styles.warningText}>
+                    Verifica todos los ejercicios porque pueden existir errores o diferencias.
+                </span>
+            </Card>
+
             <div style={styles.exercisesHeader}>
                 <h3 style={styles.sectionTitle}>Ejercicios ({rutina.ejercicios.length})</h3>
                 <button style={styles.addExerciseBtn} onClick={() => setShowAddExerciseModal(true)}>
@@ -986,6 +996,52 @@ const DAY_STYLE: Record<string, { color: string, bg: string }> = {
 };
 
 const styles: Record<string, React.CSSProperties> = {
+    warningBox: {
+        background: `${Colors.warning}10`,
+        border: `1px solid ${Colors.warning}40`,
+        borderRadius: '16px',
+        padding: '12px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        margin: '16px 20px',
+        width: 'auto',
+    },
+    warningText: {
+        fontSize: '13px',
+        color: Colors.text,
+        fontWeight: 600,
+        lineHeight: 1.4,
+    },
+    exerciseContentWrapper: {
+        display: 'flex',
+        flexDirection: 'column',
+    },
+    exerciseImageWrapper: {
+        width: '100%',
+        height: '160px',
+        borderRadius: '16px 16px 0 0',
+        overflow: 'hidden',
+        position: 'relative',
+        marginBottom: '12px',
+        background: Colors.surface,
+    },
+    exerciseImage: {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        opacity: 0.8,
+    },
+    calentamientoBadge: {
+        position: 'absolute',
+        top: '12px',
+        right: '12px',
+        background: 'rgba(245, 158, 11, 0.9)',
+        padding: '4px 8px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    },
     container: {
         padding: '20px',
         paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))',

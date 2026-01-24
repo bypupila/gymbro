@@ -44,6 +44,7 @@ export interface EjercicioRutina {
     nombreOriginal?: string;
     observaciones?: string;
     grupoMuscular?: string; // Ej: "pectoral", "espalda", etc.
+    imagen?: string;
 }
 
 export interface RutinaUsuario {
