@@ -146,8 +146,15 @@ export interface ActiveSession {
 }
 
 interface UserStore {
+    userId: string | null;
     perfil: PerfilCompleto;
     activeSession: ActiveSession | null;
+    isSyncing: boolean;
+    lastSyncError: string | null;
+
+    setUserId: (id: string) => void;
+    setIsSyncing: (status: boolean) => void;
+    setLastSyncError: (error: string | null) => void;
     setDatosPersonales: (datos: Partial<DatosPersonales>) => void;
     setDatosPareja: (datos: DatosPersonales | null) => void;
     setHorario: (horario: HorarioSemanal) => void;
@@ -161,11 +168,13 @@ interface UserStore {
     finishSession: (durationMinutos: number) => void;
     cancelSession: () => void;
     resetear: () => void;
+    logout: () => void;
 }
 
 export const useUserStore = create<UserStore>()(
     persist(
         (set, get) => ({
+            userId: null,
             perfil: {
                 usuario: datosIniciales,
                 pareja: null,
@@ -176,6 +185,12 @@ export const useUserStore = create<UserStore>()(
                 onboardingCompletado: false,
             },
             activeSession: null,
+            isSyncing: false,
+            lastSyncError: null,
+
+            setUserId: (id) => set({ userId: id }),
+            setIsSyncing: (status) => set({ isSyncing: status }),
+            setLastSyncError: (error) => set({ lastSyncError: error }),
 
             setDatosPersonales: (datos) => set((state) => ({
                 perfil: {
@@ -335,9 +350,24 @@ export const useUserStore = create<UserStore>()(
                     onboardingCompletado: false,
                 }
             }),
+
+            logout: () => set({
+                userId: null,
+                perfil: {
+                    usuario: datosIniciales,
+                    pareja: null,
+                    horario: horarioInicial,
+                    rutina: null,
+                    historial: [],
+                    historialRutinas: [],
+                    onboardingCompletado: false,
+                },
+                activeSession: null
+            }),
         }),
         {
-            name: 'gymbro-user-storage',
+            name: 'gymbro-user-auth',
+            partialize: (state) => ({ userId: state.userId }), // Only persist the userId
         }
     )
 );

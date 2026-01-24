@@ -5,13 +5,16 @@
 import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Bell, Calendar, Heart, RefreshCw, Settings, Shield, Users } from 'lucide-react';
+import {
+    Bell, Calendar, Heart, RefreshCw, Settings, Shield, Users,
+    Cloud, Download, Upload, CheckCircle, AlertCircle, Loader2, LogOut, Camera
+} from 'lucide-react';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, resetear } = useUserStore();
+    const { perfil, resetear, logout, isSyncing, lastSyncError } = useUserStore();
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -25,6 +28,11 @@ export const ProfilePage: React.FC = () => {
         localStorage.clear();
         navigate('/onboarding');
         window.location.reload();
+    };
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
     };
 
     const menuItems = [
@@ -48,18 +56,28 @@ export const ProfilePage: React.FC = () => {
             <div style={styles.profileHeader}>
                 <div style={styles.avatarContainer}>
                     <img
-                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo.nombre || 'User'}`}
+                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo.nombre}&backgroundColor=b6e3f4`}
                         alt="Avatar"
                         style={styles.avatar}
                     />
-                    <div style={styles.levelBadge}>
-                        {userInfo.nivel === 'principiante' ? 'Lvl 1' : userInfo.nivel === 'intermedio' ? 'Lvl 5' : 'Lvl 10'}
+                    <div style={styles.editAvatar}>
+                        <Camera size={14} color="#FFF" />
                     </div>
                 </div>
-                <h2 style={styles.userName}>{userInfo.nombre || 'Nuevo Atleta'}</h2>
-                <p style={styles.userBio}>
-                    {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
-                </p>
+                <h2 style={styles.userName}>{userInfo.nombre || 'GymBro'}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <p style={styles.userLevel}>
+                        {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                    </p>
+                    {isSyncing ? (
+                        <Loader2 size={14} color={Colors.primary} className="animate-spin" />
+                    ) : lastSyncError ? (
+                        <AlertCircle size={14} color={Colors.error} />
+                    ) : (
+                        <CheckCircle size={14} color={Colors.success} />
+                    )}
+                </div>
+                {lastSyncError && <p style={{ color: Colors.error, fontSize: '10px', marginTop: '4px' }}>{lastSyncError}</p>}
             </div>
 
             {/* Stats */}
@@ -128,7 +146,6 @@ export const ProfilePage: React.FC = () => {
                 </>
             )}
 
-            <div style={{ height: '24px' }} />
 
             {/* Menu */}
             <div style={styles.menuContainer}>
@@ -141,7 +158,14 @@ export const ProfilePage: React.FC = () => {
                     </button>
                 ))}
 
-                <button style={{ ...styles.menuItem, marginTop: '20px' }} onClick={handleReset}>
+                <button style={{ ...styles.menuItem, marginTop: '20px' }} onClick={handleLogout}>
+                    <div style={{ ...styles.menuIcon, background: Colors.textSecondary }}>
+                        <LogOut size={20} color="#FFF" />
+                    </div>
+                    <span style={styles.menuText}>Cerrar Sesión (Cambiar Usuario)</span>
+                </button>
+
+                <button style={{ ...styles.menuItem, marginTop: '8px' }} onClick={handleReset}>
                     <div style={{ ...styles.menuIcon, background: Colors.error }}>
                         <RefreshCw size={20} color="#FFF" />
                     </div>
@@ -455,6 +479,40 @@ const styles: Record<string, React.CSSProperties> = {
         border: 'none',
         borderRadius: '12px',
         color: '#FFF',
+        fontSize: '14px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+    },
+    syncActions: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        marginTop: '12px'
+    },
+    syncBtn: {
+        padding: '14px',
+        background: Colors.primary,
+        border: 'none',
+        borderRadius: '12px',
+        color: '#000',
+        fontSize: '14px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+    },
+    syncBtnOutline: {
+        padding: '14px',
+        background: 'transparent',
+        border: `2px solid ${Colors.primary}`,
+        borderRadius: '12px',
+        color: Colors.primary,
         fontSize: '14px',
         fontWeight: 700,
         cursor: 'pointer',

@@ -36,3 +36,4 @@ debug-*.js
 save-*.js
 error_output.txt
 models_list.json
+.vercel
