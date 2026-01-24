@@ -68,10 +68,22 @@ export const LoginPage: React.FC = () => {
                 <div style={styles.authOptions}>
                     <button
                         style={{ ...styles.socialButton, backgroundColor: '#fff', color: '#000', width: '100%' }}
-                        onClick={() => authClient.signIn.social({
-                            provider: 'google',
-                            callbackURL: window.location.origin + '/'
-                        })}
+                        onClick={async () => {
+                            try {
+                                setIsLoading(true);
+                                const { error } = await authClient.signIn.social({
+                                    provider: 'google',
+                                    callbackURL: window.location.origin
+                                });
+                                if (error) {
+                                    alert('Ups, algo falló: ' + error.message);
+                                    setIsLoading(false);
+                                }
+                            } catch (err: any) {
+                                alert('Error inesperado: ' + (err.message || String(err)));
+                                setIsLoading(false);
+                            }
+                        }}
                     >
                         <img src="https://www.google.com/favicon.ico" width="20" alt="Google" />
                         Continuar con Google
