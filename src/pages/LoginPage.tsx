@@ -13,6 +13,7 @@ export const LoginPage: React.FC = () => {
 
     React.useEffect(() => {
         if (session) {
+            console.log("Sesión detectada en login, redirigiendo...", session.user.email);
             navigate('/', { replace: true });
         }
     }, [session, navigate]);
