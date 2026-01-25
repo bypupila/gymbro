@@ -10,12 +10,14 @@ export const LoginPage: React.FC = () => {
     const { setUserId, userId } = useUserStore();
     const [alias, setAlias] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [statusMsg, setStatusMsg] = useState<string | null>(null);
+    const [isCloudError, setIsCloudError] = useState(false);
 
     React.useEffect(() => {
-        if (userId) {
-            navigate('/', { replace: true });
+        if (!cloudService.isConfigured()) {
+            setIsCloudError(true);
         }
-    }, [userId, navigate]);
+    }, []);
 
     const handleLogin = async () => {
         if (!alias.trim()) return;
@@ -24,25 +26,44 @@ export const LoginPage: React.FC = () => {
         if (cleanAlias.length < 3) return;
 
         setIsLoading(true);
+        setStatusMsg('Buscando en la nube...');
+
         try {
             // Check if user has data in the cloud first
             const cloudData = await cloudService.downloadData(cleanAlias);
 
             if (cloudData) {
+                setStatusMsg('¡Datos encontrados! Sincronizando...');
                 // If they have data, put it in the store immediately
                 useUserStore.setState({ perfil: cloudData });
+
+                // Small delay to let user see the success message
+                setTimeout(() => {
+                    setUserId(cleanAlias);
+                    navigate('/', { replace: true });
+                }, 800);
+            } else {
+                if (isCloudError) {
+                    setStatusMsg('Modo Offline: Creando sesión local...');
+                } else {
+                    setStatusMsg('Usuario nuevo: Creando perfil...');
+                }
+
+                setTimeout(() => {
+                    setUserId(cleanAlias);
+                    navigate('/', { replace: true });
+                }, 800);
             }
 
-            // Simple local login: just set the ID
-            setUserId(cleanAlias);
-            navigate('/', { replace: true });
         } catch (error) {
             console.error("Login Error:", error);
-            // Fallback to just setting ID if cloud fails
-            setUserId(cleanAlias);
-            navigate('/', { replace: true });
+            setStatusMsg('Error de conexión. Entrando en modo local...');
+            setTimeout(() => {
+                setUserId(cleanAlias);
+                navigate('/', { replace: true });
+            }, 1000);
         } finally {
-            setIsLoading(false);
+            // setIsLoading(false); // Let it stay loading until redirect
         }
     };
 
@@ -52,6 +73,21 @@ export const LoginPage: React.FC = () => {
                 <div style={styles.header}>
                     <h1 style={styles.title}>GymBro</h1>
                     <p style={styles.subtitle}>Ingreso Directo</p>
+                    {isCloudError && (
+                        <div style={{
+                            marginTop: '12px',
+                            background: `${Colors.warning}20`,
+                            color: Colors.warning,
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}>
+                            ⚠️ Sin conexión a Nube en este entorno
+                        </div>
+                    )}
                 </div>
 
                 <div style={styles.inputWrapper}>
@@ -62,12 +98,27 @@ export const LoginPage: React.FC = () => {
                             style={styles.input}
                             placeholder="Ej: TitanFit"
                             value={alias}
-                            onChange={(e) => setAlias(e.target.value)}
+                            onChange={(e) => {
+                                setAlias(e.target.value);
+                                setStatusMsg(null);
+                            }}
                             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                             autoFocus
                         />
                     </div>
                 </div>
+
+                {statusMsg && (
+                    <p style={{
+                        color: statusMsg.includes('Error') || statusMsg.includes('Offline') ? Colors.warning : Colors.primary,
+                        fontSize: '14px',
+                        textAlign: 'center',
+                        marginBottom: '16px',
+                        fontWeight: 600
+                    }}>
+                        {statusMsg}
+                    </p>
+                )}
 
                 <button
                     style={{
@@ -81,7 +132,7 @@ export const LoginPage: React.FC = () => {
                     {isLoading ? (
                         <>
                             <Loader2 size={20} className="animate-spin" />
-                            Verificando...
+                            {statusMsg || 'Verificando...'}
                         </>
                     ) : (
                         <>

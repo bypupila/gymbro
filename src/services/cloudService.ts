@@ -14,6 +14,10 @@ const getSql = () => {
 };
 
 export const cloudService = {
+    isConfigured() {
+        return !!import.meta.env.VITE_DATABASE_URL;
+    },
+
     async ensureTable() {
         const sql = getSql();
         if (!sql) return;
