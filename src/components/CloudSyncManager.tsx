@@ -48,7 +48,7 @@ export const CloudSyncManager: React.FC = () => {
 
     // Auto-Save Effect
     useEffect(() => {
-        if (!userId || !perfil.onboardingCompletado) return;
+        if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
 
         const currentDataStr = JSON.stringify(perfil);
 

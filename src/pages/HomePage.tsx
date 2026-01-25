@@ -11,6 +11,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
 import { GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
+import { SyncStatus } from '@/components/SyncStatus';
 
 type ReadinessState = 'ready' | 'tired' | 'sore';
 
@@ -68,7 +69,10 @@ export const HomePage: React.FC = () => {
             {/* Header */}
             <div style={styles.header}>
                 <div>
-                    <h1 style={styles.greeting}>Hola, {nombreUsuario}</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h1 style={styles.greeting}>Hola, {nombreUsuario}</h1>
+                        <SyncStatus />
+                    </div>
                     <p style={styles.date}>{fechaHoy}</p>
                 </div>
                 <div
