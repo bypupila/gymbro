@@ -4,8 +4,12 @@ import { neon } from '@neondatabase/serverless';
 
 // Direct Database Access for 100% Stability in Local Dev (Vite)
 // This avoids needing 'vercel dev' to run the /api folder
+// Fallback constant for immediate connectivity
+const NEON_DB_URL = "postgresql://neondb_owner:npg_sabvW4SE7uhq@ep-frosty-queen-ahrep9ya-pooler.c-3.us-east-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require";
+
 const getSql = () => {
-    const url = import.meta.env.VITE_DATABASE_URL;
+    // Try env var first, fallback to hardcoded URL
+    const url = import.meta.env.VITE_DATABASE_URL || NEON_DB_URL;
     if (!url) {
         console.warn("VITE_DATABASE_URL no configurada. El guardado en la nube estará desactivado.");
         return null;
