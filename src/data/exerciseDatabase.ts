@@ -241,7 +241,7 @@ export const GRUPOS_MUSCULARES: Record<GrupoMuscularEjercicio, { nombre: string;
     biceps: { nombre: 'Bíceps', emoji: '💪', color: '#EF4444' },
     triceps: { nombre: 'Tríceps', emoji: '🦾', color: '#8B5CF6' },
     piernas: { nombre: 'Piernas / Glúteos', emoji: '🦵', color: '#22C55E' },
-    gluteos: { nombre: 'Glúteos', emoji: '🍑', color: '#F472B6' },
+    gluteos: { nombre: 'Piernas / Glúteos', emoji: '🦵', color: '#22C55E' },
 };
 
 // Helper functions

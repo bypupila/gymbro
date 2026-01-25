@@ -14,10 +14,17 @@ import { useNavigate } from 'react-router-dom';
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
-    const { userId, perfil, resetear, logout, isSyncing, lastSyncError } = useUserStore();
+    const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales } = useUserStore();
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editData, setEditData] = useState(userInfo);
+
+    // Sync editData with store when it updates elsewhere
+    React.useEffect(() => {
+        setEditData(userInfo);
+    }, [userInfo]);
 
     const handleReset = () => {
         setShowResetConfirm(true);
@@ -33,6 +40,18 @@ export const ProfilePage: React.FC = () => {
     const handleLogout = () => {
         logout();
         navigate('/login');
+    };
+
+    const handleSaveProfile = () => {
+        setDatosPersonales(editData);
+        setIsEditing(false);
+    };
+
+    const handleToggleEdit = () => {
+        if (isEditing) {
+            setEditData(userInfo); // Reset to current data if cancelling
+        }
+        setIsEditing(!isEditing);
     };
 
     const menuItems = [
@@ -88,7 +107,7 @@ export const ProfilePage: React.FC = () => {
             {/* Stats */}
             <div style={styles.statsRow}>
                 <div style={styles.statItem}>
-                    <span style={styles.statVal}>0</span>
+                    <span style={styles.statVal}>{perfil.historial.length}</span>
                     <span style={styles.statLabel}>SESIONES</span>
                 </div>
                 <div style={styles.statItem}>
@@ -100,6 +119,125 @@ export const ProfilePage: React.FC = () => {
                     <span style={styles.statLabel}>FORMA</span>
                 </div>
             </div>
+
+            {/* Personal Info Section */}
+            <div style={styles.sectionHeader}>
+                <h3 style={styles.sectionTitle}>Información Personal</h3>
+                <button
+                    style={{ ...styles.editToggleBtn, color: isEditing ? Colors.error : Colors.primary }}
+                    onClick={handleToggleEdit}
+                >
+                    {isEditing ? 'Cancelar' : 'Editar'}
+                </button>
+            </div>
+
+            <Card style={styles.infoCard}>
+                {isEditing ? (
+                    <div style={styles.editForm}>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.editLabel}>Nombre Completo</label>
+                            <input
+                                style={styles.editInput}
+                                value={editData.nombre}
+                                onChange={(e) => setEditData({ ...editData, nombre: e.target.value })}
+                            />
+                        </div>
+                        <div style={styles.grid2}>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.editLabel}>Edad</label>
+                                <input
+                                    style={styles.editInput}
+                                    type="number"
+                                    value={editData.edad}
+                                    onChange={(e) => setEditData({ ...editData, edad: parseInt(e.target.value) || 0 })}
+                                />
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.editLabel}>Peso (kg)</label>
+                                <input
+                                    style={styles.editInput}
+                                    type="number"
+                                    value={editData.peso}
+                                    onChange={(e) => setEditData({ ...editData, peso: parseFloat(e.target.value) || 0 })}
+                                />
+                            </div>
+                        </div>
+                        <div style={styles.grid2}>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.editLabel}>Altura (cm)</label>
+                                <input
+                                    style={styles.editInput}
+                                    type="number"
+                                    value={editData.altura}
+                                    onChange={(e) => setEditData({ ...editData, altura: parseInt(e.target.value) || 0 })}
+                                />
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.editLabel}>Nivel</label>
+                                <select
+                                    style={styles.editSelect}
+                                    value={editData.nivel}
+                                    onChange={(e) => setEditData({ ...editData, nivel: e.target.value as any })}
+                                >
+                                    <option value="principiante">Principiante</option>
+                                    <option value="intermedio">Intermedio</option>
+                                    <option value="avanzado">Avanzado</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.editLabel}>Objetivo</label>
+                            <select
+                                style={styles.editSelect}
+                                value={editData.objetivo}
+                                onChange={(e) => setEditData({ ...editData, objetivo: e.target.value as any })}
+                            >
+                                <option value="ganar_musculo">Ganar Músculo</option>
+                                <option value="perder_grasa">Perder Grasa</option>
+                                <option value="mantener">Mantenerme</option>
+                                <option value="fuerza">Ganar Fuerza</option>
+                                <option value="resistencia">Resistencia</option>
+                            </select>
+                        </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.editLabel}>Lesiones / Observaciones</label>
+                            <textarea
+                                style={styles.editTextarea}
+                                value={editData.lesiones}
+                                onChange={(e) => setEditData({ ...editData, lesiones: e.target.value })}
+                            />
+                        </div>
+                        <button style={styles.saveBtn} onClick={handleSaveProfile}>
+                            Guardar Cambios
+                        </button>
+                    </div>
+                ) : (
+                    <div style={styles.viewGrid}>
+                        <div style={styles.viewItem}>
+                            <span style={styles.viewLabel}>EDAD</span>
+                            <span style={styles.viewValue}>{userInfo.edad || '--'} años</span>
+                        </div>
+                        <div style={styles.viewItem}>
+                            <span style={styles.viewLabel}>PESO</span>
+                            <span style={styles.viewValue}>{userInfo.peso || '--'} kg</span>
+                        </div>
+                        <div style={styles.viewItem}>
+                            <span style={styles.viewLabel}>ALTURA</span>
+                            <span style={styles.viewValue}>{userInfo.altura || '--'} cm</span>
+                        </div>
+                        <div style={styles.viewItem}>
+                            <span style={styles.viewLabel}>NIVEL</span>
+                            <span style={styles.viewValue}>{userInfo.nivel.toUpperCase()}</span>
+                        </div>
+                        {userInfo.lesiones && (
+                            <div style={{ ...styles.viewItem, gridColumn: 'span 2' }}>
+                                <span style={styles.viewLabel}>LESIONES</span>
+                                <span style={styles.viewValue}>{userInfo.lesiones}</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Card>
 
             {/* Partner Section */}
             <h3 style={styles.sectionTitle}>Mi Pareja Gymbro</h3>
@@ -556,6 +694,104 @@ const styles: Record<string, React.CSSProperties> = {
         alignItems: 'center',
         justifyContent: 'center',
         gap: '8px',
+    },
+    sectionHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+    },
+    editToggleBtn: {
+        background: 'none',
+        border: 'none',
+        fontSize: '14px',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    infoCard: {
+        marginBottom: '24px',
+        padding: '20px',
+    },
+    viewGrid: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '20px',
+    },
+    viewItem: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+    },
+    viewLabel: {
+        fontSize: '10px',
+        fontWeight: 800,
+        color: Colors.textTertiary,
+        letterSpacing: '1px',
+    },
+    viewValue: {
+        fontSize: '16px',
+        fontWeight: 700,
+        color: Colors.text,
+    },
+    editForm: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+    },
+    grid2: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '12px',
+    },
+    editLabel: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        marginBottom: '4px',
+    },
+    editInput: {
+        width: '100%',
+        padding: '12px',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '12px',
+        color: Colors.text,
+        fontSize: '15px',
+        outline: 'none',
+    },
+    editSelect: {
+        width: '100%',
+        padding: '12px',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '12px',
+        color: Colors.text,
+        fontSize: '15px',
+        outline: 'none',
+    },
+    editTextarea: {
+        width: '100%',
+        padding: '12px',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '12px',
+        color: Colors.text,
+        fontSize: '15px',
+        outline: 'none',
+        minHeight: '80px',
+        resize: 'none',
+    },
+    saveBtn: {
+        width: '100%',
+        padding: '16px',
+        background: Colors.primary,
+        border: 'none',
+        borderRadius: '12px',
+        color: '#000',
+        fontSize: '16px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        marginTop: '8px',
     }
 };
 

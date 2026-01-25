@@ -36,6 +36,756 @@ import { cloudService } from '@/services/cloudService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 
+const DAY_STYLE: Record<string, { color: string, bg: string }> = {
+    'Lunes': { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.05)' },
+    'Martes': { color: '#FF2D55', bg: 'rgba(255, 45, 85, 0.05)' },
+    'Miércoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
+    'Jueves': { color: '#5856D6', bg: 'rgba(88, 86, 214, 0.05)' },
+    'Viernes': { color: '#34C759', bg: 'rgba(52, 199, 89, 0.05)' },
+    'Sábado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
+    'Domingo': { color: '#FF3B30', bg: 'rgba(255, 59, 48, 0.05)' },
+    'default': { color: Colors.primary, bg: 'rgba(0, 230, 153, 0.05)' }
+};
+
+const styles: Record<string, React.CSSProperties> = {
+    warningBox: {
+        background: `${Colors.warning}10`,
+        border: `1px solid ${Colors.warning}40`,
+        borderRadius: '16px',
+        padding: '12px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        margin: '16px 20px',
+        width: 'auto',
+    },
+    warningText: {
+        fontSize: '13px',
+        color: Colors.text,
+        fontWeight: 600,
+        lineHeight: 1.4,
+    },
+    exerciseContentWrapper: {
+        display: 'flex',
+        flexDirection: 'column',
+    },
+    exerciseImageWrapper: {
+        width: '100%',
+        height: '160px',
+        borderRadius: '16px 16px 0 0',
+        overflow: 'hidden',
+        position: 'relative',
+        marginBottom: '12px',
+        background: Colors.surface,
+    },
+    exerciseImage: {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        opacity: 0.8,
+    },
+    calentamientoBadge: {
+        position: 'absolute',
+        top: '12px',
+        right: '12px',
+        background: 'rgba(245, 158, 11, 0.9)',
+        padding: '4px 8px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    },
+    container: {
+        padding: '20px',
+        paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))',
+        paddingBottom: '100px',
+        minHeight: '100%',
+        overflowY: 'auto',
+    },
+    headerBar: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+    },
+    headerTitle: {
+        fontSize: '18px',
+        fontWeight: 800,
+        color: Colors.text,
+        letterSpacing: '1px',
+        margin: 0,
+    },
+    backBtn: {
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        padding: '8px',
+    },
+    deleteBtn: {
+        background: `${Colors.error}15`,
+        border: 'none',
+        cursor: 'pointer',
+        padding: '10px',
+        borderRadius: '12px',
+    },
+    emptyState: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '60px 20px',
+        textAlign: 'center',
+    },
+    emptyIcon: {
+        fontSize: '64px',
+        marginBottom: '20px',
+    },
+    emptyTitle: {
+        fontSize: '22px',
+        fontWeight: 800,
+        color: Colors.text,
+        margin: '0 0 8px 0',
+    },
+    emptyText: {
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        marginBottom: '24px',
+    },
+    createButton: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '14px 28px',
+        background: Colors.primary,
+        color: '#000',
+        border: 'none',
+        borderRadius: '14px',
+        fontSize: '15px',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    infoCard: {
+        marginBottom: '24px',
+        padding: '20px',
+    },
+    routineName: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '16px',
+    },
+    routineIcon: {
+        fontSize: '32px',
+    },
+    routineTitle: {
+        fontSize: '20px',
+        fontWeight: 800,
+        color: Colors.text,
+        margin: 0,
+    },
+    expirationBox: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '14px 16px',
+        borderRadius: '12px',
+        border: '1px solid',
+        marginBottom: '16px',
+        flexWrap: 'wrap'
+    },
+    expirationText: {
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minWidth: '200px'
+    },
+    expirationTitle: {
+        fontSize: '14px',
+        fontWeight: 700,
+    },
+    expirationSubtitle: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+    },
+    renewBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '8px 14px',
+        background: Colors.primary,
+        color: '#000',
+        border: 'none',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    actionButtonsRow: {
+        display: 'flex',
+        gap: '8px',
+        width: '100%',
+        marginTop: '12px'
+    },
+    recalibrateBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '8px 14px',
+        background: Colors.accent,
+        color: '#000',
+        border: 'none',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    progressContainer: {
+        marginBottom: '16px',
+    },
+    progressHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        marginBottom: '8px',
+    },
+    progressLabel: {
+        fontSize: '13px',
+        color: Colors.textSecondary,
+    },
+    progressPercent: {
+        fontSize: '13px',
+        fontWeight: 700,
+        color: Colors.primary,
+    },
+    progressBar: {
+        height: '8px',
+        background: Colors.surface,
+        borderRadius: '4px',
+        overflow: 'hidden',
+    },
+    progressFill: {
+        height: '100%',
+        background: Colors.gradientPrimary,
+        borderRadius: '4px',
+        transition: 'width 0.3s ease',
+    },
+    progressDates: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        marginTop: '6px',
+        fontSize: '11px',
+        color: Colors.textTertiary,
+    },
+    summaryRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+        marginBottom: '24px',
+    },
+    summaryChip: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 12px',
+        background: Colors.surface,
+        borderRadius: '20px',
+        border: `1px solid ${Colors.border}`,
+    },
+    summaryDot: {
+        width: '6px',
+        height: '6px',
+        borderRadius: '50%',
+        background: Colors.primary,
+    },
+    summaryDayText: {
+        fontSize: '11px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+    },
+    durationRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+    },
+    durationText: {
+        fontSize: '13px',
+        color: Colors.textSecondary,
+    },
+    aiTag: {
+        marginLeft: 'auto',
+        padding: '4px 10px',
+        background: `${Colors.accent}20`,
+        color: Colors.accent,
+        borderRadius: '8px',
+        fontSize: '12px',
+        fontWeight: 600,
+    },
+    exercisesHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+    },
+    sectionTitle: {
+        fontSize: '16px',
+        fontWeight: 800,
+        color: Colors.text,
+        margin: 0,
+    },
+    addExerciseBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '8px 14px',
+        background: Colors.surface,
+        color: Colors.primary,
+        border: `1px solid ${Colors.primary}`,
+        borderRadius: '10px',
+        fontSize: '13px',
+        fontWeight: 600,
+        cursor: 'pointer',
+    },
+    exercisesList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '24px',
+    },
+    dayGroup: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        padding: '24px',
+        borderRadius: '24px',
+        border: '1px solid transparent',
+        transition: 'all 0.3s ease'
+    },
+    exercisesGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+        gap: '16px',
+        listStyle: 'none',
+        padding: 0,
+        margin: 0
+    },
+    categorySection: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+        padding: '0',
+        marginTop: '8px',
+    },
+    dayHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '12px 16px',
+        marginBottom: '8px',
+        borderRadius: '16px',
+    },
+    expandBtn: {
+        background: 'none',
+        border: 'none',
+        padding: '4px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+    dayTitle: {
+        fontSize: '18px',
+        fontWeight: 900,
+        margin: 0,
+        textTransform: 'uppercase',
+        letterSpacing: '1.5px',
+    },
+    exerciseCard: {
+        padding: '16px',
+    },
+    exerciseHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+    },
+    exerciseOrder: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '2px',
+    },
+    exerciseNumber: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.textTertiary,
+    },
+    exerciseInfo: {
+        flex: 1,
+    },
+    exerciseName: {
+        fontSize: '15px',
+        fontWeight: 700,
+        color: Colors.text,
+        margin: '0 0 8px 0',
+    },
+    exerciseDetails: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+    },
+    detailChip: {
+        padding: '4px 10px',
+        background: Colors.surface,
+        borderRadius: '6px',
+        fontSize: '12px',
+        color: Colors.textSecondary,
+    },
+    exerciseActions: {
+        display: 'flex',
+        gap: '4px',
+    },
+    actionBtn: {
+        padding: '8px',
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        borderRadius: '8px',
+    },
+    editForm: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+    },
+    editInput: {
+        width: '100%',
+        padding: '12px 14px',
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '10px',
+        color: Colors.text,
+        fontSize: '15px',
+    },
+    editRow: {
+        display: 'flex',
+        gap: '12px',
+        flexWrap: 'wrap'
+    },
+    editField: {
+        flex: 1,
+        minWidth: '120px'
+    },
+    editLabel: {
+        display: 'block',
+        fontSize: '11px',
+        color: Colors.textTertiary,
+        marginBottom: '4px',
+    },
+    editInputSmall: {
+        width: '100%',
+        padding: '10px 12px',
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '8px',
+        color: Colors.text,
+        fontSize: '14px',
+    },
+    editActions: {
+        display: 'flex',
+        gap: '12px',
+        marginTop: '4px',
+    },
+    cancelEditBtn: {
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+        padding: '12px',
+        background: Colors.surface,
+        color: Colors.textSecondary,
+        border: 'none',
+        borderRadius: '10px',
+        fontSize: '14px',
+        fontWeight: 600,
+        cursor: 'pointer',
+    },
+    saveEditBtn: {
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+        padding: '12px',
+        background: Colors.primary,
+        color: '#000',
+        border: 'none',
+        borderRadius: '10px',
+        fontSize: '14px',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    modalOverlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.85)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px',
+    },
+    modal: {
+        width: '100%',
+        maxWidth: '400px',
+        background: Colors.surfaceLight,
+        borderRadius: '24px',
+        padding: '28px',
+        maxHeight: '90vh',
+        overflowY: 'auto'
+    },
+    modalHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+    },
+    closeModalBtn: {
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        color: Colors.textSecondary,
+    },
+    modalIcon: {
+        fontSize: '48px',
+        textAlign: 'center',
+        marginBottom: '16px',
+    },
+    modalTitle: {
+        fontSize: '20px',
+        fontWeight: 800,
+        color: Colors.text,
+        textAlign: 'center',
+        margin: 0,
+    },
+    modalText: {
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        textAlign: 'center',
+        margin: '12px 0 24px 0',
+        lineHeight: 1.5,
+    },
+    modalActions: {
+        display: 'flex',
+        gap: '12px',
+    },
+    modalCancelBtn: {
+        flex: 1,
+        padding: '14px',
+        background: Colors.surface,
+        color: Colors.text,
+        border: 'none',
+        borderRadius: '12px',
+        fontSize: '15px',
+        fontWeight: 600,
+        cursor: 'pointer',
+    },
+    modalDeleteBtn: {
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        padding: '14px',
+        background: Colors.error,
+        color: '#FFF',
+        border: 'none',
+        borderRadius: '12px',
+        fontSize: '15px',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    addForm: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+    },
+    formGroup: {
+        flex: 1,
+    },
+    formRow: {
+        display: 'flex',
+        gap: '12px',
+        flexWrap: 'wrap'
+    },
+    formLabel: {
+        display: 'block',
+        fontSize: '12px',
+        color: Colors.textSecondary,
+        marginBottom: '6px',
+        fontWeight: 600,
+    },
+    formInput: {
+        width: '100%',
+        padding: '12px 14px',
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '10px',
+        color: Colors.text,
+        fontSize: '15px',
+    },
+    addExerciseSubmitBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        padding: '14px',
+        background: Colors.primary,
+        color: '#000',
+        border: 'none',
+        borderRadius: '12px',
+        fontSize: '15px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        marginTop: '8px',
+    },
+    divider: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '16px 0',
+        position: 'relative',
+    },
+    dividerText: {
+        padding: '0 12px',
+        background: Colors.surfaceLight,
+        color: Colors.textTertiary,
+        fontSize: '13px',
+        fontWeight: 600,
+    },
+    selectFromDbBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        padding: '14px',
+        background: Colors.surface,
+        color: Colors.text,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '12px',
+        fontSize: '15px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        width: '100%',
+    },
+    categoryHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        marginBottom: '4px',
+    },
+    categoryDot: {
+        width: '8px',
+        height: '8px',
+        borderRadius: '50%',
+        background: Colors.accent,
+    },
+    progressiveCheckboxRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        marginTop: '8px',
+        cursor: 'pointer',
+        userSelect: 'none',
+    },
+    checkbox: {
+        width: '14px',
+        height: '14px',
+        borderRadius: '4px',
+        border: '1.5px solid',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'all 0.2s',
+    },
+    checkboxLabel: {
+        fontSize: '10px',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+    },
+    progressiveGrid: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px',
+    },
+    progInputWrapper: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        flex: '1 1 40px',
+        minWidth: '40px',
+    },
+    progLabel: {
+        fontSize: '8px',
+        color: Colors.textTertiary,
+        textAlign: 'center',
+        fontWeight: 700,
+    },
+    editInputSmallProg: {
+        width: '100%',
+        padding: '6px 4px',
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '6px',
+        color: Colors.text,
+        fontSize: '12px',
+        outline: 'none',
+        textAlign: 'center',
+    },
+    dayChipsRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '6px',
+        marginTop: '6px',
+    },
+    dayChip: {
+        padding: '6px 10px',
+        borderRadius: '8px',
+        fontSize: '11px',
+        fontWeight: 700,
+        border: '1px solid',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        minWidth: '40px',
+        textAlign: 'center',
+    },
+    categoryTitle: {
+        fontSize: '13px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        margin: 0,
+    },
+    muscleGroupHeader: {
+        fontSize: '12px',
+        fontWeight: 900,
+        color: Colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: '2px',
+        marginTop: '24px',
+        marginBottom: '12px',
+        paddingLeft: '4px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        borderBottom: `1px solid ${Colors.border}`,
+        paddingBottom: '8px',
+        gridColumn: '1 / -1',
+    },
+};
+
+
 interface ExerciseCardProps {
     ejercicio: EjercicioRutina;
     idx: number;
@@ -278,11 +1028,13 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                 style={styles.editInput}
                             >
                                 <option value="">Sin asignar</option>
-                                {Object.entries(GRUPOS_MUSCULARES).map(([key, value]) => (
-                                    <option key={key} value={key}>
-                                        {value.emoji} {value.nombre}
-                                    </option>
-                                ))}
+                                {Object.entries(GRUPOS_MUSCULARES)
+                                    .filter(([key]) => key !== 'calentamiento')
+                                    .map(([key, value]) => (
+                                        <option key={key} value={key}>
+                                            {value.emoji} {value.nombre}
+                                        </option>
+                                    ))}
                             </select>
                         </div>
                     </div>
@@ -432,12 +1184,58 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
 
 const getExerciseImage = (name: string, group?: string) => {
     const n = name.toLowerCase();
-    if (n.includes('press') || n.includes('banco') || n.includes('pecho')) return 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500&auto=format&fit=crop';
-    if (n.includes('sentadilla') || n.includes('squat') || n.includes('pierna')) return 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=500&auto=format&fit=crop';
-    if (n.includes('curl') || n.includes('bicep')) return 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=500&auto=format&fit=crop';
-    if (n.includes('espalda') || n.includes('rem') || n.includes('row')) return 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=500&auto=format&fit=crop';
-    if (n.includes('hombro') || n.includes('vuelo')) return 'https://images.unsplash.com/photo-1541534741688-6078c64b5913?w=500&auto=format&fit=crop';
-    if (n.includes('abdomen') || n.includes('crunch') || n.includes('plancha')) return 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=500&auto=format&fit=crop';
+    const g = group?.toLowerCase() || '';
+
+    // -- KEYWORD SPECIFIC (High Priority) --
+
+    // Pectoral / Chest
+    if (n.includes('press') && (n.includes('banca') || n.includes('plano') || n.includes('chest')))
+        return 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500&auto=format&fit=crop';
+    if (n.includes('peck deck') || n.includes('pec fly') || (n.includes('apertura') && g === 'pectoral'))
+        return 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
+
+    // Legs / Glutes
+    if (n.includes('sentadilla') || n.includes('squat'))
+        return 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=500&auto=format&fit=crop';
+    if (n.includes('prensa') || n.includes('leg press'))
+        return 'https://images.unsplash.com/photo-1541534741688-6078c64b5913?w=500&auto=format&fit=crop';
+    if (n.includes('extensión') && (n.includes('pierna') || n.includes('leg')))
+        return 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?w=500&auto=format&fit=crop';
+    if (n.includes('peso muerto') || n.includes('deadlift'))
+        return 'https://images.unsplash.com/photo-1532384748853-8f54a8f476e2?w=500&auto=format&fit=crop';
+    if (n.includes('hip thrust') || g === 'gluteos')
+        return 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?w=500&auto=format&fit=crop';
+
+    // Back
+    if (n.includes('pull down') || n.includes('lat') || n.includes('tracción'))
+        return 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=500&auto=format&fit=crop';
+    if (n.includes('remo') || n.includes('row'))
+        return 'https://images.unsplash.com/photo-1616724855591-301c663abc82?w=500&auto=format&fit=crop';
+
+    // Shoulders
+    if (n.includes('militar') || (n.includes('press') && (n.includes('hombro') || n.includes('shoulder'))))
+        return 'https://images.unsplash.com/photo-1532029837206-abbe2b7620e3?w=500&auto=format&fit=crop';
+    if (n.includes('vuelo') || n.includes('lateral'))
+        return 'https://images.unsplash.com/photo-1541534741688-6078c64b5913?w=500&auto=format&fit=crop';
+
+    // Arms
+    if (n.includes('curl') || n.includes('bicep'))
+        return 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=500&auto=format&fit=crop';
+    if (n.includes('tricep') || n.includes('extensión') && g === 'triceps')
+        return 'https://images.unsplash.com/photo-1530822847156-5df684ec5ee1?w=500&auto=format&fit=crop';
+
+    // Core
+    if (n.includes('abdomen') || n.includes('crunch') || n.includes('plancha') || g === 'abdominales')
+        return 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=500&auto=format&fit=crop';
+
+    // -- GROUP FALLBACKS (Secondary) --
+    if (g === 'pectoral') return 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500&auto=format&fit=crop';
+    if (g === 'piernas' || g === 'gluteos') return 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=500&auto=format&fit=crop';
+    if (g === 'espalda') return 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=500&auto=format&fit=crop';
+    if (g === 'hombros') return 'https://images.unsplash.com/photo-1532029837206-abbe2b7620e3?w=500&auto=format&fit=crop';
+    if (g === 'cardio') return 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?w=500&auto=format&fit=crop';
+
+    // Final Fallback
     return 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
 };
 
@@ -457,7 +1255,7 @@ const DraggableExerciseCard = (props: ExerciseCardProps) => {
             value={props.ejercicio}
             dragListener={false}
             dragControls={dragControls}
-            style={{ listStyle: 'none', marginBottom: 12 }}
+            style={{ listStyle: 'none' }}
             whileDrag={{ scale: 1.02, zIndex: 10 }}
         >
             <ExerciseCardComponent {...props} dragControls={dragControls} />
@@ -478,6 +1276,17 @@ export const RoutineDetailPage: React.FC = () => {
     const [showRecalibrateModal, setShowRecalibrateModal] = useState(false);
 
     const [isReorganizing, setIsReorganizing] = useState(false);
+    const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+
+    const toggleDayCollapse = (day: string) => {
+        const newCollapsed = new Set(collapsedDays);
+        if (newCollapsed.has(day)) {
+            newCollapsed.delete(day);
+        } else {
+            newCollapsed.add(day);
+        }
+        setCollapsedDays(newCollapsed);
+    };
 
     // Sharing state
     const [showShareModal, setShowShareModal] = useState(false);
@@ -502,7 +1311,7 @@ export const RoutineDetailPage: React.FC = () => {
         repeticiones: '10-12',
         descanso: 60,
         categoria: 'maquina',
-        dia: 'Día 1',
+        dia: 'Sin asignar',
         grupoMuscular: ''
     });
 
@@ -823,75 +1632,45 @@ export const RoutineDetailPage: React.FC = () => {
                             background: dayStyle.bg,
                             border: `1px solid ${dayStyle.color}20`
                         }}>
-                            <div style={{
-                                ...styles.dayHeader,
-                                background: `${dayStyle.color}15`
-                            }}>
-                                <Calendar size={18} color={dayStyle.color} />
-                                <h4 style={{ ...styles.dayTitle, color: dayStyle.color }}>{day}</h4>
+                            <div
+                                style={{
+                                    ...styles.dayHeader,
+                                    background: `${dayStyle.color}15`,
+                                    cursor: 'pointer',
+                                    width: '100%',
+                                    justifyContent: 'space-between',
+                                    alignSelf: 'stretch'
+                                }}
+                                onClick={() => toggleDayCollapse(day)}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Calendar size={18} color={dayStyle.color} />
+                                    <h4 style={{ ...styles.dayTitle, color: dayStyle.color }}>{day}</h4>
+                                </div>
+                                <button style={styles.expandBtn}>
+                                    {collapsedDays.has(day) ? (
+                                        <ChevronDown size={20} color={dayStyle.color} />
+                                    ) : (
+                                        <ChevronUp size={20} color={dayStyle.color} />
+                                    )}
+                                </button>
                             </div>
 
-                            {dayGroups.calentamiento.length > 0 && (
-                                <div style={styles.categorySection}>
-                                    <div style={styles.categoryHeader}>
-                                        <span style={styles.categoryDot} />
-                                        <h5 style={styles.categoryTitle}>Calentamiento</h5>
-                                    </div>
-                                    <Reorder.Group axis="y" values={dayGroups.calentamiento} onReorder={handleGroupReorder} style={{ listStyle: 'none', padding: 0 }}>
-                                        {dayGroups.calentamiento.map((ejercicio, idx) => (
-                                            <DraggableExerciseCard
-                                                key={ejercicio.id}
-                                                ejercicio={ejercicio}
-                                                idx={idx}
-                                                rutina={rutina}
-                                                editingExercise={editingExercise}
-                                                editedExercise={editedExercise}
-                                                setEditedExercise={setEditedExercise}
-                                                handleCancelEdit={handleCancelEdit}
-                                                handleSaveEdit={handleSaveEdit}
-                                                handleMoveExercise={handleMoveExercise}
-                                                handleStartEdit={handleStartEdit}
-                                                handleDeleteExercise={handleDeleteExercise}
-                                                availableDays={perfil.horario.dias.filter(d => d.entrena).map(d => d.dia)}
-                                                onQuickUpdate={(id, fields) => {
-                                                    if (!rutina) return;
-                                                    const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
-                                                    setRutina({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
-                                                }}
-                                                setRutina={setRutina}
-                                            />
-                                        ))}
-                                    </Reorder.Group>
-                                </div>
-                            )}
+                            {!collapsedDays.has(day) && (
+                                <>
 
-                            {dayGroups.rutina.length > 0 && (
-                                <div style={styles.categorySection}>
-                                    <div style={styles.categoryHeader}>
-                                        <span style={{ ...styles.categoryDot, background: Colors.primary }} />
-                                        <h5 style={styles.categoryTitle}>Rutina Principal</h5>
-                                    </div>
-                                    <Reorder.Group axis="y" values={dayGroups.rutina} onReorder={handleGroupReorder} style={{ listStyle: 'none', padding: 0 }}>
-                                        {dayGroups.rutina.map((ejercicio, idx) => {
-                                            const prevExercise = dayGroups.rutina[idx - 1];
-                                            const showMuscleHeader = !prevExercise || prevExercise.grupoMuscular !== ejercicio.grupoMuscular;
-                                            return (
-                                                <React.Fragment key={ejercicio.id}>
-                                                    {showMuscleHeader && (
-                                                        <div style={styles.muscleGroupHeader}>
-                                                            {ejercicio.grupoMuscular ? (
-                                                                <>
-                                                                    <span>{GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.emoji}</span>
-                                                                    <span>{GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}</span>
-                                                                </>
-                                                            ) : (
-                                                                <span>Sin Grupo Muscular</span>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                    {dayGroups.calentamiento.length > 0 && (
+                                        <div style={styles.categorySection}>
+                                            <div style={styles.categoryHeader}>
+                                                <span style={styles.categoryDot} />
+                                                <h5 style={styles.categoryTitle}>Calentamiento</h5>
+                                            </div>
+                                            <Reorder.Group axis="y" values={dayGroups.calentamiento} onReorder={handleGroupReorder} style={styles.exercisesGrid}>
+                                                {dayGroups.calentamiento.map((ejercicio, idx) => (
                                                     <DraggableExerciseCard
+                                                        key={ejercicio.id}
                                                         ejercicio={ejercicio}
-                                                        idx={dayGroups.calentamiento.length + idx}
+                                                        idx={idx}
                                                         rutina={rutina}
                                                         editingExercise={editingExercise}
                                                         editedExercise={editedExercise}
@@ -909,891 +1688,235 @@ export const RoutineDetailPage: React.FC = () => {
                                                         }}
                                                         setRutina={setRutina}
                                                     />
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                    </Reorder.Group>
-                                </div>
+                                                ))}
+                                            </Reorder.Group>
+                                        </div>
+                                    )}
+
+                                    {dayGroups.rutina.length > 0 && (
+                                        <div style={styles.categorySection}>
+                                            <div style={styles.categoryHeader}>
+                                                <span style={{ ...styles.categoryDot, background: Colors.primary }} />
+                                                <h5 style={styles.categoryTitle}>Rutina Principal</h5>
+                                            </div>
+                                            <Reorder.Group axis="y" values={dayGroups.rutina} onReorder={handleGroupReorder} style={styles.exercisesGrid}>
+                                                {dayGroups.rutina.map((ejercicio, idx) => {
+                                                    const prevExercise = dayGroups.rutina[idx - 1];
+                                                    const prevGroupName = prevExercise ? (GRUPOS_MUSCULARES[prevExercise.grupoMuscular as GrupoMuscularEjercicio]?.nombre || prevExercise.grupoMuscular) : null;
+                                                    const currentGroupName = GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular;
+                                                    const showMuscleHeader = !prevExercise || prevGroupName !== currentGroupName;
+                                                    return (
+                                                        <React.Fragment key={ejercicio.id}>
+                                                            {showMuscleHeader && (
+                                                                <div style={styles.muscleGroupHeader}>
+                                                                    {ejercicio.grupoMuscular ? (
+                                                                        <>
+                                                                            <span>{GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.emoji}</span>
+                                                                            <span>{GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <span>Sin Grupo Muscular</span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            <DraggableExerciseCard
+                                                                ejercicio={ejercicio}
+                                                                idx={dayGroups.calentamiento.length + idx}
+                                                                rutina={rutina}
+                                                                editingExercise={editingExercise}
+                                                                editedExercise={editedExercise}
+                                                                setEditedExercise={setEditedExercise}
+                                                                handleCancelEdit={handleCancelEdit}
+                                                                handleSaveEdit={handleSaveEdit}
+                                                                handleMoveExercise={handleMoveExercise}
+                                                                handleStartEdit={handleStartEdit}
+                                                                handleDeleteExercise={handleDeleteExercise}
+                                                                availableDays={perfil.horario.dias.filter(d => d.entrena).map(d => d.dia)}
+                                                                onQuickUpdate={(id, fields) => {
+                                                                    if (!rutina) return;
+                                                                    const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
+                                                                    setRutina({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
+                                                                }}
+                                                                setRutina={setRutina}
+                                                            />
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </Reorder.Group>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     );
                 })}
             </div>
 
-            {showDeleteModal && (
-                <div style={styles.modalOverlay}>
-                    <div style={styles.modal}>
-                        <div style={styles.modalIcon}>⚠️</div>
-                        <h3 style={styles.modalTitle}>¿Eliminar Rutina?</h3>
-                        <p style={styles.modalText}>Esta acción eliminará permanentemente tu rutina "{rutina.nombre}" y todos sus ejercicios.</p>
-                        <div style={styles.modalActions}>
-                            <button style={styles.modalCancelBtn} onClick={() => setShowDeleteModal(false)}>Cancelar</button>
-                            <button style={styles.modalDeleteBtn} onClick={handleDeleteRoutine}><Trash2 size={18} /> Eliminar</button>
+            {
+                showDeleteModal && (
+                    <div style={styles.modalOverlay}>
+                        <div style={styles.modal}>
+                            <div style={styles.modalIcon}>⚠️</div>
+                            <h3 style={styles.modalTitle}>¿Eliminar Rutina?</h3>
+                            <p style={styles.modalText}>Esta acción eliminará permanentemente tu rutina "{rutina.nombre}" y todos sus ejercicios.</p>
+                            <div style={styles.modalActions}>
+                                <button style={styles.modalCancelBtn} onClick={() => setShowDeleteModal(false)}>Cancelar</button>
+                                <button style={styles.modalDeleteBtn} onClick={handleDeleteRoutine}><Trash2 size={18} /> Eliminar</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {showAddExerciseModal && (
-                <div style={styles.modalOverlay}>
-                    <div style={styles.modal}>
-                        <div style={styles.modalHeader}>
-                            <h3 style={styles.modalTitle}>Añadir Ejercicio</h3>
-                            <button style={styles.closeModalBtn} onClick={() => setShowAddExerciseModal(false)}><X size={24} /></button>
-                        </div>
-                        <div style={styles.addForm}>
-                            <div style={styles.formRow}>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Día</label>
-                                    <input type="text" value={newExercise.dia} onChange={(e) => setNewExercise({ ...newExercise, dia: e.target.value })} style={styles.formInput} placeholder="Ej: Lunes" />
-                                </div>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Nombre</label>
-                                    <input type="text" value={newExercise.nombre} onChange={(e) => setNewExercise({ ...newExercise, nombre: e.target.value })} style={styles.formInput} placeholder="Ej: Press de Banca" />
-                                </div>
+            {
+                showAddExerciseModal && (
+                    <div style={styles.modalOverlay}>
+                        <div style={styles.modal}>
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.modalTitle}>Añadir Ejercicio</h3>
+                                <button style={styles.closeModalBtn} onClick={() => setShowAddExerciseModal(false)}><X size={24} /></button>
                             </div>
-                            <div style={styles.formRow}>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Series</label>
-                                    <input type="number" value={newExercise.series} onChange={(e) => setNewExercise({ ...newExercise, series: parseInt(e.target.value) || 0 })} style={styles.formInput} />
+                            <div style={styles.addForm}>
+                                <div style={styles.formRow}>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Día</label>
+                                        <select
+                                            value={newExercise.dia}
+                                            onChange={(e) => setNewExercise({ ...newExercise, dia: e.target.value })}
+                                            style={styles.formInput}
+                                        >
+                                            <option value="Sin asignar">Sin asignar</option>
+                                            {perfil.horario.dias.filter(d => d.entrena).map(d => (
+                                                <option key={d.dia} value={d.dia}>{d.dia}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Nombre</label>
+                                        <input type="text" value={newExercise.nombre} onChange={(e) => setNewExercise({ ...newExercise, nombre: e.target.value })} style={styles.formInput} placeholder="Ej: Press de Banca" />
+                                    </div>
                                 </div>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Reps</label>
-                                    <input type="text" value={newExercise.repeticiones} onChange={(e) => setNewExercise({ ...newExercise, repeticiones: e.target.value })} style={styles.formInput} placeholder="10-12" />
+                                <div style={styles.formRow}>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Series</label>
+                                        <input type="number" value={newExercise.series} onChange={(e) => setNewExercise({ ...newExercise, series: parseInt(e.target.value) || 0 })} style={styles.formInput} />
+                                    </div>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Reps</label>
+                                        <input type="text" value={newExercise.repeticiones} onChange={(e) => setNewExercise({ ...newExercise, repeticiones: e.target.value })} style={styles.formInput} placeholder="10-12" />
+                                    </div>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Descanso</label>
+                                        <input type="number" value={newExercise.descanso} onChange={(e) => setNewExercise({ ...newExercise, descanso: parseInt(e.target.value) || 0 })} style={styles.formInput} />
+                                    </div>
                                 </div>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Descanso</label>
-                                    <input type="number" value={newExercise.descanso} onChange={(e) => setNewExercise({ ...newExercise, descanso: parseInt(e.target.value) || 0 })} style={styles.formInput} />
+                                <div style={styles.formRow}>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Categoría</label>
+                                        <select value={newExercise.categoria} onChange={(e) => setNewExercise({ ...newExercise, categoria: e.target.value as any })} style={styles.formInput}>
+                                            <option value="maquina">Rutina Principal</option>
+                                            <option value="calentamiento">Calentamiento</option>
+                                        </select>
+                                    </div>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Enfocado a</label>
+                                        <select value={newExercise.enfocadoA} onChange={(e) => setNewExercise({ ...newExercise, enfocadoA: e.target.value as any })} style={styles.formInput}>
+                                            <option value="ambos">Ambos</option>
+                                            <option value="hombre">Hombre</option>
+                                            <option value="mujer">Mujer</option>
+                                        </select>
+                                    </div>
+                                    <div style={styles.formGroup}>
+                                        <label style={styles.formLabel}>Músculo</label>
+                                        <select value={newExercise.grupoMuscular || ''} onChange={(e) => setNewExercise({ ...newExercise, grupoMuscular: e.target.value })} style={styles.formInput}>
+                                            <option value="">Sin asignar</option>
+                                            {Object.entries(GRUPOS_MUSCULARES)
+                                                .filter(([key]) => key !== 'calentamiento')
+                                                .map(([key, value]) => (
+                                                    <option key={key} value={key}>{value.emoji} {value.nombre}</option>
+                                                ))}
+                                        </select>
+                                    </div>
                                 </div>
+                                <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> Añadir Ejercicio</button>
+                                <div style={styles.divider}><span style={styles.dividerText}>o</span></div>
+                                <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>📚 Seleccionar de la Base de Datos</button>
                             </div>
-                            <div style={styles.formRow}>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Categoría</label>
-                                    <select value={newExercise.categoria} onChange={(e) => setNewExercise({ ...newExercise, categoria: e.target.value as any })} style={styles.formInput}>
-                                        <option value="maquina">Rutina Principal</option>
-                                        <option value="calentamiento">Calentamiento</option>
-                                    </select>
-                                </div>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Enfocado a</label>
-                                    <select value={newExercise.enfocadoA} onChange={(e) => setNewExercise({ ...newExercise, enfocadoA: e.target.value as any })} style={styles.formInput}>
-                                        <option value="ambos">Ambos</option>
-                                        <option value="hombre">Hombre</option>
-                                        <option value="mujer">Mujer</option>
-                                    </select>
-                                </div>
-                                <div style={styles.formGroup}>
-                                    <label style={styles.formLabel}>Músculo</label>
-                                    <select value={newExercise.grupoMuscular || ''} onChange={(e) => setNewExercise({ ...newExercise, grupoMuscular: e.target.value })} style={styles.formInput}>
-                                        <option value="">Sin asignar</option>
-                                        {Object.entries(GRUPOS_MUSCULARES).map(([key, value]) => (
-                                            <option key={key} value={key}>{value.emoji} {value.nombre}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> Añadir Ejercicio</button>
-                            <div style={styles.divider}><span style={styles.dividerText}>o</span></div>
-                            <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>📚 Seleccionar de la Base de Datos</button>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {showExerciseSelector && (
-                <ExerciseSelector onSelect={handleSelectFromDatabase} onClose={() => setShowExerciseSelector(false)} />
-            )}
+            {
+                showExerciseSelector && (
+                    <ExerciseSelector onSelect={handleSelectFromDatabase} onClose={() => setShowExerciseSelector(false)} />
+                )
+            }
 
-            {showRecalibrateModal && (
-                <RoutineUpload onComplete={() => setShowRecalibrateModal(false)} onCancel={() => setShowRecalibrateModal(false)} />
-            )}
+            {
+                showRecalibrateModal && (
+                    <RoutineUpload onComplete={() => setShowRecalibrateModal(false)} onCancel={() => setShowRecalibrateModal(false)} />
+                )
+            }
 
-            {showShareModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.8)', zIndex: 1000,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
-                }}>
-                    <Card style={{ width: '100%', maxWidth: '300px', padding: '24px', background: Colors.surface }}>
-                        <h3 style={{ fontSize: '18px', fontWeight: 800, color: Colors.text, marginBottom: '8px', textAlign: 'center' }}>
-                            Compartir Rutina
-                        </h3>
-                        <p style={{ fontSize: '14px', color: Colors.textSecondary, marginBottom: '20px', textAlign: 'center' }}>
-                            Ingresa el alias del usuario a quien le quieres enviar esta rutina.
-                        </p>
+            {
+                showShareModal && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.8)', zIndex: 1000,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+                    }}>
+                        <Card style={{ width: '100%', maxWidth: '300px', padding: '24px', background: Colors.surface }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: 800, color: Colors.text, marginBottom: '8px', textAlign: 'center' }}>
+                                Compartir Rutina
+                            </h3>
+                            <p style={{ fontSize: '14px', color: Colors.textSecondary, marginBottom: '20px', textAlign: 'center' }}>
+                                Ingresa el alias del usuario a quien le quieres enviar esta rutina.
+                            </p>
 
-                        <input
-                            style={{
-                                width: '100%', padding: '12px', borderRadius: '12px',
-                                border: `1px solid ${Colors.border}`, background: Colors.background,
-                                color: Colors.text, marginBottom: '16px', fontSize: '16px'
-                            }}
-                            placeholder="Ej: TitanFit"
-                            value={shareAlias}
-                            onChange={(e) => setShareAlias(e.target.value)}
-                        />
-
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
+                            <input
                                 style={{
-                                    flex: 1, padding: '12px', borderRadius: '12px',
-                                    background: 'transparent', border: `1px solid ${Colors.border}`,
-                                    color: Colors.text
+                                    width: '100%', padding: '12px', borderRadius: '12px',
+                                    border: `1px solid ${Colors.border}`, background: Colors.background,
+                                    color: Colors.text, marginBottom: '16px', fontSize: '16px'
                                 }}
-                                onClick={() => setShowShareModal(false)}
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                style={{
-                                    flex: 1, padding: '12px', borderRadius: '12px',
-                                    background: Colors.primary, border: 'none',
-                                    color: '#000', fontWeight: 'bold'
-                                }}
-                                onClick={handleShareRoutine}
-                                disabled={isSharing || !shareAlias.trim()}
-                            >
-                                {isSharing ? '...' : 'Enviar'}
-                            </button>
-                        </div>
-                    </Card>
-                </div>
-            )}
+                                placeholder="Ej: TitanFit"
+                                value={shareAlias}
+                                onChange={(e) => setShareAlias(e.target.value)}
+                            />
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    style={{
+                                        flex: 1, padding: '12px', borderRadius: '12px',
+                                        background: 'transparent', border: `1px solid ${Colors.border}`,
+                                        color: Colors.text
+                                    }}
+                                    onClick={() => setShowShareModal(false)}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    style={{
+                                        flex: 1, padding: '12px', borderRadius: '12px',
+                                        background: Colors.primary, border: 'none',
+                                        color: '#000', fontWeight: 'bold'
+                                    }}
+                                    onClick={handleShareRoutine}
+                                    disabled={isSharing || !shareAlias.trim()}
+                                >
+                                    {isSharing ? '...' : 'Enviar'}
+                                </button>
+                            </div>
+                        </Card>
+                    </div>
+                )
+            }
         </div>
     );
 };
 
-const DAY_STYLE: Record<string, { color: string, bg: string }> = {
-    'Lunes': { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.05)' },
-    'Martes': { color: '#FF2D55', bg: 'rgba(255, 45, 85, 0.05)' },
-    'Miércoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
-    'Jueves': { color: '#5856D6', bg: 'rgba(88, 86, 214, 0.05)' },
-    'Viernes': { color: '#34C759', bg: 'rgba(52, 199, 89, 0.05)' },
-    'Sábado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
-    'Domingo': { color: '#FF3B30', bg: 'rgba(255, 59, 48, 0.05)' },
-    'default': { color: Colors.primary, bg: 'rgba(0, 230, 153, 0.05)' }
-};
 
-const styles: Record<string, React.CSSProperties> = {
-    warningBox: {
-        background: `${Colors.warning}10`,
-        border: `1px solid ${Colors.warning}40`,
-        borderRadius: '16px',
-        padding: '12px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        margin: '16px 20px',
-        width: 'auto',
-    },
-    warningText: {
-        fontSize: '13px',
-        color: Colors.text,
-        fontWeight: 600,
-        lineHeight: 1.4,
-    },
-    exerciseContentWrapper: {
-        display: 'flex',
-        flexDirection: 'column',
-    },
-    exerciseImageWrapper: {
-        width: '100%',
-        height: '160px',
-        borderRadius: '16px 16px 0 0',
-        overflow: 'hidden',
-        position: 'relative',
-        marginBottom: '12px',
-        background: Colors.surface,
-    },
-    exerciseImage: {
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-        opacity: 0.8,
-    },
-    calentamientoBadge: {
-        position: 'absolute',
-        top: '12px',
-        right: '12px',
-        background: 'rgba(245, 158, 11, 0.9)',
-        padding: '4px 8px',
-        borderRadius: '8px',
-        fontSize: '14px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-    },
-    container: {
-        padding: '20px',
-        paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))',
-        paddingBottom: '100px',
-        minHeight: '100%',
-        overflowY: 'auto',
-    },
-    headerBar: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '24px',
-    },
-    headerTitle: {
-        fontSize: '18px',
-        fontWeight: 800,
-        color: Colors.text,
-        letterSpacing: '1px',
-        margin: 0,
-    },
-    backBtn: {
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        padding: '8px',
-    },
-    deleteBtn: {
-        background: `${Colors.error}15`,
-        border: 'none',
-        cursor: 'pointer',
-        padding: '10px',
-        borderRadius: '12px',
-    },
-    emptyState: {
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '60px 20px',
-        textAlign: 'center',
-    },
-    emptyIcon: {
-        fontSize: '64px',
-        marginBottom: '20px',
-    },
-    emptyTitle: {
-        fontSize: '22px',
-        fontWeight: 800,
-        color: Colors.text,
-        margin: '0 0 8px 0',
-    },
-    emptyText: {
-        fontSize: '14px',
-        color: Colors.textSecondary,
-        marginBottom: '24px',
-    },
-    createButton: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '14px 28px',
-        background: Colors.primary,
-        color: '#000',
-        border: 'none',
-        borderRadius: '14px',
-        fontSize: '15px',
-        fontWeight: 700,
-        cursor: 'pointer',
-    },
-    infoCard: {
-        marginBottom: '24px',
-        padding: '20px',
-    },
-    routineName: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        marginBottom: '16px',
-    },
-    routineIcon: {
-        fontSize: '32px',
-    },
-    routineTitle: {
-        fontSize: '20px',
-        fontWeight: 800,
-        color: Colors.text,
-        margin: 0,
-    },
-    expirationBox: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '14px 16px',
-        borderRadius: '12px',
-        border: '1px solid',
-        marginBottom: '16px',
-        flexWrap: 'wrap'
-    },
-    expirationText: {
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minWidth: '200px'
-    },
-    expirationTitle: {
-        fontSize: '14px',
-        fontWeight: 700,
-    },
-    expirationSubtitle: {
-        fontSize: '12px',
-        color: Colors.textSecondary,
-    },
-    renewBtn: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '8px 14px',
-        background: Colors.primary,
-        color: '#000',
-        border: 'none',
-        borderRadius: '8px',
-        fontSize: '13px',
-        fontWeight: 700,
-        cursor: 'pointer',
-    },
-    actionButtonsRow: {
-        display: 'flex',
-        gap: '8px',
-        width: '100%',
-        marginTop: '12px'
-    },
-    recalibrateBtn: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '8px 14px',
-        background: Colors.accent,
-        color: '#000',
-        border: 'none',
-        borderRadius: '8px',
-        fontSize: '13px',
-        fontWeight: 700,
-        cursor: 'pointer',
-    },
-    progressContainer: {
-        marginBottom: '16px',
-    },
-    progressHeader: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        marginBottom: '8px',
-    },
-    progressLabel: {
-        fontSize: '13px',
-        color: Colors.textSecondary,
-    },
-    progressPercent: {
-        fontSize: '13px',
-        fontWeight: 700,
-        color: Colors.primary,
-    },
-    progressBar: {
-        height: '8px',
-        background: Colors.surface,
-        borderRadius: '4px',
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: '100%',
-        background: Colors.gradientPrimary,
-        borderRadius: '4px',
-        transition: 'width 0.3s ease',
-    },
-    progressDates: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        marginTop: '6px',
-        fontSize: '11px',
-        color: Colors.textTertiary,
-    },
-    summaryRow: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '8px',
-        marginBottom: '24px',
-    },
-    summaryChip: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '6px 12px',
-        background: Colors.surface,
-        borderRadius: '20px',
-        border: `1px solid ${Colors.border}`,
-    },
-    summaryDot: {
-        width: '6px',
-        height: '6px',
-        borderRadius: '50%',
-        background: Colors.primary,
-    },
-    summaryDayText: {
-        fontSize: '11px',
-        fontWeight: 700,
-        color: Colors.textSecondary,
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px',
-    },
-    durationRow: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-    },
-    durationText: {
-        fontSize: '13px',
-        color: Colors.textSecondary,
-    },
-    aiTag: {
-        marginLeft: 'auto',
-        padding: '4px 10px',
-        background: `${Colors.accent}20`,
-        color: Colors.accent,
-        borderRadius: '8px',
-        fontSize: '12px',
-        fontWeight: 600,
-    },
-    exercisesHeader: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '16px',
-    },
-    sectionTitle: {
-        fontSize: '16px',
-        fontWeight: 800,
-        color: Colors.text,
-        margin: 0,
-    },
-    addExerciseBtn: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '8px 14px',
-        background: Colors.surface,
-        color: Colors.primary,
-        border: `1px solid ${Colors.primary}`,
-        borderRadius: '10px',
-        fontSize: '13px',
-        fontWeight: 600,
-        cursor: 'pointer',
-    },
-    exercisesList: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-    },
-    dayGroup: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        padding: '16px',
-        borderRadius: '20px',
-        border: '1px solid transparent',
-        transition: 'all 0.3s ease'
-    },
-    dayHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        padding: '4px 8px',
-        marginBottom: '8px',
-        borderRadius: '12px',
-        alignSelf: 'flex-start'
-    },
-    dayTitle: {
-        fontSize: '18px',
-        fontWeight: 900,
-        margin: 0,
-        textTransform: 'uppercase',
-        letterSpacing: '1.5px',
-    },
-    exerciseCard: {
-        padding: '16px',
-    },
-    exerciseHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-    },
-    exerciseOrder: {
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '2px',
-    },
-    exerciseNumber: {
-        fontSize: '12px',
-        fontWeight: 700,
-        color: Colors.textTertiary,
-    },
-    exerciseInfo: {
-        flex: 1,
-    },
-    exerciseName: {
-        fontSize: '15px',
-        fontWeight: 700,
-        color: Colors.text,
-        margin: '0 0 8px 0',
-    },
-    exerciseDetails: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '8px',
-    },
-    detailChip: {
-        padding: '4px 10px',
-        background: Colors.surface,
-        borderRadius: '6px',
-        fontSize: '12px',
-        color: Colors.textSecondary,
-    },
-    exerciseActions: {
-        display: 'flex',
-        gap: '4px',
-    },
-    actionBtn: {
-        padding: '8px',
-        background: 'transparent',
-        border: 'none',
-        cursor: 'pointer',
-        borderRadius: '8px',
-    },
-    editForm: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-    },
-    editInput: {
-        width: '100%',
-        padding: '12px 14px',
-        background: Colors.surface,
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '10px',
-        color: Colors.text,
-        fontSize: '15px',
-    },
-    editRow: {
-        display: 'flex',
-        gap: '12px',
-        flexWrap: 'wrap'
-    },
-    editField: {
-        flex: 1,
-        minWidth: '120px'
-    },
-    editLabel: {
-        display: 'block',
-        fontSize: '11px',
-        color: Colors.textTertiary,
-        marginBottom: '4px',
-    },
-    editInputSmall: {
-        width: '100%',
-        padding: '10px 12px',
-        background: Colors.surface,
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '8px',
-        color: Colors.text,
-        fontSize: '14px',
-    },
-    editActions: {
-        display: 'flex',
-        gap: '12px',
-        marginTop: '4px',
-    },
-    cancelEditBtn: {
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '6px',
-        padding: '12px',
-        background: Colors.surface,
-        color: Colors.textSecondary,
-        border: 'none',
-        borderRadius: '10px',
-        fontSize: '14px',
-        fontWeight: 600,
-        cursor: 'pointer',
-    },
-    saveEditBtn: {
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '6px',
-        padding: '12px',
-        background: Colors.primary,
-        color: '#000',
-        border: 'none',
-        borderRadius: '10px',
-        fontSize: '14px',
-        fontWeight: 700,
-        cursor: 'pointer',
-    },
-    modalOverlay: {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0, 0, 0, 0.85)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '20px',
-    },
-    modal: {
-        width: '100%',
-        maxWidth: '400px',
-        background: Colors.surfaceLight,
-        borderRadius: '24px',
-        padding: '28px',
-        maxHeight: '90vh',
-        overflowY: 'auto'
-    },
-    modalHeader: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '20px',
-    },
-    closeModalBtn: {
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        color: Colors.textSecondary,
-    },
-    modalIcon: {
-        fontSize: '48px',
-        textAlign: 'center',
-        marginBottom: '16px',
-    },
-    modalTitle: {
-        fontSize: '20px',
-        fontWeight: 800,
-        color: Colors.text,
-        textAlign: 'center',
-        margin: 0,
-    },
-    modalText: {
-        fontSize: '14px',
-        color: Colors.textSecondary,
-        textAlign: 'center',
-        margin: '12px 0 24px 0',
-        lineHeight: 1.5,
-    },
-    modalActions: {
-        display: 'flex',
-        gap: '12px',
-    },
-    modalCancelBtn: {
-        flex: 1,
-        padding: '14px',
-        background: Colors.surface,
-        color: Colors.text,
-        border: 'none',
-        borderRadius: '12px',
-        fontSize: '15px',
-        fontWeight: 600,
-        cursor: 'pointer',
-    },
-    modalDeleteBtn: {
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        padding: '14px',
-        background: Colors.error,
-        color: '#FFF',
-        border: 'none',
-        borderRadius: '12px',
-        fontSize: '15px',
-        fontWeight: 700,
-        cursor: 'pointer',
-    },
-    addForm: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-    },
-    formGroup: {
-        flex: 1,
-    },
-    formRow: {
-        display: 'flex',
-        gap: '12px',
-        flexWrap: 'wrap'
-    },
-    formLabel: {
-        display: 'block',
-        fontSize: '12px',
-        color: Colors.textSecondary,
-        marginBottom: '6px',
-        fontWeight: 600,
-    },
-    formInput: {
-        width: '100%',
-        padding: '12px 14px',
-        background: Colors.surface,
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '10px',
-        color: Colors.text,
-        fontSize: '15px',
-    },
-    addExerciseSubmitBtn: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        padding: '14px',
-        background: Colors.primary,
-        color: '#000',
-        border: 'none',
-        borderRadius: '12px',
-        fontSize: '15px',
-        fontWeight: 700,
-        cursor: 'pointer',
-        marginTop: '8px',
-    },
-    divider: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '16px 0',
-        position: 'relative',
-    },
-    dividerText: {
-        padding: '0 12px',
-        background: Colors.surfaceLight,
-        color: Colors.textTertiary,
-        fontSize: '13px',
-        fontWeight: 600,
-    },
-    selectFromDbBtn: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        padding: '14px',
-        background: Colors.surface,
-        color: Colors.text,
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '12px',
-        fontSize: '15px',
-        fontWeight: 600,
-        cursor: 'pointer',
-        width: '100%',
-    },
-    categorySection: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        padding: '0 4px',
-        marginTop: '8px',
-    },
-    categoryHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        marginBottom: '4px',
-    },
-    categoryDot: {
-        width: '8px',
-        height: '8px',
-        borderRadius: '50%',
-        background: Colors.accent,
-    },
-    progressiveCheckboxRow: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        marginTop: '8px',
-        cursor: 'pointer',
-        userSelect: 'none',
-    },
-    checkbox: {
-        width: '14px',
-        height: '14px',
-        borderRadius: '4px',
-        border: '1.5px solid',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'all 0.2s',
-    },
-    checkboxLabel: {
-        fontSize: '10px',
-        fontWeight: 700,
-        textTransform: 'uppercase',
-    },
-    progressiveGrid: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '4px',
-    },
-    progInputWrapper: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px',
-        flex: '1 1 40px',
-        minWidth: '40px',
-    },
-    progLabel: {
-        fontSize: '8px',
-        color: Colors.textTertiary,
-        textAlign: 'center',
-        fontWeight: 700,
-    },
-    editInputSmallProg: {
-        width: '100%',
-        padding: '6px 4px',
-        background: Colors.surface,
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '6px',
-        color: Colors.text,
-        fontSize: '12px',
-        outline: 'none',
-        textAlign: 'center',
-    },
-    dayChipsRow: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '6px',
-        marginTop: '6px',
-    },
-    dayChip: {
-        padding: '6px 10px',
-        borderRadius: '8px',
-        fontSize: '11px',
-        fontWeight: 700,
-        border: '1px solid',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        minWidth: '40px',
-        textAlign: 'center',
-    },
-    categoryTitle: {
-        fontSize: '13px',
-        fontWeight: 700,
-        color: Colors.textSecondary,
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-        margin: 0,
-    },
-    muscleGroupHeader: {
-        fontSize: '12px',
-        fontWeight: 900,
-        color: Colors.textSecondary,
-        textTransform: 'uppercase',
-        letterSpacing: '2px',
-        marginTop: '24px',
-        marginBottom: '12px',
-        paddingLeft: '4px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        borderBottom: `1px solid ${Colors.border}`,
-        paddingBottom: '8px',
-    },
-};
 
 
 export default RoutineDetailPage;

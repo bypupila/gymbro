@@ -25,7 +25,8 @@ export const ExerciseSelector: React.FC<ExerciseSelectorProps> = ({ onSelect, on
     const [selectedGroup, setSelectedGroup] = useState<GrupoMuscularEjercicio | null>(null);
     const [view, setView] = useState<'groups' | 'exercises'>('groups');
 
-    const gruposMusculares = Object.entries(GRUPOS_MUSCULARES) as [GrupoMuscularEjercicio, typeof GRUPOS_MUSCULARES[GrupoMuscularEjercicio]][];
+    const gruposMusculares = (Object.entries(GRUPOS_MUSCULARES) as [GrupoMuscularEjercicio, typeof GRUPOS_MUSCULARES[GrupoMuscularEjercicio]][])
+        .filter(([key]) => key !== 'calentamiento');
 
     const filteredExercises = useMemo(() => {
         if (searchQuery.length > 0) {
