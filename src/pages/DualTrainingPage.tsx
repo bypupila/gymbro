@@ -11,8 +11,40 @@ import { useUserStore } from '@/stores/userStore';
 
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil } = useUserStore();
-    const parejaconectada = !!perfil.pareja;
+    const { perfil, setPartnerId, setDatosPareja } = useUserStore();
+    const [isConnecting, setIsConnecting] = React.useState(false);
+    const [aliasInput, setAliasInput] = React.useState('');
+    const [connectError, setConnectError] = React.useState('');
+
+    // Check local state or if partnerId exists
+    const parejaconectada = !!perfil.pareja || !!perfil.partnerId;
+
+    const handleConnect = async () => {
+        if (!aliasInput.trim()) return;
+        setIsConnecting(true);
+        setConnectError('');
+
+        try {
+            // Dynamic import to avoid cycles if any, though likely safe
+            const { cloudService } = await import('@/services/cloudService');
+            const user = await cloudService.findUserByAlias(aliasInput.trim());
+
+            if (user) {
+                setPartnerId(user.id);
+                setDatosPareja({
+                    nombre: user.name || user.alias || 'Partner',
+                    edad: 0, peso: 0, altura: 0, nivel: 'intermedio', objetivo: 'mantener', lesiones: ''
+                });
+                alert('¡Pareja Conectada!');
+            } else {
+                setConnectError('Alias no encontrado');
+            }
+        } catch (e) {
+            setConnectError('Error al conectar');
+        } finally {
+            setIsConnecting(false);
+        }
+    };
 
     return (
         <div style={styles.container}>
@@ -92,10 +124,39 @@ export const DualTrainingPage: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                        <button style={styles.connectBtn} onClick={() => alert('Generando código de invitación...')}>
-                            <Users size={18} />
-                            <span>Vincular Pareja</span>
-                        </button>
+                        <div style={{ padding: '10px' }}>
+                            <p style={{ fontSize: '14px', marginBottom: '8px', color: Colors.textSecondary }}>Ingresa el Alias de tu GymBro:</p>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <input
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        borderRadius: '8px',
+                                        border: `1px solid ${Colors.border}`,
+                                        background: Colors.background,
+                                        color: Colors.text
+                                    }}
+                                    placeholder="Ej: TitanFit"
+                                    value={aliasInput}
+                                    onChange={e => setAliasInput(e.target.value)}
+                                />
+                                <button
+                                    style={{
+                                        ...styles.connectBtn,
+                                        width: 'auto',
+                                        padding: '0 16px',
+                                        background: Colors.primary,
+                                        color: '#000',
+                                        border: 'none'
+                                    }}
+                                    onClick={handleConnect}
+                                    disabled={isConnecting}
+                                >
+                                    {isConnecting ? '...' : <Zap size={18} />}
+                                </button>
+                            </div>
+                            {connectError && <p style={{ color: Colors.error, fontSize: '12px', marginTop: '8px' }}>{connectError}</p>}
+                        </div>
                     )}
                 </Card>
             </div>

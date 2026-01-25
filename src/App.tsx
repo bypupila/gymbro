@@ -29,10 +29,12 @@ import { useUserStore } from './stores/userStore';
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { userId, perfil } = useUserStore();
 
+    // If not logged in, ALWAYS go to login
     if (!userId) {
         return <Navigate to="/login" replace />;
     }
 
+    // If logged in but onboarding not done, go to onboarding
     if (!perfil.onboardingCompletado) {
         return <Navigate to="/onboarding" replace />;
     }
@@ -51,54 +53,49 @@ const OnboardingRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
     return <>{children}</>;
 };
 
-import { authClient } from './services/auth';
-import { AuthProvider } from './components/AuthProvider';
-
 function App() {
     return (
         <BrowserRouter>
-            <AuthProvider>
-                <CloudSyncManager />
-                <Routes>
-                    {/* Onboarding Routes - Full screen experience */}
-                    <Route path="/onboarding" element={
-                        <OnboardingRoute><OnboardingWelcome /></OnboardingRoute>
-                    } />
-                    <Route path="/onboarding/datos" element={
-                        <OnboardingRoute><OnboardingDatos /></OnboardingRoute>
-                    } />
-                    <Route path="/onboarding/horarios" element={
-                        <OnboardingRoute><OnboardingHorarios /></OnboardingRoute>
-                    } />
-                    <Route path="/onboarding/completado" element={<OnboardingCompletado />} />
+            <CloudSyncManager />
+            <Routes>
+                {/* Onboarding Routes - Full screen experience */}
+                <Route path="/onboarding" element={
+                    <OnboardingRoute><OnboardingWelcome /></OnboardingRoute>
+                } />
+                <Route path="/onboarding/datos" element={
+                    <OnboardingRoute><OnboardingDatos /></OnboardingRoute>
+                } />
+                <Route path="/onboarding/horarios" element={
+                    <OnboardingRoute><OnboardingHorarios /></OnboardingRoute>
+                } />
+                <Route path="/onboarding/completado" element={<OnboardingCompletado />} />
 
-                    {/* Login Route */}
-                    <Route path="/login" element={<LoginPage />} />
+                {/* Login Route */}
+                <Route path="/login" element={<LoginPage />} />
 
-                    {/* Main App Routes - Responsive Layout (Desktop Sidebar / Mobile Bottom Nav) */}
-                    <Route path="/" element={
-                        <ProtectedRoute>
-                            <MainLayout />
-                        </ProtectedRoute>
-                    }>
-                        <Route index element={<HomePage />} />
-                        <Route path="train" element={<TrainPage />} />
-                        <Route path="progress" element={<ProgressPage />} />
-                        <Route path="profile" element={<ProfilePage />} />
-                        <Route path="profile/schedule" element={<SchedulePage />} />
-                        <Route path="routine" element={<RoutineDetailPage />} />
+                {/* Main App Routes - Responsive Layout (Desktop Sidebar / Mobile Bottom Nav) */}
+                <Route path="/" element={
+                    <ProtectedRoute>
+                        <MainLayout />
+                    </ProtectedRoute>
+                }>
+                    <Route index element={<HomePage />} />
+                    <Route path="train" element={<TrainPage />} />
+                    <Route path="progress" element={<ProgressPage />} />
+                    <Route path="profile" element={<ProfilePage />} />
+                    <Route path="profile/schedule" element={<SchedulePage />} />
+                    <Route path="routine" element={<RoutineDetailPage />} />
 
-                        {/* New "Pencil" Windows */}
-                        <Route path="coach" element={<CoachPage />} />
-                        <Route path="body-status" element={<BodyStatusPage />} />
-                        <Route path="dual-training" element={<DualTrainingPage />} />
-                        <Route path="migrator" element={<MigratorPage />} />
-                    </Route>
+                    {/* New "Pencil" Windows */}
+                    <Route path="coach" element={<CoachPage />} />
+                    <Route path="body-status" element={<BodyStatusPage />} />
+                    <Route path="dual-training" element={<DualTrainingPage />} />
+                    <Route path="migrator" element={<MigratorPage />} />
+                </Route>
 
-                    {/* Catch all - redirect to home or onboarding */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-            </AuthProvider>
+                {/* Catch all - redirect to home or onboarding */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
         </BrowserRouter>
     );
 }

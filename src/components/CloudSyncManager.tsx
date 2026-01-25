@@ -8,27 +8,43 @@ export const CloudSyncManager: React.FC = () => {
     const lastSavedData = useRef<string>('');
     const syncTimeout = useRef<NodeJS.Timeout | null>(null);
 
-    // Initial Fetch (If userId exists but store is effectively empty/un-onboarded)
+    // Flag to prevent double initial pull
+    const initialPullDone = useRef(false);
+
+    // Initial Fetch (On App Start or Login)
     useEffect(() => {
         const loadInitialData = async () => {
-            if (userId && !perfil.onboardingCompletado) {
-                try {
-                    setIsSyncing(true);
-                    const cloudData = await cloudService.downloadData(userId);
-                    if (cloudData) {
-                        useUserStore.setState({ perfil: cloudData });
-                        lastSavedData.current = JSON.stringify(cloudData);
+            if (!userId || initialPullDone.current) return;
+
+            try {
+                setIsSyncing(true);
+                const cloudData = await cloudService.downloadData(userId);
+                if (cloudData) {
+                    // Update store with cloud data
+                    useUserStore.setState({ perfil: cloudData });
+                    lastSavedData.current = JSON.stringify(cloudData);
+                } else {
+                    // If no data in cloud, initialize name with alias if empty
+                    const { perfil } = useUserStore.getState();
+                    if (!perfil.usuario.nombre) {
+                        useUserStore.setState((state) => ({
+                            perfil: {
+                                ...state.perfil,
+                                usuario: { ...state.perfil.usuario, nombre: userId }
+                            }
+                        }));
                     }
-                } catch (err) {
-                    console.error('Failed initial load:', err);
-                } finally {
-                    setIsSyncing(false);
                 }
+                initialPullDone.current = true;
+            } catch (err) {
+                console.error('Failed initial load:', err);
+            } finally {
+                setIsSyncing(false);
             }
         };
 
         loadInitialData();
-    }, [userId]); // Only run on login or app start with ID
+    }, [userId]);
 
     // Auto-Save Effect
     useEffect(() => {

@@ -24,12 +24,15 @@ import {
     X,
     Sparkles,
     Check,
-    TrendingUp
+    TrendingUp,
+    Share2,
+    Send
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RoutineUpload } from '@/components/RoutineUpload';
 import { reorganizeRoutine } from '@/services/geminiService';
+import { cloudService } from '@/services/cloudService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 
@@ -473,7 +476,25 @@ export const RoutineDetailPage: React.FC = () => {
     const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
     const [showExerciseSelector, setShowExerciseSelector] = useState(false);
     const [showRecalibrateModal, setShowRecalibrateModal] = useState(false);
+
     const [isReorganizing, setIsReorganizing] = useState(false);
+
+    // Sharing state
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [shareAlias, setShareAlias] = useState('');
+    const [isSharing, setIsSharing] = useState(false);
+
+    const handleShareRoutine = async () => {
+        if (!shareAlias.trim() || !rutina) return;
+        setIsSharing(true);
+        const result = await cloudService.shareRoutine(shareAlias.trim(), rutina);
+        setIsSharing(false);
+        alert(result.message);
+        if (result.success) {
+            setShowShareModal(false);
+            setShareAlias('');
+        }
+    };
 
     const [newExercise, setNewExercise] = useState<Partial<EjercicioRutina>>({
         nombre: '',
@@ -691,6 +712,12 @@ export const RoutineDetailPage: React.FC = () => {
                 </button>
                 <h1 style={styles.headerTitle}>MI RUTINA</h1>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                        style={{ ...styles.actionBtn, background: `${Colors.primary}20` }}
+                        onClick={() => setShowShareModal(true)}
+                    >
+                        <Share2 size={20} color={Colors.primary} />
+                    </button>
                     <button
                         style={{ ...styles.actionBtn, background: `${Colors.accent}20` }}
                         onClick={handleIAOrganize}
@@ -979,6 +1006,58 @@ export const RoutineDetailPage: React.FC = () => {
 
             {showRecalibrateModal && (
                 <RoutineUpload onComplete={() => setShowRecalibrateModal(false)} onCancel={() => setShowRecalibrateModal(false)} />
+            )}
+
+            {showShareModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.8)', zIndex: 1000,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+                }}>
+                    <Card style={{ width: '100%', maxWidth: '300px', padding: '24px', background: Colors.surface }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 800, color: Colors.text, marginBottom: '8px', textAlign: 'center' }}>
+                            Compartir Rutina
+                        </h3>
+                        <p style={{ fontSize: '14px', color: Colors.textSecondary, marginBottom: '20px', textAlign: 'center' }}>
+                            Ingresa el alias del usuario a quien le quieres enviar esta rutina.
+                        </p>
+
+                        <input
+                            style={{
+                                width: '100%', padding: '12px', borderRadius: '12px',
+                                border: `1px solid ${Colors.border}`, background: Colors.background,
+                                color: Colors.text, marginBottom: '16px', fontSize: '16px'
+                            }}
+                            placeholder="Ej: TitanFit"
+                            value={shareAlias}
+                            onChange={(e) => setShareAlias(e.target.value)}
+                        />
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                style={{
+                                    flex: 1, padding: '12px', borderRadius: '12px',
+                                    background: 'transparent', border: `1px solid ${Colors.border}`,
+                                    color: Colors.text
+                                }}
+                                onClick={() => setShowShareModal(false)}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                style={{
+                                    flex: 1, padding: '12px', borderRadius: '12px',
+                                    background: Colors.primary, border: 'none',
+                                    color: '#000', fontWeight: 'bold'
+                                }}
+                                onClick={handleShareRoutine}
+                                disabled={isSharing || !shareAlias.trim()}
+                            >
+                                {isSharing ? '...' : 'Enviar'}
+                            </button>
+                        </div>
+                    </Card>
+                </div>
             )}
         </div>
     );

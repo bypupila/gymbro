@@ -100,6 +100,7 @@ export interface PerfilCompleto {
     historial: EntrenamientoRealizado[];
     historialRutinas: RutinaUsuario[];
     onboardingCompletado: boolean;
+    partnerId?: string; // New field for Cloud ID
 }
 
 const datosIniciales: DatosPersonales = {
@@ -166,10 +167,11 @@ interface UserStore {
     startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>) => void;
     skipSet: (exerciseId: string, setIndex: number) => void;
-    finishSession: (durationMinutos: number) => void;
+    finishSession: (durationMinutos: number) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
     logout: () => void;
+    setPartnerId: (id: string | undefined) => void;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -192,6 +194,9 @@ export const useUserStore = create<UserStore>()(
             setUserId: (id) => set({ userId: id }),
             setIsSyncing: (status) => set({ isSyncing: status }),
             setLastSyncError: (error) => set({ lastSyncError: error }),
+            setPartnerId: (id) => set((state) => ({
+                perfil: { ...state.perfil, partnerId: id }
+            })),
 
             setDatosPersonales: (datos) => set((state) => ({
                 perfil: {
@@ -309,8 +314,9 @@ export const useUserStore = create<UserStore>()(
                 return { activeSession: { ...state.activeSession, exercises: newExercises } };
             }),
 
-            finishSession: (durationMinutos) => set((state) => {
-                if (!state.activeSession) return state;
+            finishSession: async (durationMinutos) => {
+                const state = get();
+                if (!state.activeSession) return;
 
                 const realizado: EntrenamientoRealizado = {
                     id: `${new Date().toISOString()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -329,14 +335,31 @@ export const useUserStore = create<UserStore>()(
                     })).filter(ex => ex.sets.length > 0)
                 };
 
-                return {
+                // Sync with Partner if exists
+                if (state.perfil.partnerId) {
+                    console.log("Syncing workout to partner:", state.perfil.partnerId);
+                    // Import dynamically or use the one we have if possible, but cloudService is defined outside.
+                    // We need to avoid circular dependency if possible, but cloudService imports Types from userStore, userStore imports nothing.
+                    // Ideally we inject service or just assume global availability or simple import.
+                    // Let's use dynamic import or just standard import since Store is already defined.
+                    // Actually, let's just use the global cloudService instance we can import at top of file?
+                    // But I need to add the import first.
+                    try {
+                        const { cloudService } = await import('../services/cloudService');
+                        await cloudService.addWorkoutToPartner(state.perfil.partnerId, realizado);
+                    } catch (e) {
+                        console.error("Failed to sync to partner", e);
+                    }
+                }
+
+                set((state) => ({
                     perfil: {
                         ...state.perfil,
                         historial: [realizado, ...state.perfil.historial]
                     },
                     activeSession: null
-                };
-            }),
+                }));
+            },
 
             cancelSession: () => set({ activeSession: null }),
 
@@ -368,7 +391,10 @@ export const useUserStore = create<UserStore>()(
         }),
         {
             name: 'gymbro-user-auth',
-            partialize: (state) => ({ userId: state.userId }), // Only persist the userId
+            partialize: (state) => ({
+                userId: state.userId,
+                perfil: state.perfil
+            }),
         }
     )
 );

@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, resetear, logout, isSyncing, lastSyncError } = useUserStore();
+    const { userId, perfil, resetear, logout, isSyncing, lastSyncError } = useUserStore();
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -78,6 +78,11 @@ export const ProfilePage: React.FC = () => {
                     )}
                 </div>
                 {lastSyncError && <p style={{ color: Colors.error, fontSize: '10px', marginTop: '4px' }}>{lastSyncError}</p>}
+
+                <div style={styles.aliasBadge}>
+                    <span style={styles.aliasLabel}>ALIAS</span>
+                    <span style={styles.aliasText}>{userId}</span>
+                </div>
             </div>
 
             {/* Stats */}
@@ -256,6 +261,37 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 800,
         color: Colors.text,
         margin: '0 0 4px 0',
+    },
+    userLevel: {
+        fontSize: '12px',
+        fontWeight: 600,
+        color: Colors.textSecondary,
+        margin: 0,
+        letterSpacing: '0.5px',
+    },
+    aliasBadge: {
+        marginTop: '16px',
+        background: `${Colors.primary}15`,
+        padding: '8px 16px',
+        borderRadius: '12px',
+        border: `1px solid ${Colors.primary}30`,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+    },
+    aliasLabel: {
+        fontSize: '10px',
+        fontWeight: 900,
+        color: Colors.primary,
+        letterSpacing: '1px',
+        marginBottom: '2px',
+    },
+    aliasText: {
+        fontSize: '28px',
+        fontWeight: 900,
+        color: Colors.text,
+        letterSpacing: '2px',
+        textTransform: 'uppercase',
     },
     userBio: {
         fontSize: '13px',
