@@ -1,31 +1,29 @@
 import React, { useEffect } from 'react';
 import { useUserStore } from '@/stores/userStore';
-import { cloudService } from '@/services/cloudService';
+
+import { authService } from '@/services/authService';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { userId, setDatosPersonales, setHorario, setRutina, setDatosPareja } = useUserStore();
+
+
+    const { userId, setUserId, setDatosPersonales, setHorario, setRutina, setDatosPareja } = useUserStore();
 
     useEffect(() => {
-        if (userId) {
-            // Sync data from cloud based on alias
-            const syncData = async () => {
-                try {
-                    const data = await cloudService.downloadData(userId);
-                    if (data) {
-                        // Merge or set data from cloud
-                        useUserStore.setState({ perfil: data });
-                    } else {
-                        // If no data in cloud, initialize name with alias
-                        setDatosPersonales({ nombre: userId });
-                    }
-                } catch (error) {
-                    console.error("Error syncing profile:", error);
-                }
-            };
+        // Firebase Auth Listener
+        const unsubscribe = authService.onAuthChange((user) => {
+            if (user) {
+                setUserId(user.uid);
+            } else {
+                setUserId(null);
+            }
+        });
 
-            syncData();
-        }
-    }, [userId, setDatosPersonales, setHorario, setRutina, setDatosPareja]);
+        return () => unsubscribe();
+    }, [setUserId]);
+
+    // Data syncing is now handled by CloudSyncManager
+    // leaving AuthProvider responsible only for Auth State
+
 
     return <>{children}</>;
 };

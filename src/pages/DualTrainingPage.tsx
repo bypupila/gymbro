@@ -26,8 +26,8 @@ export const DualTrainingPage: React.FC = () => {
 
         try {
             // Dynamic import to avoid cycles if any, though likely safe
-            const { cloudService } = await import('@/services/cloudService');
-            const user = await cloudService.findUserByAlias(aliasInput.trim());
+            const { firebaseService } = await import('@/services/firebaseService');
+            const user = await firebaseService.findUserByAlias(aliasInput.trim());
 
             if (user) {
                 setPartnerId(user.id);

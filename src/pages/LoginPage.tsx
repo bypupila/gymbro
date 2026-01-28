@@ -1,69 +1,146 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCircle2, ArrowRight, Loader2 } from 'lucide-react';
+import { UserCircle2, ArrowRight, Loader2, KeyRound } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
-import { cloudService } from '@/services/cloudService';
+import { authService } from '@/services/authService';
+import { firebaseService } from '@/services/firebaseService';
 import { Colors } from '@/styles/colors';
 
 export const LoginPage: React.FC = () => {
     const navigate = useNavigate();
-    const { setUserId, userId } = useUserStore();
+    const { setUserId } = useUserStore();
+    const [mode, setMode] = useState<'login' | 'register'>('login');
     const [alias, setAlias] = useState('');
+    const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [statusMsg, setStatusMsg] = useState<string | null>(null);
-    const [isCloudError, setIsCloudError] = useState(false);
-
-    React.useEffect(() => {
-        if (!cloudService.isConfigured()) {
-            setIsCloudError(true);
-        }
-    }, []);
+    const [registerHint, setRegisterHint] = useState<string | null>(null);
+    const [isResettingPassword, setIsResettingPassword] = useState(false);
+    const [resetValue, setResetValue] = useState('');
 
     const handleLogin = async () => {
-        if (!alias.trim()) return;
+        if (!alias.trim() || !password.trim()) return;
 
         const cleanAlias = alias.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanAlias.length < 3) return;
+        if (cleanAlias.length < 3) {
+            setStatusMsg('El alias debe tener al menos 3 caracteres.');
+            return;
+        }
 
         setIsLoading(true);
-        setStatusMsg('Buscando en la nube...');
+        setStatusMsg('Conectando...');
+
+        const email = `${cleanAlias}@gymbro.app`;
 
         try {
-            // Check if user has data in the cloud first
-            const cloudData = await cloudService.downloadData(cleanAlias);
-
-            if (cloudData) {
-                setStatusMsg('¡Datos encontrados! Sincronizando...');
-                // If they have data, put it in the store immediately
-                useUserStore.setState({ perfil: cloudData });
-
-                // Small delay to let user see the success message
-                setTimeout(() => {
-                    setUserId(cleanAlias);
-                    navigate('/', { replace: true });
-                }, 800);
-            } else {
-                if (isCloudError) {
-                    setStatusMsg('Modo Offline: Creando sesión local...');
+            // Intentar Login
+            const user = await authService.signIn(email, password);
+            if (user) {
+                setStatusMsg('¡Bienvenido de nuevo!');
+                setUserId(user.uid);
+                navigate('/', { replace: true });
+            }
+        } catch (error: any) {
+            console.error("Login Error:", error);
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+                if (error.code === 'auth/invalid-credential') {
+                    // UX pedido: abrir automáticamente "Registrarse" y mostrar aviso verde.
+                    // No mostramos el mensaje rojo si vamos a redirigir a registro.
+                    setStatusMsg(null);
+                    setMode('register');
+                    setIsResettingPassword(false);
+                    setRegisterHint('No encontramos un usuario, crea tu usuario aquí.');
                 } else {
-                    setStatusMsg('Usuario nuevo: Creando perfil...');
+                    // Igual que arriba: evitar mensaje rojo y guiar al usuario a registro.
+                    setStatusMsg(null);
+                    setMode('register');
+                    setIsResettingPassword(false);
+                    setRegisterHint('No encontramos un usuario, crea tu usuario aquí.');
                 }
+            } else {
+                setStatusMsg('Error de conexión: ' + error.message);
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-                setTimeout(() => {
-                    setUserId(cleanAlias);
-                    navigate('/', { replace: true });
-                }, 800);
+    const handleRegister = async () => {
+        if (!alias.trim() || !password.trim()) return;
+
+        const cleanAlias = alias.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        setIsLoading(true);
+        setStatusMsg('Creando perfil de guerrero...');
+
+        const email = `${cleanAlias}@gymbro.app`;
+
+        try {
+            // Verificar si el alias ya está en uso logicamente (aunque firebase lo haría por email)
+            const existingAlias = await firebaseService.findUserByAlias(cleanAlias);
+            if (existingAlias && existingAlias.id !== cleanAlias) { // Check real collision
+                // Si auth falló antes, es que el email no existe, pero tal vez el alias está tomado en userAliases?
+                // Si findUserByAlias retorna algo, es q ya existe record.
+                // Auth email check es definitivo.
             }
 
-        } catch (error) {
-            console.error("Login Error:", error);
-            setStatusMsg('Error de conexión. Entrando en modo local...');
-            setTimeout(() => {
-                setUserId(cleanAlias);
+            const user = await authService.signUp(email, password);
+            if (user) {
+                // Crear alias y perfil inicial
+                await firebaseService.createUserAlias(user.uid, cleanAlias);
+
+                // Crear perfil vacío en firebaseService.createUserAlias? No, solo crea indices.
+                // saveProfile inicial se maneja en CloudSyncManager o aqui?
+                // Mejor dejar que CloudSyncManager note que no hay datos y cree uno default, O crearlo aqui explícitamente.
+                // La app actual maneja "Initial Load" en AuthProvider/CloudSync.
+                // Si no hay perfil, creará uno default en userStore pero DEBE guardarlo.
+                // Vamos a dejar que el flujo normal ocurra, pero aseguramos el alias.
+
+                setStatusMsg('¡Cuenta creada!');
+                setUserId(user.uid);
                 navigate('/', { replace: true });
-            }, 1000);
+            }
+        } catch (error: any) {
+            console.error("Register Error:", error);
+            if (error.code === 'auth/email-already-in-use') {
+                setStatusMsg('Este alias ya está registrado. Intenta iniciar sesión.');
+                setMode('login');
+            } else {
+                setStatusMsg('Error al registrar: ' + error.message);
+            }
         } finally {
-            // setIsLoading(false); // Let it stay loading until redirect
+            setIsLoading(false);
+        }
+    };
+
+    const handlePasswordReset = async () => {
+        if (isLoading) return;
+
+        const raw = resetValue.trim().toLowerCase();
+        if (!raw) {
+            setStatusMsg('Ingresa tu email o alias para recuperar la contraseña.');
+            return;
+        }
+
+        // Acepta email directo o alias (lo convertimos a alias@gymbro.app)
+        const email =
+            raw.includes('@')
+                ? raw
+                : `${raw.replace(/[^a-z0-9]/g, '')}@gymbro.app`;
+
+        setIsLoading(true);
+        setStatusMsg('Enviando email de recuperación...');
+
+        try {
+            await authService.sendPasswordReset(email);
+            setStatusMsg('Listo. Revisa tu correo para restablecer la contraseña.');
+            setIsResettingPassword(false);
+            setResetValue('');
+        } catch (error: any) {
+            // No damos pistas de si existe o no la cuenta (mejor práctica)
+            console.warn('Password reset error:', error);
+            setStatusMsg('Si existe una cuenta asociada, recibirás un email de recuperación.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -73,22 +150,60 @@ export const LoginPage: React.FC = () => {
                 <div style={styles.header}>
                     <h1 style={styles.title}>GymBro</h1>
                     <p style={styles.subtitle}>Ingreso Directo</p>
-                    {isCloudError && (
-                        <div style={{
-                            marginTop: '12px',
-                            background: `${Colors.warning}20`,
-                            color: Colors.warning,
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                        }}>
-                            ⚠️ Sin conexión a Nube en este entorno
-                        </div>
-                    )}
                 </div>
+
+                <div style={styles.modeToggle}>
+                    <div
+                        style={{
+                            ...styles.modeToggleIndicator,
+                            transform: mode === 'login' ? 'translateX(0%)' : 'translateX(100%)',
+                        }}
+                    />
+                    <button
+                        type="button"
+                        style={{
+                            ...styles.modeToggleButton,
+                            color: mode === 'login' ? Colors.text : Colors.textSecondary,
+                        }}
+                        onClick={() => {
+                            setMode('login');
+                            setIsResettingPassword(false);
+                            setStatusMsg(null);
+                            setRegisterHint(null);
+                        }}
+                        disabled={isLoading}
+                    >
+                        Login
+                    </button>
+                    <button
+                        type="button"
+                        style={{
+                            ...styles.modeToggleButton,
+                            color: mode === 'register' ? Colors.text : Colors.textSecondary,
+                        }}
+                        onClick={() => {
+                            setMode('register');
+                            setIsResettingPassword(false);
+                            setStatusMsg(null);
+                            setRegisterHint(null);
+                        }}
+                        disabled={isLoading}
+                    >
+                        Registrarse
+                    </button>
+                </div>
+
+                {registerHint && (
+                    <p style={{
+                        color: Colors.primary,
+                        fontSize: '14px',
+                        textAlign: 'center',
+                        marginBottom: '16px',
+                        fontWeight: 800
+                    }}>
+                        {registerHint}
+                    </p>
+                )}
 
                 <div style={styles.inputWrapper}>
                     <label style={styles.label}>Tu Alias de Guerrero</label>
@@ -101,16 +216,36 @@ export const LoginPage: React.FC = () => {
                             onChange={(e) => {
                                 setAlias(e.target.value);
                                 setStatusMsg(null);
+                                setRegisterHint(null);
+                                // Mantener el modo seleccionado; el usuario decide login/registro arriba.
                             }}
-                            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                             autoFocus
+                        />
+                    </div>
+                </div>
+
+                <div style={styles.inputWrapper}>
+                    <label style={styles.label}>Contraseña</label>
+                    <div style={styles.inputContainer}>
+                        <KeyRound size={24} color={Colors.textSecondary} style={styles.icon} />
+                        <input
+                            style={styles.input}
+                            placeholder="******"
+                            type="password"
+                            value={password}
+                            onChange={(e) => {
+                                setPassword(e.target.value);
+                                setStatusMsg(null);
+                                setRegisterHint(null);
+                            }}
+                            onKeyDown={(e) => e.key === 'Enter' && (mode === 'register' ? handleRegister() : handleLogin())}
                         />
                     </div>
                 </div>
 
                 {statusMsg && (
                     <p style={{
-                        color: statusMsg.includes('Error') || statusMsg.includes('Offline') ? Colors.warning : Colors.primary,
+                        color: statusMsg.includes('Error') || statusMsg.includes('incorrecta') ? Colors.error : Colors.primary,
                         fontSize: '14px',
                         textAlign: 'center',
                         marginBottom: '16px',
@@ -120,30 +255,104 @@ export const LoginPage: React.FC = () => {
                     </p>
                 )}
 
-                <button
-                    style={{
-                        ...styles.button,
-                        opacity: !alias.trim() || isLoading ? 0.7 : 1,
-                        cursor: !alias.trim() || isLoading ? 'not-allowed' : 'pointer'
-                    }}
-                    onClick={handleLogin}
-                    disabled={!alias.trim() || isLoading}
-                >
-                    {isLoading ? (
-                        <>
-                            <Loader2 size={20} className="animate-spin" />
-                            {statusMsg || 'Verificando...'}
-                        </>
-                    ) : (
-                        <>
-                            Entrar
-                            <ArrowRight size={20} />
-                        </>
-                    )}
-                </button>
+                {mode === 'login' ? (
+                    <button
+                        style={{
+                            ...styles.button,
+                            opacity: !alias.trim() || !password.trim() || isLoading ? 0.7 : 1,
+                            cursor: !alias.trim() || !password.trim() || isLoading ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={handleLogin}
+                        disabled={!alias.trim() || !password.trim() || isLoading}
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 size={20} className="animate-spin" />
+                                {statusMsg && !statusMsg.includes('Error') ? statusMsg : 'Entrando...'}
+                            </>
+                        ) : (
+                            <>
+                                Entrar
+                                <ArrowRight size={20} />
+                            </>
+                        )}
+                    </button>
+                ) : (
+                    <button
+                        style={{
+                            ...styles.button,
+                            background: Colors.accent, // Diferente color para registro
+                            opacity: !alias.trim() || !password.trim() || isLoading ? 0.7 : 1,
+                            cursor: !alias.trim() || !password.trim() || isLoading ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={handleRegister}
+                        disabled={!alias.trim() || !password.trim() || isLoading}
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 size={20} className="animate-spin" />
+                                Creando...
+                            </>
+                        ) : (
+                            <>
+                                Crear Cuenta
+                                <ArrowRight size={20} />
+                            </>
+                        )}
+                    </button>
+                )}
+
+                {mode === 'login' && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsResettingPassword((v) => !v);
+                                setStatusMsg(null);
+                                setResetValue(alias.trim());
+                            }}
+                            style={styles.linkButton}
+                            disabled={isLoading}
+                        >
+                            ¿Olvidaste tu contraseña?
+                        </button>
+
+                        {isResettingPassword && (
+                            <div style={styles.resetBox}>
+                                <label style={styles.label}>Email o alias</label>
+                                <input
+                                    style={styles.resetInput}
+                                    placeholder="tu@email.com o tu-alias"
+                                    value={resetValue}
+                                    onChange={(e) => setResetValue(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handlePasswordReset()}
+                                />
+                                <button
+                                    type="button"
+                                    style={{
+                                        ...styles.button,
+                                        background: Colors.surface,
+                                        border: `2px solid ${Colors.border}`,
+                                        color: Colors.text,
+                                        marginTop: '10px',
+                                        opacity: !resetValue.trim() || isLoading ? 0.7 : 1,
+                                        cursor: !resetValue.trim() || isLoading ? 'not-allowed' : 'pointer',
+                                    }}
+                                    onClick={handlePasswordReset}
+                                    disabled={!resetValue.trim() || isLoading}
+                                >
+                                    Enviar enlace
+                                </button>
+                                <p style={styles.resetHint}>
+                                    Si usas alias, el sistema enviará a <span style={{ fontWeight: 700 }}>{'{alias}@gymbro.app'}</span>.
+                                </p>
+                            </div>
+                        )}
+                    </>
+                )}
 
                 <p style={styles.note}>
-                    * Tu progreso se guardará automáticamente bajo este nombre.
+                    * Tu progreso se guardará en la nube de forma segura.
                 </p>
             </div>
         </div>
@@ -160,11 +369,81 @@ const styles: Record<string, React.CSSProperties> = {
     header: { textAlign: 'center', marginBottom: '32px' },
     title: { fontSize: '32px', fontWeight: 900, color: Colors.primary, marginBottom: '8px', letterSpacing: '-1px' },
     subtitle: { fontSize: '16px', color: Colors.textSecondary, opacity: 0.8 },
+    modeToggle: {
+        position: 'relative',
+        width: '100%',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '0px',
+        padding: '4px',
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.background,
+        marginBottom: '22px',
+        overflow: 'hidden',
+    },
+    modeToggleIndicator: {
+        position: 'absolute',
+        top: '4px',
+        left: '4px',
+        width: 'calc(50% - 4px)',
+        height: 'calc(100% - 8px)',
+        borderRadius: '12px',
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        transition: 'transform 180ms ease',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+        zIndex: 0,
+    },
+    modeToggleButton: {
+        position: 'relative',
+        zIndex: 1,
+        padding: '10px 12px',
+        border: 'none',
+        background: 'transparent',
+        fontSize: '14px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        borderRadius: '12px',
+    },
     inputWrapper: { width: '100%', marginBottom: '20px' },
     label: { fontSize: '14px', color: Colors.textSecondary, marginBottom: '8px', display: 'block', marginLeft: '4px' },
     inputContainer: { position: 'relative', width: '100%' },
     icon: { position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' },
     input: { width: '100%', padding: '16px 16px 16px 50px', fontSize: '18px', background: Colors.background, border: `2px solid ${Colors.border}`, borderRadius: '16px', color: Colors.text, outline: 'none' },
     button: { width: '100%', padding: '16px', background: Colors.primary, border: 'none', borderRadius: '16px', color: '#000', fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' },
+    linkButton: {
+        marginTop: '12px',
+        background: 'transparent',
+        border: 'none',
+        color: Colors.textSecondary,
+        cursor: 'pointer',
+        fontSize: '13px',
+        textDecoration: 'underline',
+    },
+    resetBox: {
+        width: '100%',
+        marginTop: '14px',
+        padding: '14px',
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.background,
+    },
+    resetInput: {
+        width: '100%',
+        padding: '12px 14px',
+        fontSize: '16px',
+        background: Colors.surface,
+        border: `2px solid ${Colors.border}`,
+        borderRadius: '14px',
+        color: Colors.text,
+        outline: 'none',
+    },
+    resetHint: {
+        marginTop: '10px',
+        fontSize: '12px',
+        color: Colors.textTertiary,
+        textAlign: 'center',
+    },
     note: { marginTop: '24px', fontSize: '12px', color: Colors.textTertiary, textAlign: 'center' }
 };

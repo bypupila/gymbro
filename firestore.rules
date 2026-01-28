@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Usuarios solo pueden leer/escribir su perfil
+    match /users/{userId}/profile/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Historial de entrenamientos
+    match /users/{userId}/workoutHistory/{workoutId} {
+      allow read, write: if isOwner(userId);
+      // Permitir a la pareja agregar workouts
+      allow create: if isAuthenticated() &&
+                       get(/databases/$(database)/documents/users/$(userId)/profile/main).data.partnerId == request.auth.uid;
+    }
+
+    // Historial de rutinas
+    match /users/{userId}/routineHistory/{routineId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Alias lookup: Todos pueden leer, nadie escribe directamente
+    match /userAliases/{alias} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // Metadata de usuario
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+  }
+}

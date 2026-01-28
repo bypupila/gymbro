@@ -2,8 +2,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { EjercicioRutina, AnalysisResult, DatosPersonales, Clarification } from "../stores/userStore";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-console.log("Debug: API Key detectada, longitud:", API_KEY.length);
-if (API_KEY.length < 10) console.warn("¡ATENCIÓN! La API Key parece estar vacía o es muy corta.");
+const IS_DEV = import.meta.env.DEV;
+// Evitar exponer detalles sensibles en consola (especialmente en producción).
+if (IS_DEV) {
+    console.debug("Gemini: API key cargada:", API_KEY.length >= 10 ? "sí" : "no");
+    if (API_KEY.length < 10) console.warn("Gemini: falta `VITE_GEMINI_API_KEY` o es inválida.");
+}
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 const model = genAI.getGenerativeModel({
@@ -105,8 +109,8 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
         const result = await model.generateContent([prompt, ...imageParts]);
         const response = await result.response;
         const text = response.text();
-
-        console.log("Gemini Raw Response:", text);
+        // Evitar volcar la respuesta completa en consola (puede contener datos del usuario).
+        if (IS_DEV) console.debug("Gemini: respuesta recibida.");
 
         try {
             const parsed = JSON.parse(text);

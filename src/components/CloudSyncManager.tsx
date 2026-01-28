@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { useUserStore } from '../stores/userStore';
-import { cloudService } from '../services/cloudService';
+import { firebaseService } from '../services/firebaseService';
 
 export const CloudSyncManager: React.FC = () => {
     const { userId, perfil, setIsSyncing, setLastSyncError } = useUserStore();
@@ -18,7 +18,7 @@ export const CloudSyncManager: React.FC = () => {
 
             try {
                 setIsSyncing(true);
-                const cloudData = await cloudService.downloadData(userId);
+                const cloudData = await firebaseService.getProfile(userId);
                 if (cloudData) {
                     // Update store with cloud data
                     useUserStore.setState({ perfil: cloudData });
@@ -46,6 +46,22 @@ export const CloudSyncManager: React.FC = () => {
         loadInitialData();
     }, [userId]);
 
+    // Real-time Cloud Listener
+    useEffect(() => {
+        if (!userId) return;
+
+        const unsubscribe = firebaseService.onProfileChange(userId, (cloudProfile) => {
+            if (cloudProfile) {
+                // Update local store and ref to prevent echo
+                useUserStore.setState({ perfil: cloudProfile });
+                lastSavedData.current = JSON.stringify(cloudProfile);
+                setLastSyncError(null);
+            }
+        });
+
+        return () => unsubscribe();
+    }, [userId, setLastSyncError]);
+
     // Auto-Save Effect
     useEffect(() => {
         if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
@@ -61,7 +77,7 @@ export const CloudSyncManager: React.FC = () => {
         syncTimeout.current = setTimeout(async () => {
             try {
                 setIsSyncing(true);
-                await cloudService.saveData(perfil, userId);
+                await firebaseService.saveProfile(userId, perfil);
                 lastSavedData.current = currentDataStr;
                 setLastSyncError(null);
             } catch (err: any) {

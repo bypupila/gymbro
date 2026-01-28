@@ -33,7 +33,7 @@ import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RoutineUpload } from '@/components/RoutineUpload';
 import { reorganizeRoutine } from '@/services/geminiService';
-import { cloudService } from '@/services/cloudService';
+import { firebaseService } from '@/services/firebaseService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 
@@ -1285,7 +1285,7 @@ export const RoutineDetailPage: React.FC = () => {
     const handleShareRoutine = async () => {
         if (!shareAlias.trim() || !rutina) return;
         setIsSharing(true);
-        const result = await cloudService.shareRoutine(shareAlias.trim(), rutina);
+        const result = await firebaseService.shareRoutine(shareAlias.trim(), rutina);
         setIsSharing(false);
         alert(result.message);
         if (result.success) {

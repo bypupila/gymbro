@@ -155,7 +155,7 @@ interface UserStore {
     isSyncing: boolean;
     lastSyncError: string | null;
 
-    setUserId: (id: string) => void;
+    setUserId: (id: string | null) => void;
     setIsSyncing: (status: boolean) => void;
     setLastSyncError: (error: string | null) => void;
     setDatosPersonales: (datos: Partial<DatosPersonales>) => void;
@@ -341,15 +341,10 @@ export const useUserStore = create<UserStore>()(
                 // Sync with Partner if exists
                 if (state.perfil.partnerId) {
                     console.log("Syncing workout to partner:", state.perfil.partnerId);
-                    // Import dynamically or use the one we have if possible, but cloudService is defined outside.
-                    // We need to avoid circular dependency if possible, but cloudService imports Types from userStore, userStore imports nothing.
-                    // Ideally we inject service or just assume global availability or simple import.
-                    // Let's use dynamic import or just standard import since Store is already defined.
-                    // Actually, let's just use the global cloudService instance we can import at top of file?
-                    // But I need to add the import first.
+                    // Import dynamically to avoid circular dependencies
                     try {
-                        const { cloudService } = await import('../services/cloudService');
-                        await cloudService.addWorkoutToPartner(state.perfil.partnerId, realizado);
+                        const { firebaseService } = await import('../services/firebaseService');
+                        await firebaseService.addWorkoutToPartner(state.perfil.partnerId, realizado);
                     } catch (e) {
                         console.error("Failed to sync to partner", e);
                     }
