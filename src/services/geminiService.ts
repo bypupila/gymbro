@@ -6,20 +6,21 @@ console.log("Debug: API Key detectada, longitud:", API_KEY.length);
 if (API_KEY.length < 10) console.warn("¡ATENCIÓN! La API Key parece estar vacía o es muy corta.");
 const genAI = new GoogleGenerativeAI(API_KEY);
 
+const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    generationConfig: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+    }
+});
+
+
 export const analyzeRoutineImages = async (
     image1Base64: string,
     image2Base64?: string,
     userDescription?: string
 ): Promise<AnalysisResult> => {
     try {
-        const model = genAI.getGenerativeModel({
-            model: "gemini-flash-latest",
-            generationConfig: {
-                temperature: 0.1,
-                responseMimeType: "application/json",
-            }
-        });
-
         const prompt = `Actúa como un experto en digitalización de datos y entrenador personal.
 
 Tu tarea es extraer EXCLUSIVAMENTE la rutina de ejercicios asignada al usuario a partir de la imagen proporcionada.
@@ -179,13 +180,6 @@ export const generateRoutineFromProfile = async (
     horario: any = null
 ): Promise<AnalysisResult> => {
     try {
-        const model = genAI.getGenerativeModel({
-            model: "gemini-flash-latest",
-            generationConfig: {
-                temperature: 0.1,
-                responseMimeType: "application/json",
-            }
-        });
         const isCouple = !!member2;
 
         const prompt = `
@@ -285,14 +279,6 @@ export const reorganizeRoutine = async (
     userDescription?: string
 ): Promise<AnalysisResult> => {
     try {
-        const model = genAI.getGenerativeModel({
-            model: "gemini-flash-latest",
-            generationConfig: {
-                temperature: 0.1,
-                responseMimeType: "application/json",
-            }
-        });
-
         const prompt = `Actúa como un experto entrenador personal.
         
         Tu tarea es REORGANIZAR la siguiente lista de ejercicios en una rutina semanal lógica.
@@ -356,5 +342,40 @@ export const reorganizeRoutine = async (
     } catch (error) {
         console.error("Error reorganizando:", error);
         throw error;
+    }
+};
+
+export const coachChat = async (
+    message: string,
+    history: { role: 'user' | 'model', parts: { text: string }[] }[],
+    userProfile: DatosPersonales
+): Promise<string> => {
+    try {
+        // Ensure history structure matches Gemini requirements
+        const validHistory = history.map(h => ({
+            role: h.role,
+            parts: h.parts.map(p => ({ text: p.text }))
+        }));
+
+        const chat = model.startChat({
+            history: [
+                {
+                    role: "user",
+                    parts: [{ text: `Eres el Coach de Gymbro. Perfil del usuario: ${userProfile.nombre}, ${userProfile.nivel}, objetivo: ${userProfile.objetivo}, peso: ${userProfile.peso}kg. Responde de forma motivadora y técnica.` }],
+                },
+                {
+                    role: "model",
+                    parts: [{ text: `¡Entendido! Soy el Coach de ${userProfile.nombre}. Estoy listo para ayudarle a alcanzar su objetivo de ${userProfile.objetivo} con consejos técnicos y motivación. ¿En qué puedo ayudarte hoy?` }],
+                },
+                ...validHistory
+            ],
+        });
+
+        const result = await chat.sendMessage(message);
+        const response = await result.response;
+        return response.text();
+    } catch (error) {
+        console.error("Gemini Chat Error:", error);
+        return "Lo siento, tuve un problema al procesar tu consulta. Inténtalo de nuevo.";
     }
 };

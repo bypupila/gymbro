@@ -5,19 +5,17 @@
 import Colors from '@/styles/colors';
 import {
     Dumbbell, Home, Info, MessageCircle, Share2, TrendingUp, User,
-    FileText, ChevronRight, ChevronLeft, Layout, Zap, Activity, Users, Scan
+    FileText, ChevronRight, ChevronLeft, Layout, Zap, Activity, Users, Library
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 const navItems = [
-    { path: '/', icon: Home, label: 'Readiness Check' },
-    { path: '/coach', icon: MessageCircle, label: 'AI Coach' },
-    { path: '/body-status', icon: Activity, label: 'Body Status' },
+    { path: '/', icon: Home, label: 'Home' },
     { path: '/train', icon: Zap, label: 'Live Session' },
     { path: '/dual-training', icon: Users, label: 'Dual Training' },
-    { path: '/migrator', icon: Scan, label: 'AI Migrator' },
+    { path: '/catalog', icon: Library, label: 'Catálogo' },
     { path: '/routine', icon: FileText, label: 'Mi Rutina' },
     { path: '/progress', icon: TrendingUp, label: 'Mi Progreso' },
     { path: '/profile', icon: User, label: 'Perfil' },

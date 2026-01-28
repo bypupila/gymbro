@@ -37,3 +37,10 @@ save-*.js
 error_output.txt
 models_list.json
 .vercel
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

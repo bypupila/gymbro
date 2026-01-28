@@ -9,7 +9,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 const tabs = [
     { path: '/', icon: Home, label: 'Hoy' },
-    { path: '/coach', icon: MessageCircle, label: 'Coach' },
+    { path: '/routine', icon: Dumbbell, label: 'Rutina' },
     { path: '/train', icon: Zap, label: 'Entrenar', isMain: true },
     { path: '/progress', icon: TrendingUp, label: 'Progreso' },
     { path: '/profile', icon: User, label: 'Perfil' },

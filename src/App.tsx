@@ -23,6 +23,7 @@ import { ProgressPage } from './pages/ProgressPage';
 import { RoutineDetailPage } from './pages/RoutineDetailPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { TrainPage } from './pages/TrainPage';
+import { CatalogPage } from './pages/CatalogPage';
 import { useUserStore } from './stores/userStore';
 
 // Protected Route wrapper
@@ -85,6 +86,7 @@ function App() {
                     <Route path="profile" element={<ProfilePage />} />
                     <Route path="profile/schedule" element={<SchedulePage />} />
                     <Route path="routine" element={<RoutineDetailPage />} />
+                    <Route path="catalog" element={<CatalogPage />} />
 
                     {/* New "Pencil" Windows */}
                     <Route path="coach" element={<CoachPage />} />

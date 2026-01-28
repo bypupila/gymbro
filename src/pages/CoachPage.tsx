@@ -44,16 +44,35 @@ export const CoachPage: React.FC = () => {
         setInput('');
         setIsTyping(true);
 
-        // Simulate AI response (replace with real Gemini call later)
-        setTimeout(() => {
-            const aiResponse: Message = {
+        try {
+            const { coachChat } = await import('@/services/geminiService');
+
+            // Format history for Gemini
+            const aiHistory = messages.map(msg => ({
+                role: msg.role === 'user' ? 'user' as const : 'model' as const,
+                parts: [{ text: msg.content }]
+            }));
+
+            const response = await coachChat(text, aiHistory, perfil.usuario);
+
+            const aiMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: getSimulatedResponse(text, perfil.usuario.objetivo),
+                content: response,
             };
-            setMessages((prev) => [...prev, aiResponse]);
+
+            setMessages((prev) => [...prev, aiMessage]);
+        } catch (error) {
+            console.error("Coach AI Error:", error);
+            const errorMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: "Hubo un error al contactar con mi cerebro digital. ¿Podrías intentar de nuevo?",
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+        } finally {
             setIsTyping(false);
-        }, 1500);
+        }
     };
 
     return (

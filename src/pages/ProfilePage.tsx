@@ -7,19 +7,53 @@ import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
     Bell, Calendar, Heart, RefreshCw, Settings, Shield, Users,
-    Cloud, Download, Upload, CheckCircle, AlertCircle, Loader2, LogOut, Camera
+    Cloud, Download, Upload, CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, Image as ImageIcon, UserCircle
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
-    const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales } = useUserStore();
+    const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales, deleteRoutineFromHistory } = useUserStore();
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(userInfo);
+
+    // Modal States
+    const [showPartnerModal, setShowPartnerModal] = useState(false);
+    const [showAvatarModal, setShowAvatarModal] = useState(false);
+    const [partnerIdInput, setPartnerIdInput] = useState('');
+    const [avatarSeed, setAvatarSeed] = useState(userInfo.avatar || userInfo.nombre || 'GymBro');
+    const [tempAvatar, setTempAvatar] = useState(userInfo.avatar || '');
+
+    const handleSavePartner = () => {
+        if (partnerIdInput.trim()) {
+            useUserStore.getState().setPartnerId(partnerIdInput.trim());
+            setShowPartnerModal(false);
+        }
+    };
+
+    const handleAvatarSelect = (seed: string) => {
+        setTempAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4`);
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setTempAvatar(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const saveAvatar = () => {
+        setDatosPersonales({ avatar: tempAvatar });
+        setShowAvatarModal(false);
+    };
 
     // Sync editData with store when it updates elsewhere
     React.useEffect(() => {
@@ -57,6 +91,7 @@ export const ProfilePage: React.FC = () => {
     const menuItems = [
         { icon: Heart, label: 'Mis Rutinas Activas', color: '#3B82F6', action: () => navigate('/routine') },
         { icon: Calendar, label: 'Configurar Horario', color: '#8B5CF6', action: () => navigate('/profile/schedule') },
+
         { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => alert('Próximamente') },
         { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => alert('Próximamente') },
     ];
@@ -66,16 +101,16 @@ export const ProfilePage: React.FC = () => {
             {/* Header */}
             <div style={styles.headerBar}>
                 <h1 style={styles.headerTitle}>MI PERFIL</h1>
-                <button style={styles.settingsBtn}>
-                    <Settings size={24} color="#FFF" />
-                </button>
             </div>
 
             {/* Profile Header */}
             <div style={styles.profileHeader}>
-                <div style={styles.avatarContainer}>
+                <div
+                    style={{ ...styles.avatarContainer, cursor: 'pointer' }}
+                    onClick={() => setShowAvatarModal(true)}
+                >
                     <img
-                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo.nombre}&backgroundColor=b6e3f4`}
+                        src={userInfo.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo.nombre}&backgroundColor=b6e3f4`}
                         alt="Avatar"
                         style={styles.avatar}
                     />
@@ -260,34 +295,46 @@ export const ProfilePage: React.FC = () => {
                     </div>
                 </Card>
             ) : (
-                <button style={styles.addPartnerBtn} onClick={() => alert('Próximamente')}>
+                <button style={styles.addPartnerBtn} onClick={() => setShowPartnerModal(true)}>
                     <Users size={32} color={Colors.primary} />
                     <span style={styles.addPartnerText}>Vincular Pareja</span>
                 </button>
-            )}
+            )
+            }
 
             {/* Routine History */}
-            {perfil.historialRutinas && perfil.historialRutinas.length > 0 && (
-                <>
-                    <h3 style={styles.sectionTitle}>Historial de Rutinas</h3>
-                    <div style={styles.historyContainer}>
-                        {perfil.historialRutinas.map((r, i) => (
-                            <div key={i} style={styles.historyCard}>
-                                <div style={styles.historyInfo}>
-                                    <span style={styles.historyVersion}>{r.nombre.split(' - ')[0]}</span>
-                                    <div style={{ flex: 1 }}>
-                                        <p style={styles.historyName}>{r.nombre.split(' - ')[1] || r.nombre}</p>
-                                        <p style={styles.historyDate}>
-                                            {new Date(r.fechaInicio).toLocaleDateString('es-ES', { month: 'short', year: 'numeric' })} • {r.ejercicios.length} ejercicios
-                                        </p>
+            {
+                perfil.historialRutinas && perfil.historialRutinas.length > 0 && (
+                    <>
+                        <h3 style={styles.sectionTitle}>Historial de Rutinas</h3>
+                        <div style={styles.historyContainer}>
+                            {perfil.historialRutinas.map((r, i) => (
+                                <div key={i} style={styles.historyCard}>
+                                    <div style={styles.historyInfo}>
+                                        <span style={styles.historyVersion}>{r.nombre.split(' - ')[0]}</span>
+                                        <div style={{ flex: 1 }}>
+                                            <p style={styles.historyName}>{r.nombre.split(' - ')[1] || r.nombre}</p>
+                                            <p style={styles.historyDate}>
+                                                {new Date(r.fechaInicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} • {r.ejercicios.length} ejercicios
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (confirm('¿Eliminar esta rutina del historial?')) {
+                                                    deleteRoutineFromHistory(i);
+                                                }
+                                            }}
+                                            style={styles.deleteHistoryBtn}
+                                        >
+                                            <Trash2 size={16} color={Colors.textTertiary} />
+                                        </button>
                                     </div>
-                                    <Shield size={16} color={Colors.textTertiary} />
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                </>
-            )}
+                            ))}
+                        </div>
+                    </>
+                )
+            }
 
 
             {/* Menu */}
@@ -319,27 +366,112 @@ export const ProfilePage: React.FC = () => {
             <p style={styles.version}>GymBro PWA v1.0.0</p>
 
             {/* Reset Confirmation Modal */}
-            {showResetConfirm && (
-                <div style={styles.modalOverlay}>
-                    <div style={styles.modal}>
-                        <div style={styles.modalIcon}>⚠️</div>
-                        <h3 style={styles.modalTitle}>¿Reiniciar App?</h3>
-                        <p style={styles.modalText}>
-                            Esto borrará todos tus datos: perfil, rutinas e historial. Esta acción no se puede deshacer.
-                        </p>
-                        <div style={styles.modalActions}>
-                            <button style={styles.modalCancelBtn} onClick={() => setShowResetConfirm(false)}>
-                                Cancelar
-                            </button>
-                            <button style={styles.modalDeleteBtn} onClick={confirmReset}>
-                                <RefreshCw size={18} />
-                                Reiniciar
+            {
+                showResetConfirm && (
+                    <div style={styles.modalOverlay}>
+                        <div style={styles.modal}>
+                            <div style={styles.modalIcon}>⚠️</div>
+                            <h3 style={styles.modalTitle}>¿Reiniciar App?</h3>
+                            <p style={styles.modalText}>
+                                Esto borrará todos tus datos: perfil, rutinas e historial. Esta acción no se puede deshacer.
+                            </p>
+                            <div style={styles.modalActions}>
+                                <button style={styles.modalCancelBtn} onClick={() => setShowResetConfirm(false)}>
+                                    Cancelar
+                                </button>
+                                <button style={styles.modalDeleteBtn} onClick={confirmReset}>
+                                    <RefreshCw size={18} />
+                                    Reiniciar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Partner Modal */}
+            {
+                showPartnerModal && (
+                    <div style={styles.modalOverlay}>
+                        <div style={styles.modal}>
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.modalTitle}>Vincular Pareja</h3>
+                                <button onClick={() => setShowPartnerModal(false)} style={styles.closeBtn}>
+                                    <X size={20} color={Colors.text} />
+                                </button>
+                            </div>
+                            <p style={styles.modalText}>
+                                Introduce el ID de tu pareja para sincronizar rutinas y progreso.
+                            </p>
+                            <input
+                                style={styles.modalInput}
+                                placeholder="Ej: user-1234..."
+                                value={partnerIdInput}
+                                onChange={(e) => setPartnerIdInput(e.target.value)}
+                            />
+                            <button style={styles.saveBtn} onClick={handleSavePartner}>
+                                Vincular
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+
+            {/* Avatar Modal */}
+            {
+                showAvatarModal && (
+                    <div style={styles.modalOverlay}>
+                        <div style={styles.modal}>
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.modalTitle}>Cambiar Avatar</h3>
+                                <button onClick={() => setShowAvatarModal(false)} style={styles.closeBtn}>
+                                    <X size={20} color={Colors.text} />
+                                </button>
+                            </div>
+
+                            <div style={styles.avatarPreviewSection}>
+                                <img
+                                    src={tempAvatar || userInfo.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo.nombre}`}
+                                    alt="Preview"
+                                    style={styles.avatarLarge}
+                                />
+                            </div>
+
+                            <div style={styles.avatarOptions}>
+                                <p style={styles.optionLabel}>Subir Foto</p>
+                                <label style={styles.uploadBtn}>
+                                    <ImageIcon size={20} />
+                                    <span>Seleccionar Imagen</span>
+                                    <input type="file" accept="image/*" hidden onChange={handleFileUpload} />
+                                </label>
+
+                                <p style={styles.optionLabel}>O Elegir Avatar</p>
+                                <div style={styles.avatarGrid}>
+                                    {['Felix', 'Aneka', 'Zoe', 'Marc', 'Leo', 'Sky', 'River', 'Ash'].map(seed => (
+                                        <div
+                                            key={seed}
+                                            style={styles.avatarOption}
+                                            onClick={() => handleAvatarSelect(seed)}
+                                        >
+                                            <img
+                                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4`}
+                                                alt={seed}
+                                                style={{ width: '100%', height: '100%' }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <button style={styles.saveBtn} onClick={saveAvatar}>
+                                Guardar Avatar
+                            </button>
+                        </div>
+                    </div>
+                )
+            }
+
+        </div >
     );
 };
 
@@ -667,6 +799,31 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '12px',
         marginTop: '12px'
     },
+    aiOptionGrid: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        marginTop: '20px',
+    },
+    aiOptionBtn: {
+        padding: '16px',
+        borderRadius: '16px',
+        textAlign: 'left',
+        cursor: 'pointer',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        transition: 'all 0.2s ease',
+    },
+    aiOptionName: {
+        fontSize: '15px',
+        fontWeight: 700,
+        color: Colors.text,
+    },
+    aiOptionDesc: {
+        fontSize: '12px',
+        color: Colors.textTertiary,
+    },
     syncBtn: {
         padding: '14px',
         background: Colors.primary,
@@ -792,6 +949,88 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 800,
         cursor: 'pointer',
         marginTop: '8px',
+    },
+    deleteHistoryBtn: {
+        background: 'none',
+        border: 'none',
+        padding: '8px',
+        cursor: 'pointer',
+        opacity: 0.7,
+        transition: 'opacity 0.2s',
+    },
+    modalHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+        width: '100%',
+    },
+    closeBtn: {
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+    },
+    modalInput: {
+        width: '100%',
+        padding: '12px',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '12px',
+        color: Colors.text,
+        fontSize: '15px',
+        outline: 'none',
+        marginBottom: '16px',
+    },
+    avatarPreviewSection: {
+        display: 'flex',
+        justifyContent: 'center',
+        marginBottom: '24px',
+    },
+    avatarLarge: {
+        width: '120px',
+        height: '120px',
+        borderRadius: '60px',
+        border: `4px solid ${Colors.primary}`,
+        objectFit: 'cover',
+    },
+    avatarOptions: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+        width: '100%',
+        marginBottom: '24px',
+    },
+    optionLabel: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        margin: 0,
+    },
+    uploadBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        padding: '16px',
+        background: Colors.surface,
+        border: `1px dashed ${Colors.primary}`,
+        borderRadius: '16px',
+        cursor: 'pointer',
+        color: Colors.primary,
+        fontWeight: 600,
+        fontSize: '14px',
+    },
+    avatarGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: '12px',
+    },
+    avatarOption: {
+        aspectRatio: '1',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        border: `1px solid ${Colors.border}`,
     }
 };
 

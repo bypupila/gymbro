@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUserStore, SetTracking } from '../stores/userStore';
+import { getExerciseImage, getExerciseVideo } from '../data/exerciseMedia';
 import Colors from '../styles/colors';
 import {
     Check,
@@ -78,10 +80,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const progress = (completedSets / totalSets) * 100;
 
     if (viewMode === 'preview') {
+        const navigate = useNavigate();
         return (
             <div style={styles.fullOverlay}>
                 <div style={styles.header}>
-                    <button onClick={onCancel} style={styles.iconBtn}>
+                    <button onClick={() => {
+                        cancelSession();
+                        onCancel();
+                        navigate('/');
+                    }} style={styles.iconBtn}>
                         <ChevronLeft size={24} color={Colors.text} />
                     </button>
                     <h2 style={styles.headerTitle}>Resumen de Hoy</h2>
@@ -194,6 +201,27 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     style={{ overflow: 'hidden' }}
                                 >
                                     <div style={styles.setsContainer}>
+                                        {(() => {
+                                            const videoUrl = getExerciseVideo(ex.nombre);
+                                            const imageSrc = getExerciseImage(ex.nombre);
+                                            return (
+                                                <div style={styles.previewContainer}>
+                                                    <img
+                                                        src={imageSrc}
+                                                        style={styles.previewImage}
+                                                        alt={ex.nombre}
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
+                                                        }}
+                                                    />
+                                                    {videoUrl && (
+                                                        <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={styles.playOverlay}>
+                                                            ▶
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                         <div style={styles.setsHeader}>
                                             <span style={styles.setHeaderCell}>SERIE</span>
                                             <span style={styles.setHeaderCell}>PESO (KG)</span>
@@ -521,5 +549,37 @@ const styles: Record<string, React.CSSProperties> = {
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-    }
+    },
+    previewContainer: {
+        position: 'relative',
+        width: '100%',
+        height: '140px',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        marginBottom: '16px',
+        background: Colors.surface,
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        opacity: 0.8,
+    },
+    playOverlay: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '44px',
+        height: '44px',
+        background: 'rgba(255, 0, 0, 0.9)',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        fontSize: '18px',
+        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+        textDecoration: 'none',
+    },
 };

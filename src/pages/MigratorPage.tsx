@@ -12,14 +12,51 @@ export const MigratorPage: React.FC = () => {
     const navigate = useNavigate();
     const [isScanning, setIsScanning] = useState(false);
 
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
     const handleScan = () => {
+        fileInputRef.current?.click();
+    };
+
+    const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
         setIsScanning(true);
-        // Simulate scanning process
-        setTimeout(() => {
+        try {
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64 = (reader.result as string).split(',')[1];
+                const { analyzeRoutineImages } = await import('@/services/geminiService');
+
+                const result = await analyzeRoutineImages(base64);
+
+                if (result.exercises && result.exercises.length > 0) {
+                    const { useUserStore } = await import('@/stores/userStore');
+                    const { setRutina, perfil } = useUserStore.getState();
+
+                    setRutina({
+                        ...perfil.rutina,
+                        nombre: result.routineName || 'Rutina Escaneada',
+                        duracionSemanas: 4,
+                        ejercicios: result.exercises,
+                        fechaInicio: new Date().toISOString(),
+                        analizadaPorIA: true
+                    });
+
+                    alert(`¡Rutina digitalizada con éxito! ${result.exercises.length} ejercicios detectados.`);
+                    navigate('/routine');
+                } else {
+                    alert('No pude detectar ejercicios en la imagen. Intenta con una más clara.');
+                }
+            };
+            reader.readAsDataURL(file);
+        } catch (error) {
+            console.error("Scanning error:", error);
+            alert("Error al procesar la imagen.");
+        } finally {
             setIsScanning(false);
-            alert('¡Rutina digitalizada con éxito! Gemini ha extraído 6 ejercicios.');
-            navigate('/routine');
-        }, 3000);
+        }
     };
 
     return (
@@ -101,6 +138,13 @@ export const MigratorPage: React.FC = () => {
                 >
                     {isScanning ? 'ANALIZANDO CON IA...' : 'TOMAR FOTO O SUBIR'}
                 </button>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={onFileChange}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                />
             </Card>
 
             <div style={styles.footer}>

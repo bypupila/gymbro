@@ -213,17 +213,33 @@ const ejerciciosGluteos: EjercicioBase[] = [
 // =====================================================
 
 export const EJERCICIOS_DATABASE: EjercicioBase[] = [
+    // Calentamiento (New)
+    { id: 'cal-001', nombre: 'Calentamiento General', grupoMuscular: 'calentamiento', equipamiento: 'Sin equipo', esCompuesto: true },
+    { id: 'cal-002', nombre: 'Movilidad Articular', grupoMuscular: 'calentamiento', equipamiento: 'Sin equipo', esCompuesto: false },
+    { id: 'cal-003', nombre: 'Jumping Jacks', grupoMuscular: 'calentamiento', equipamiento: 'Sin equipo', esCompuesto: true },
+    { id: 'cal-004', nombre: 'Burpees', grupoMuscular: 'cardio', equipamiento: 'Sin equipo', esCompuesto: true },
+    { id: 'cal-005', nombre: 'Mountain Climbers', grupoMuscular: 'cardio', equipamiento: 'Sin equipo', esCompuesto: true },
+
     ...ejerciciosCardio,
     ...ejerciciosEspinales,
     ...ejerciciosAbdominales,
     ...ejerciciosOblicuos,
     ...ejerciciosPectoral,
     ...ejerciciosEspalda,
+    // Add Face Pull to Espalda/Hombros
+    { id: 'esp-201', nombre: 'Face Pull', grupoMuscular: 'espalda', equipamiento: 'Polea/Soga', esCompuesto: false },
+
     ...ejerciciosTrapecio,
     ...ejerciciosHombros,
     ...ejerciciosBiceps,
     ...ejerciciosTriceps,
     ...ejerciciosPiernas,
+    // Add Leg Exercises
+    { id: 'pier-201', nombre: 'Estocadas con Mancuernas', grupoMuscular: 'piernas', equipamiento: 'Mancuernas', esCompuesto: true },
+    { id: 'pier-202', nombre: 'Estocadas Caminando', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Sin equipo', esCompuesto: true },
+    { id: 'pier-203', nombre: 'Sentadilla Búlgara', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Banco', esCompuesto: true },
+    { id: 'pier-204', nombre: 'Subida al Cajón (Step Up)', grupoMuscular: 'piernas', equipamiento: 'Cajón/Mancuernas', esCompuesto: true },
+
     ...ejerciciosGluteos,
 ];
 

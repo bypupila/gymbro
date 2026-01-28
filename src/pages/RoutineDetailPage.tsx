@@ -6,6 +6,7 @@
 import { Card } from '@/components/Card';
 import { ExerciseSelector } from '@/components/ExerciseSelector';
 import { EjercicioBase, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
+import { EXERCISE_MEDIA, getYouTubeThumbnail, getYouTubeUrl, findExerciseMedia, getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
 import { useUserStore, EjercicioRutina } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
@@ -83,6 +84,23 @@ const styles: Record<string, React.CSSProperties> = {
         height: '100%',
         objectFit: 'cover',
         opacity: 0.8,
+    },
+    playOverlay: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '50px',
+        height: '50px',
+        background: 'rgba(255, 0, 0, 0.9)',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        fontSize: '22px',
+        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+        transition: 'transform 0.2s ease',
     },
     calentamientoBadge: {
         position: 'absolute',
@@ -1090,19 +1108,42 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                 </div>
             ) : (
                 <div style={styles.exerciseContentWrapper}>
-                    <div style={styles.exerciseImageWrapper}>
-                        <img
-                            src={getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
-                            alt={ejercicio.nombre}
-                            style={styles.exerciseImage}
-                            onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
-                            }}
-                        />
-                        {ejercicio.categoria === 'calentamiento' && (
-                            <div style={styles.calentamientoBadge}>🔥</div>
-                        )}
-                    </div>
+                    {(() => {
+                        const videoUrl = getExerciseVideo(ejercicio.nombre);
+                        const imageContent = (
+                            <>
+                                <img
+                                    src={getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
+                                    alt={ejercicio.nombre}
+                                    style={styles.exerciseImage}
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
+                                    }}
+                                />
+                                {videoUrl && (
+                                    <div style={styles.playOverlay}>▶</div>
+                                )}
+                                {ejercicio.categoria === 'calentamiento' && (
+                                    <div style={styles.calentamientoBadge}>🔥</div>
+                                )}
+                            </>
+                        );
+
+                        return videoUrl ? (
+                            <a
+                                href={videoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ ...styles.exerciseImageWrapper, textDecoration: 'none', cursor: 'pointer', display: 'block' }}
+                            >
+                                {imageContent}
+                            </a>
+                        ) : (
+                            <div style={styles.exerciseImageWrapper}>
+                                {imageContent}
+                            </div>
+                        );
+                    })()}
 
                     <div style={styles.exerciseHeader}>
                         <div
@@ -1182,62 +1223,9 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
     );
 };
 
-const getExerciseImage = (name: string, group?: string) => {
-    const n = name.toLowerCase();
-    const g = group?.toLowerCase() || '';
 
-    // -- KEYWORD SPECIFIC (High Priority) --
 
-    // Pectoral / Chest
-    if (n.includes('press') && (n.includes('banca') || n.includes('plano') || n.includes('chest')))
-        return 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500&auto=format&fit=crop';
-    if (n.includes('peck deck') || n.includes('pec fly') || (n.includes('apertura') && g === 'pectoral'))
-        return 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
 
-    // Legs / Glutes
-    if (n.includes('sentadilla') || n.includes('squat'))
-        return 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=500&auto=format&fit=crop';
-    if (n.includes('prensa') || n.includes('leg press'))
-        return 'https://images.unsplash.com/photo-1541534741688-6078c64b5913?w=500&auto=format&fit=crop';
-    if (n.includes('extensión') && (n.includes('pierna') || n.includes('leg')))
-        return 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?w=500&auto=format&fit=crop';
-    if (n.includes('peso muerto') || n.includes('deadlift'))
-        return 'https://images.unsplash.com/photo-1532384748853-8f54a8f476e2?w=500&auto=format&fit=crop';
-    if (n.includes('hip thrust') || g === 'gluteos')
-        return 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?w=500&auto=format&fit=crop';
-
-    // Back
-    if (n.includes('pull down') || n.includes('lat') || n.includes('tracción'))
-        return 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=500&auto=format&fit=crop';
-    if (n.includes('remo') || n.includes('row'))
-        return 'https://images.unsplash.com/photo-1616724855591-301c663abc82?w=500&auto=format&fit=crop';
-
-    // Shoulders
-    if (n.includes('militar') || (n.includes('press') && (n.includes('hombro') || n.includes('shoulder'))))
-        return 'https://images.unsplash.com/photo-1532029837206-abbe2b7620e3?w=500&auto=format&fit=crop';
-    if (n.includes('vuelo') || n.includes('lateral'))
-        return 'https://images.unsplash.com/photo-1541534741688-6078c64b5913?w=500&auto=format&fit=crop';
-
-    // Arms
-    if (n.includes('curl') || n.includes('bicep'))
-        return 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=500&auto=format&fit=crop';
-    if (n.includes('tricep') || n.includes('extensión') && g === 'triceps')
-        return 'https://images.unsplash.com/photo-1530822847156-5df684ec5ee1?w=500&auto=format&fit=crop';
-
-    // Core
-    if (n.includes('abdomen') || n.includes('crunch') || n.includes('plancha') || g === 'abdominales')
-        return 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=500&auto=format&fit=crop';
-
-    // -- GROUP FALLBACKS (Secondary) --
-    if (g === 'pectoral') return 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500&auto=format&fit=crop';
-    if (g === 'piernas' || g === 'gluteos') return 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=500&auto=format&fit=crop';
-    if (g === 'espalda') return 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=500&auto=format&fit=crop';
-    if (g === 'hombros') return 'https://images.unsplash.com/photo-1532029837206-abbe2b7620e3?w=500&auto=format&fit=crop';
-    if (g === 'cardio') return 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?w=500&auto=format&fit=crop';
-
-    // Final Fallback
-    return 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
-};
 
 const generateSafeId = () => {
     try {
@@ -1277,6 +1265,7 @@ export const RoutineDetailPage: React.FC = () => {
 
     const [isReorganizing, setIsReorganizing] = useState(false);
     const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+    const [showWarning, setShowWarning] = useState(true);
 
     const toggleDayCollapse = (day: string) => {
         const newCollapsed = new Set(collapsedDays);
@@ -1609,12 +1598,29 @@ export const RoutineDetailPage: React.FC = () => {
                 ))}
             </div>
 
-            <Card style={styles.warningBox}>
-                <AlertTriangle size={20} color={Colors.warning} />
-                <span style={styles.warningText}>
-                    Verifica todos los ejercicios porque pueden existir errores o diferencias.
-                </span>
-            </Card>
+            {showWarning && (
+                <Card style={styles.warningBox}>
+                    <AlertTriangle size={20} color={Colors.warning} />
+                    <span style={styles.warningText}>
+                        Verifica todos los ejercicios porque pueden existir errores o diferencias.
+                    </span>
+                    <button
+                        onClick={() => setShowWarning(false)}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            marginLeft: 'auto',
+                            cursor: 'pointer',
+                            padding: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                    >
+                        <X size={18} color={Colors.textSecondary} />
+                    </button>
+                </Card>
+            )}
 
             <div style={styles.exercisesHeader}>
                 <h3 style={styles.sectionTitle}>Ejercicios ({rutina.ejercicios.length})</h3>

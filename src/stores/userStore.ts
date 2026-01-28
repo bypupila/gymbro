@@ -18,6 +18,7 @@ export interface DatosPersonales {
     nivel: NivelExperiencia;
     objetivo: ObjetivoFitness;
     lesiones: string;
+    avatar?: string;
 }
 
 export interface DiaEntrenamiento {
@@ -172,6 +173,7 @@ interface UserStore {
     resetear: () => void;
     logout: () => void;
     setPartnerId: (id: string | undefined) => void;
+    deleteRoutineFromHistory: (index: number) => void;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -186,6 +188,7 @@ export const useUserStore = create<UserStore>()(
                 historial: [],
                 historialRutinas: [],
                 onboardingCompletado: false,
+                preferredModel: 'gemini-flash-latest',
             },
             activeSession: null,
             isSyncing: false,
@@ -385,8 +388,20 @@ export const useUserStore = create<UserStore>()(
                     historial: [],
                     historialRutinas: [],
                     onboardingCompletado: false,
+
                 },
                 activeSession: null
+            }),
+
+            deleteRoutineFromHistory: (index) => set((state) => {
+                const newHistory = [...state.perfil.historialRutinas];
+                newHistory.splice(index, 1);
+                return {
+                    perfil: {
+                        ...state.perfil,
+                        historialRutinas: newHistory
+                    }
+                };
             }),
         }),
         {
