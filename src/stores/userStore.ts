@@ -93,6 +93,21 @@ export interface AnalysisResult {
     isAI?: boolean;
 }
 
+export interface ExtraActivity {
+    id: string;
+    fecha: string;
+    descripcion: string;
+    videoUrl?: string;
+    analisisIA?: {
+        tipoDeporte?: string;
+        intensidad?: 'baja' | 'media' | 'alta';
+        distanciaKm?: number;
+        duracionMinutos?: number;
+        calorias?: number;
+        notas?: string;
+    };
+}
+
 export interface PerfilCompleto {
     usuario: DatosPersonales;
     pareja: DatosPersonales | null;
@@ -105,6 +120,8 @@ export interface PerfilCompleto {
     alias?: string; // Add this
     role?: 'admin' | 'user'; // Rol del usuario
     weeklyTracking?: Record<string, boolean>; // Tracking de días entrenados { '2026-01-29': true }
+    actividadesExtras: ExtraActivity[]; // Extra activities logged
+    catalogoExtras: string[]; // Unique activity types discovered
 }
 
 const datosIniciales: DatosPersonales = {
@@ -181,7 +198,11 @@ interface UserStore {
     resetear: () => void;
     logout: () => void;
     setPartnerId: (id: string | undefined) => void;
+    setAlias: (alias: string) => void;
+    setRole: (role: 'admin' | 'user') => void;
     deleteRoutineFromHistory: (index: number) => void;
+    addExtraActivity: (activity: ExtraActivity) => Promise<void>;
+    getExtraActivitiesCatalog: () => string[];
 }
 
 export const useUserStore = create<UserStore>()(
@@ -196,7 +217,8 @@ export const useUserStore = create<UserStore>()(
                 historial: [],
                 historialRutinas: [],
                 onboardingCompletado: false,
-                preferredModel: 'gemini-flash-latest',
+                actividadesExtras: [],
+                catalogoExtras: [],
             },
             activeSession: null,
             isSyncing: false,
@@ -440,6 +462,8 @@ export const useUserStore = create<UserStore>()(
                     historial: [],
                     historialRutinas: [],
                     onboardingCompletado: false,
+                    actividadesExtras: [],
+                    catalogoExtras: [],
                 }
             }),
 
@@ -453,7 +477,8 @@ export const useUserStore = create<UserStore>()(
                     historial: [],
                     historialRutinas: [],
                     onboardingCompletado: false,
-
+                    actividadesExtras: [],
+                    catalogoExtras: [],
                 },
                 activeSession: null
             }),
@@ -468,6 +493,58 @@ export const useUserStore = create<UserStore>()(
                     }
                 };
             }),
+
+            setAlias: (alias) => set((state) => ({
+                perfil: { ...state.perfil, alias }
+            })),
+
+            setRole: (role) => set((state) => ({
+                perfil: { ...state.perfil, role }
+            })),
+
+            addExtraActivity: async (activity: ExtraActivity) => {
+                // 1. Optimistic update
+                set((state) => {
+                    const currentActivities = state.perfil.actividadesExtras || [];
+                    const currentCatalog = state.perfil.catalogoExtras || [];
+
+                    const newActivities = [...currentActivities, activity];
+                    const sportType = activity.analisisIA?.tipoDeporte;
+                    const updatedCatalog = sportType && !currentCatalog.includes(sportType)
+                        ? [...currentCatalog, sportType]
+                        : currentCatalog;
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            actividadesExtras: newActivities,
+                            catalogoExtras: updatedCatalog
+                        }
+                    };
+                });
+
+                // 2. Persist to Firebase
+                const { userId, perfil } = get();
+                if (userId) {
+                    try {
+                        const { firebaseService } = await import('../services/firebaseService');
+                        await firebaseService.saveExtraActivity(userId, activity);
+
+                        // If catalog changed, sync profile
+                        if (activity.analisisIA?.tipoDeporte && perfil.catalogoExtras.includes(activity.analisisIA.tipoDeporte)) {
+                            await firebaseService.saveProfile(userId, perfil);
+                        }
+                    } catch (error) {
+                        console.error('Error syncing extra activity:', error);
+                        // We could revert changes here if strict data consistency is required
+                    }
+                }
+            },
+
+            getExtraActivitiesCatalog: () => {
+                const state = get();
+                return state.perfil.catalogoExtras;
+            },
         }),
         {
             name: 'gymbro-user-auth',

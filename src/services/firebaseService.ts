@@ -3,7 +3,7 @@ import {
     orderBy, limit, getDocs, onSnapshot, writeBatch
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario } from '../stores/userStore';
+import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity } from '../stores/userStore';
 
 export const firebaseService = {
     // ========== PROFILE MANAGEMENT ==========
@@ -36,9 +36,11 @@ export const firebaseService = {
         const userData = userSnap.exists() ? userSnap.data() : {};
 
         // Cargar historial y rutinas en paralelo
-        const [historial, historialRutinas] = await Promise.all([
+        const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
             this.getWorkouts(userId),
-            this.getRoutineHistory(userId)
+            this.getRoutineHistory(userId),
+            this.getExtraActivities(userId),
+            this.getExtraActivitiesCatalog(userId)
         ]);
 
         return {
@@ -52,6 +54,8 @@ export const firebaseService = {
             partnerId: data.partnerId,
             alias: userData.displayName || '',
             role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
+            actividadesExtras: extraActivities,
+            catalogoExtras: catalogExtras,
         };
     },
 
@@ -69,10 +73,12 @@ export const firebaseService = {
             const userSnap = await getDoc(userRef);
             const userData = userSnap.exists() ? userSnap.data() : {};
 
-            // Cargar historial y rutinas en paralelo
-            const [historial, historialRutinas] = await Promise.all([
+            // Cargar historial, rutinas y actividades extras en paralelo
+            const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
                 this.getWorkouts(userId),
-                this.getRoutineHistory(userId)
+                this.getRoutineHistory(userId),
+                this.getExtraActivities(userId),
+                this.getExtraActivitiesCatalog(userId)
             ]);
 
             callback({
@@ -86,6 +92,8 @@ export const firebaseService = {
                 partnerId: data.partnerId,
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
+                actividadesExtras: extraActivities,
+                catalogoExtras: catalogExtras,
             });
         });
     },
@@ -207,6 +215,35 @@ export const firebaseService = {
         })) as RutinaUsuario[];
     },
 
+    // ========== EXTRA ACTIVITIES MANAGEMENT ==========
+
+    async saveExtraActivity(userId: string, activity: ExtraActivity): Promise<void> {
+        const activityRef = doc(db, 'users', userId, 'extraActivities', activity.id);
+        // Clean undefined values for Firestore
+        const cleaned = JSON.parse(JSON.stringify(activity));
+        await setDoc(activityRef, cleaned);
+    },
+
+    async getExtraActivities(userId: string): Promise<ExtraActivity[]> {
+        const activitiesRef = collection(db, 'users', userId, 'extraActivities');
+        const q = query(activitiesRef, orderBy('fecha', 'desc'));
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => doc.data() as ExtraActivity);
+    },
+
+    async getExtraActivitiesCatalog(userId: string): Promise<string[]> {
+        // The catalog of extra activities is stored within the user's profile 'main' document.
+        // This method fetches it directly from there.
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const profileSnap = await getDoc(profileRef);
+
+        if (profileSnap.exists()) {
+            const data = profileSnap.data();
+            return data.catalogoExtras || [];
+        }
+        return [];
+    },
+
     // ========== USER LOOKUP ==========
 
     async findUserByAlias(alias: string): Promise<{ id: string; name: string; alias: string } | null> {
@@ -265,6 +302,8 @@ export const firebaseService = {
                     historial: [],
                     historialRutinas: [],
                     onboardingCompletado: true,
+                    actividadesExtras: [],
+                    catalogoExtras: []
                 };
                 await this.saveProfile(targetId, newProfile);
             } else {

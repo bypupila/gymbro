@@ -1,14 +1,22 @@
 import React, { useState } from 'react';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Check, X, Calendar, Dumbbell } from 'lucide-react';
+import { Check, X, Calendar, Dumbbell, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { analyzeExtraActivity } from '@/services/geminiExtraActivityService';
 
 export const WeeklyProgressBar: React.FC = () => {
     const { perfil } = useUserStore();
     const weeklyTracking = perfil.weeklyTracking || {};
     const [showModal, setShowModal] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [showExtraActivityForm, setShowExtraActivityForm] = useState(false);
+    const [activityDescription, setActivityDescription] = useState('');
+    const [activityUrl, setActivityUrl] = useState('');
+    const [selectedActivityType, setSelectedActivityType] = useState<string>('');
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+    const { addExtraActivity } = useUserStore();
 
     // Get current week days (Monday as start)
     const getWeekDays = () => {
@@ -44,18 +52,72 @@ export const WeeklyProgressBar: React.FC = () => {
         }
     };
 
-    const handleRoutineSelection = (dayName: string) => {
+    const handleRoutineSelection = async (dayName: string) => {
         if (!selectedDate) return;
 
-        const newTracking = { ...weeklyTracking };
-        newTracking[selectedDate] = true; // Could store { completed: true, routine: dayName } if needed
+        if (dayName === 'Actividad Extra') {
+            // Show extra activity form instead of marking as complete
+            setShowModal(false);
+            setShowExtraActivityForm(true);
+        } else {
+            const newTracking = { ...weeklyTracking };
+            newTracking[selectedDate] = true;
 
-        useUserStore.setState((state) => ({
-            perfil: { ...state.perfil, weeklyTracking: newTracking }
-        }));
+            useUserStore.setState((state) => ({
+                perfil: { ...state.perfil, weeklyTracking: newTracking }
+            }));
 
-        setShowModal(false);
-        setSelectedDate(null);
+            setShowModal(false);
+            setSelectedDate(null);
+        }
+    };
+
+    const handleSaveExtraActivity = async () => {
+        if (!selectedDate || (!activityDescription.trim() && !selectedActivityType)) return;
+
+        setIsAnalyzing(true);
+        try {
+            // Use AI to analyze the description
+            const analisis = await analyzeExtraActivity(
+                activityDescription || selectedActivityType,
+                activityUrl || undefined
+            );
+
+            // Save the extra activity
+            const activityToSave: any = {
+                id: `extra_${Date.now()}`,
+                fecha: selectedDate,
+                descripcion: activityDescription || selectedActivityType,
+                analisisIA: analisis
+            };
+
+            // Only add videoUrl if it has a value
+            if (activityUrl && activityUrl.trim()) {
+                activityToSave.videoUrl = activityUrl;
+            }
+
+            await addExtraActivity(activityToSave);
+
+            // Mark the day as completed
+            const newTracking = { ...weeklyTracking };
+            newTracking[selectedDate] = true;
+
+            useUserStore.setState((state) => ({
+                perfil: { ...state.perfil, weeklyTracking: newTracking }
+            }));
+
+            // Reset form
+            setShowExtraActivityForm(false);
+            setActivityDescription('');
+            setActivityUrl('');
+            setSelectedActivityType('');
+            setSelectedDate(null);
+        } catch (error) {
+            console.error('Error saving extra activity:', error);
+            alert('Error al guardar la actividad. Intenta de nuevo.');
+        } finally {
+            setIsAnalyzing(false);
+        }
     };
 
     const formatDate = (date: Date) => {
@@ -68,6 +130,14 @@ export const WeeklyProgressBar: React.FC = () => {
     const isToday = (date: Date) => {
         const today = new Date();
         return date.toDateString() === today.toDateString();
+    };
+
+    const isPast = (date: Date) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const compareDate = new Date(date);
+        compareDate.setHours(0, 0, 0, 0);
+        return compareDate < today;
     };
 
     const getDaySchedule = (dayIndex: number) => {
@@ -104,6 +174,8 @@ export const WeeklyProgressBar: React.FC = () => {
                         const schedule = getDaySchedule((index + 1) % 7); // Adjust for Monday start
                         const isScheduled = schedule?.entrena;
                         const today = isToday(date);
+                        const past = isPast(date);
+                        const missedDay = past && isScheduled && !isCompleted;
 
                         return (
                             <button
@@ -119,12 +191,12 @@ export const WeeklyProgressBar: React.FC = () => {
                                                 ? Colors.surface
                                                 : 'transparent',
                                     border: `2px solid ${isCompleted
-                                            ? Colors.success
-                                            : today
-                                                ? Colors.primary
-                                                : isScheduled
-                                                    ? Colors.border
-                                                    : Colors.border
+                                        ? Colors.success
+                                        : today
+                                            ? Colors.primary
+                                            : isScheduled
+                                                ? Colors.border
+                                                : Colors.border
                                         }`,
                                     opacity: isScheduled || isCompleted ? 1 : 0.5,
                                 }}
@@ -136,7 +208,12 @@ export const WeeklyProgressBar: React.FC = () => {
                                         <Check size={12} color="#FFF" />
                                     </div>
                                 )}
-                                {!isScheduled && !isCompleted && (
+                                {missedDay && (
+                                    <div style={styles.missedIcon}>
+                                        <X size={14} color={Colors.error} />
+                                    </div>
+                                )}
+                                {!isScheduled && !isCompleted && !missedDay && (
                                     <div style={styles.skipIcon}>
                                         <X size={10} color={Colors.textTertiary} />
                                     </div>
@@ -184,6 +261,108 @@ export const WeeklyProgressBar: React.FC = () => {
                                         </div>
                                     </button>
                                 ))}
+                                <button
+                                    onClick={() => handleRoutineSelection('Actividad Extra')}
+                                    style={{
+                                        ...styles.routineOption,
+                                        borderColor: Colors.accent,
+                                        background: `${Colors.accent}15`
+                                    }}
+                                >
+                                    <Activity size={18} color={Colors.accent} />
+                                    <div style={styles.routineInfo}>
+                                        <span style={styles.routineDay}>Actividad Extra</span>
+                                        <span style={styles.routineMuscle}>Cardio, deporte, etc.</span>
+                                    </div>
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Extra Activity Form Modal */}
+            <AnimatePresence>
+                {showExtraActivityForm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={styles.modalOverlay}
+                        onClick={() => setShowExtraActivityForm(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            style={styles.modal}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.modalTitle}>Registrar Actividad Extra</h3>
+                                <button onClick={() => setShowExtraActivityForm(false)} style={styles.closeBtn}>
+                                    <X size={20} color={Colors.textSecondary} />
+                                </button>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                {/* Activity Type Selection */}
+                                <div>
+                                    <label style={styles.label}>Tipo de Actividad</label>
+                                    <div style={styles.activityTypeGrid}>
+                                        {(perfil.catalogoExtras || ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga']).map((type) => (
+                                            <button
+                                                key={type}
+                                                onClick={() => setSelectedActivityType(type)}
+                                                style={{
+                                                    ...styles.activityTypeBtn,
+                                                    background: selectedActivityType === type ? Colors.primary : Colors.surface,
+                                                    color: selectedActivityType === type ? '#000' : Colors.text,
+                                                    borderColor: selectedActivityType === type ? Colors.primary : Colors.border
+                                                }}
+                                            >
+                                                {type}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Description */}
+                                <div>
+                                    <label style={styles.label}>Descripción (opcional)</label>
+                                    <textarea
+                                        value={activityDescription}
+                                        onChange={(e) => setActivityDescription(e.target.value)}
+                                        placeholder="Ej: Corrí 5km en 25 minutos por el parque..."
+                                        style={styles.textarea}
+                                        rows={3}
+                                    />
+                                    <p style={styles.hint}>💡 La IA extraerá automáticamente duración, distancia y calorías</p>
+                                </div>
+
+                                {/* Video URL */}
+                                <div>
+                                    <label style={styles.label}>Video URL (opcional)</label>
+                                    <input
+                                        type="url"
+                                        value={activityUrl}
+                                        onChange={(e) => setActivityUrl(e.target.value)}
+                                        placeholder="https://youtube.com/..."
+                                        style={styles.input}
+                                    />
+                                </div>
+
+                                {/* Save Button */}
+                                <button
+                                    onClick={handleSaveExtraActivity}
+                                    disabled={isAnalyzing || (!activityDescription.trim() && !selectedActivityType)}
+                                    style={{
+                                        ...styles.saveBtn,
+                                        opacity: (isAnalyzing || (!activityDescription.trim() && !selectedActivityType)) ? 0.5 : 1
+                                    }}
+                                >
+                                    {isAnalyzing ? '⏳ Analizando...' : '💾 Guardar Actividad'}
+                                </button>
                             </div>
                         </motion.div>
                     </motion.div>
@@ -277,6 +456,18 @@ const styles: Record<string, React.CSSProperties> = {
         top: '4px',
         right: '4px',
     },
+    missedIcon: {
+        position: 'absolute',
+        top: '4px',
+        right: '4px',
+        background: `${Colors.error}20`,
+        borderRadius: '50%',
+        width: '20px',
+        height: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     modalOverlay: {
         position: 'fixed',
         top: 0,
@@ -347,5 +538,67 @@ const styles: Record<string, React.CSSProperties> = {
     routineMuscle: {
         fontSize: '13px',
         color: Colors.textSecondary,
+    },
+    label: {
+        fontSize: '13px',
+        fontWeight: 700,
+        color: Colors.text,
+        marginBottom: '8px',
+        display: 'block',
+    },
+    activityTypeGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: '8px',
+        marginTop: '8px',
+    },
+    activityTypeBtn: {
+        padding: '12px',
+        borderRadius: '12px',
+        border: '2px solid',
+        fontSize: '14px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+    },
+    textarea: {
+        width: '100%',
+        padding: '12px',
+        borderRadius: '12px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.background,
+        color: Colors.text,
+        fontSize: '14px',
+        fontFamily: 'inherit',
+        resize: 'vertical',
+        marginTop: '8px',
+    },
+    input: {
+        width: '100%',
+        padding: '12px',
+        borderRadius: '12px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.background,
+        color: Colors.text,
+        fontSize: '14px',
+        marginTop: '8px',
+    },
+    hint: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+        margin: '8px 0 0 0',
+        fontStyle: 'italic',
+    },
+    saveBtn: {
+        width: '100%',
+        padding: '16px',
+        borderRadius: '16px',
+        background: Colors.primary,
+        color: '#000',
+        border: 'none',
+        fontSize: '16px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        marginTop: '8px',
     },
 };

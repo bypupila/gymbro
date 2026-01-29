@@ -17,11 +17,15 @@ import {
     ChevronUp,
     SkipForward,
     Play,
-    Pause
+    Pause,
+    Activity,
+    ChevronRight,
+    Loader
 } from 'lucide-react';
 import { Card } from './Card';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '../data/exerciseDatabase';
+import { analyzeExtraActivity } from '../services/geminiExtraActivityService';
 
 interface ActiveWorkoutProps {
     onFinish: () => void;
@@ -37,7 +41,8 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         cancelSession,
         replaceExerciseInSession,
         addExerciseToSession,
-        markExerciseAsCompleted
+        markExerciseAsCompleted,
+        addExtraActivity
     } = useUserStore();
 
     const [duration, setDuration] = useState(0);
@@ -49,6 +54,14 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'preview' | 'active'>('preview');
     const [expandedExercises, setExpandedExercises] = useState<string[]>([]);
+
+    // Completion Modal State
+    const [showCompletionModal, setShowCompletionModal] = useState(false);
+    const [completionType, setCompletionType] = useState<'routine' | 'extra' | null>(null);
+    const [extraActivityDesc, setExtraActivityDesc] = useState('');
+    const [extraActivityUrl, setExtraActivityUrl] = useState('');
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -225,8 +238,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 </div>
                 <button
                     onClick={() => {
-                        finishSession(Math.floor(duration / 60));
-                        onFinish();
+                        setShowCompletionModal(true);
                     }}
                     style={{
                         ...styles.finishBtn,
@@ -351,6 +363,134 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Completion Modal */}
+            <AnimatePresence>
+                {showCompletionModal && (
+                    <div style={styles.modalOverlay}>
+                        <motion.div
+                            initial={{ opacity: 0, y: 100 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 100 }}
+                            style={styles.modalContent}
+                        >
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.modalTitle}>
+                                    {completionType === 'extra' ? 'Actividad Extra' : '¡Entrenamiento Terminado!'}
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowCompletionModal(false);
+                                        setCompletionType(null);
+                                    }}
+                                    style={styles.closeModalBtn}
+                                >
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            <div style={{ padding: '24px', flex: 1, overflowY: 'auto' }}>
+                                {!completionType ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <button
+                                            style={styles.optionBtn}
+                                            onClick={() => {
+                                                finishSession(Math.floor(duration / 60));
+                                                onFinish();
+                                            }}
+                                        >
+                                            <div style={styles.optionIcon}>📋</div>
+                                            <div style={styles.optionText}>
+                                                <h4>Rutina Completa</h4>
+                                                <p>Guardar progreso y finalizar</p>
+                                            </div>
+                                            <ChevronLeft size={20} style={{ transform: 'rotate(180deg)' }} />
+                                        </button>
+
+                                        <button
+                                            style={styles.optionBtn}
+                                            onClick={() => setCompletionType('extra')}
+                                        >
+                                            <div style={styles.optionIcon}>🏃‍♂️</div>
+                                            <div style={styles.optionText}>
+                                                <h4>Actividad Extra</h4>
+                                                <p>Agregar cardio, estiramiento, deporte...</p>
+                                            </div>
+                                            <ChevronLeft size={20} style={{ transform: 'rotate(180deg)' }} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                        <div>
+                                            <label style={styles.inputLabel}>Describe tu actividad</label>
+                                            <textarea
+                                                value={extraActivityDesc}
+                                                onChange={(e) => setExtraActivityDesc(e.target.value)}
+                                                placeholder="Ej: Corrí 5km en 25 minutos..."
+                                                style={styles.textArea}
+                                                rows={4}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label style={styles.inputLabel}>Video URL (Opcional)</label>
+                                            <input
+                                                type="url"
+                                                value={extraActivityUrl}
+                                                onChange={(e) => setExtraActivityUrl(e.target.value)}
+                                                placeholder="https://youtube.com/..."
+                                                style={styles.searchInput}
+                                            />
+                                        </div>
+
+                                        <button
+                                            style={{
+                                                ...styles.startExerciseBtn,
+                                                opacity: (isAnalyzing || !extraActivityDesc.trim()) ? 0.7 : 1,
+                                                width: '100%'
+                                            }}
+                                            disabled={isAnalyzing || !extraActivityDesc.trim()}
+                                            onClick={async () => {
+                                                setIsAnalyzing(true);
+                                                try {
+                                                    const analisis = await analyzeExtraActivity(extraActivityDesc, extraActivityUrl);
+
+                                                    await addExtraActivity({
+                                                        id: `extra_${Date.now()}`,
+                                                        fecha: new Date().toISOString(),
+                                                        descripcion: extraActivityDesc,
+                                                        videoUrl: extraActivityUrl || undefined,
+                                                        analisisIA: analisis
+                                                    });
+
+                                                    // Finish session after adding extra
+                                                    await finishSession(Math.floor(duration / 60));
+                                                    onFinish();
+                                                } catch (error) {
+                                                    console.error(error);
+                                                    alert('Error al analizar la actividad. Intenta de nuevo.');
+                                                } finally {
+                                                    setIsAnalyzing(false);
+                                                }
+                                            }}
+                                        >
+                                            {isAnalyzing ? (
+                                                <>
+                                                    <span className="spin">⏳</span> Analizando...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save size={20} /> Guardar y Finalizar
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 
@@ -1044,5 +1184,49 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 700,
         color: '#fff',
         boxShadow: `0 4px 12px ${Colors.success}40`,
+    },
+    optionBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        padding: '20px',
+        background: Colors.surfaceLight,
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+        width: '100%',
+        cursor: 'pointer',
+        textAlign: 'left' as const,
+        gap: '16px',
+    },
+    optionIcon: {
+        fontSize: '24px',
+        width: '48px',
+        height: '48px',
+        borderRadius: '12px',
+        background: Colors.surface,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    optionText: {
+        flex: 1,
+    },
+    inputLabel: {
+        display: 'block',
+        marginBottom: '8px',
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        fontWeight: 600,
+    },
+    textArea: {
+        width: '100%',
+        padding: '16px',
+        borderRadius: '16px',
+        background: Colors.surface,
+        border: `2px solid ${Colors.border}`,
+        color: Colors.text,
+        fontSize: '16px',
+        outline: 'none',
+        resize: 'none' as const,
+        fontFamily: 'inherit',
     },
 };

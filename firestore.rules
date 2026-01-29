@@ -28,6 +28,11 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    // Actividades extras
+    match /users/{userId}/extraActivities/{activityId} {
+      allow read, write: if isOwner(userId);
+    }
+
     // Alias lookup: Todos pueden leer, usuarios autenticados pueden crear su propio alias
     match /userAliases/{alias} {
       allow read: if isAuthenticated();

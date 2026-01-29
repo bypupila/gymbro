@@ -5,7 +5,7 @@
 import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy } from 'lucide-react';
+import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy, Activity } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 export const ProgressPage: React.FC = () => {
@@ -220,6 +220,62 @@ export const ProgressPage: React.FC = () => {
                     </Card>
                 ))}
             </div>
+
+            {/* Extra Activities Stats */}
+            {perfil.actividadesExtras && perfil.actividadesExtras.length > 0 && (
+                <>
+                    <h3 style={styles.sectionTitle}>🏃 Actividades Extras</h3>
+                    <div style={styles.detailedStatsGrid}>
+                        <Card style={styles.detailedStatCard}>
+                            <div style={styles.detailedStatIcon}>
+                                <Activity size={20} color={Colors.primary} />
+                            </div>
+                            <div style={styles.detailedStatInfo}>
+                                <span style={styles.detailedStatValue}>{perfil.actividadesExtras.length}</span>
+                                <span style={styles.detailedStatLabel}>Sesiones Extras</span>
+                            </div>
+                        </Card>
+                        <Card style={styles.detailedStatCard}>
+                            <div style={styles.detailedStatIcon}>
+                                <Flame size={20} color={Colors.warning} />
+                            </div>
+                            <div style={styles.detailedStatInfo}>
+                                <span style={styles.detailedStatValue}>
+                                    {perfil.actividadesExtras.reduce((acc, curr) => acc + (curr.analisisIA?.calorias || 0), 0)}
+                                    <small style={styles.detailedStatUnit}> kcal</small>
+                                </span>
+                                <span style={styles.detailedStatLabel}>Calorías Extras</span>
+                            </div>
+                        </Card>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '32px' }}>
+                        {perfil.actividadesExtras.slice(0, 3).map((extra) => (
+                            <Card key={extra.id} style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{
+                                    width: '40px', height: '40px', borderRadius: '12px',
+                                    background: `${Colors.primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <Activity size={20} color={Colors.primary} />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: '14px', fontWeight: 700, color: Colors.text }}>
+                                        {extra.analisisIA?.tipoDeporte || 'Actividad Varia'}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
+                                        {new Date(extra.fecha).toLocaleDateString()} • {extra.analisisIA?.duracionMinutos} min
+                                    </div>
+                                </div>
+                                {extra.analisisIA?.calorias && (
+                                    <div style={{ fontSize: '14px', fontWeight: 800, color: Colors.warning }}>
+                                        {extra.analisisIA.calorias} kcal
+                                    </div>
+                                )}
+                            </Card>
+                        ))}
+                    </div>
+                </>
+            )}
 
             {/* Summary Cards */}
             <div style={styles.summaryRow}>
