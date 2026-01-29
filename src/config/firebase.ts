@@ -15,6 +15,10 @@ const firebaseConfig = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+if (!firebaseConfig.apiKey) {
+    console.error('❌ FIREBASE ERROR: Falta VITE_FIREBASE_API_KEY. Asegúrate de configurar las variables de entorno en Vercel.');
+}
+
 export const firebaseApp = initializeApp(firebaseConfig);
 // Cache persistente (IndexedDB) + multi-tab, reemplaza `enableIndexedDbPersistence` (deprecado).
 export const db = initializeFirestore(firebaseApp, {
