@@ -17,6 +17,7 @@ export const firebaseService = {
             rutina: profile.rutina,
             onboardingCompletado: profile.onboardingCompletado,
             partnerId: profile.partnerId || null,
+            weeklyTracking: profile.weeklyTracking || {},
             updatedAt: new Date().toISOString(),
         });
     },
@@ -54,6 +55,7 @@ export const firebaseService = {
             partnerId: data.partnerId,
             alias: userData.displayName || '',
             role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
+            weeklyTracking: data.weeklyTracking || {},
             actividadesExtras: extraActivities,
             catalogoExtras: catalogExtras,
         };
@@ -92,6 +94,7 @@ export const firebaseService = {
                 partnerId: data.partnerId,
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
+                weeklyTracking: data.weeklyTracking || {},
                 actividadesExtras: extraActivities,
                 catalogoExtras: catalogExtras,
             });

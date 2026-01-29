@@ -11,6 +11,7 @@ export const WeeklyProgressBar: React.FC = () => {
     const [showModal, setShowModal] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showExtraActivityForm, setShowExtraActivityForm] = useState(false);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [activityDescription, setActivityDescription] = useState('');
     const [activityUrl, setActivityUrl] = useState('');
     const [selectedActivityType, setSelectedActivityType] = useState<string>('');
@@ -39,17 +40,32 @@ export const WeeklyProgressBar: React.FC = () => {
         const isCompleted = weeklyTracking[dateStr];
 
         if (isCompleted) {
-            // If already completed, unmark it
-            const newTracking = { ...weeklyTracking };
-            delete newTracking[dateStr];
-            useUserStore.setState((state) => ({
-                perfil: { ...state.perfil, weeklyTracking: newTracking }
-            }));
+            setSelectedDate(dateStr);
+            setShowDetailsModal(true);
         } else {
             // If not completed, show modal to select routine
             setSelectedDate(dateStr);
             setShowModal(true);
         }
+    };
+
+    const handleUnmarkDay = (dateStr: string) => {
+        const newTracking = { ...weeklyTracking };
+        delete newTracking[dateStr];
+
+        // Also remove from extra activities if it exists
+        const newExtraActivities = perfil.actividadesExtras.filter(a => a.fecha !== dateStr);
+
+        useUserStore.setState((state) => ({
+            perfil: {
+                ...state.perfil,
+                weeklyTracking: newTracking,
+                actividadesExtras: newExtraActivities
+            }
+        }));
+
+        setShowDetailsModal(false);
+        setSelectedDate(null);
     };
 
     const handleRoutineSelection = async (dayName: string) => {
@@ -97,14 +113,6 @@ export const WeeklyProgressBar: React.FC = () => {
             }
 
             await addExtraActivity(activityToSave);
-
-            // Mark the day as completed
-            const newTracking = { ...weeklyTracking };
-            newTracking[selectedDate] = true;
-
-            useUserStore.setState((state) => ({
-                perfil: { ...state.perfil, weeklyTracking: newTracking }
-            }));
 
             // Reset form
             setShowExtraActivityForm(false);
@@ -177,6 +185,9 @@ export const WeeklyProgressBar: React.FC = () => {
                         const past = isPast(date);
                         const missedDay = past && isScheduled && !isCompleted;
 
+                        // Check if it was an extra activity
+                        const extraActivity = perfil.actividadesExtras?.find(a => a.fecha === dateStr);
+
                         return (
                             <button
                                 key={dateStr}
@@ -205,7 +216,11 @@ export const WeeklyProgressBar: React.FC = () => {
                                 <div style={styles.dayDate}>{date.getDate()}</div>
                                 {isCompleted && (
                                     <div style={styles.checkIcon}>
-                                        <Check size={12} color="#FFF" />
+                                        {extraActivity ? (
+                                            <Activity size={12} color="#FFF" />
+                                        ) : (
+                                            <Check size={12} color="#FFF" />
+                                        )}
                                     </div>
                                 )}
                                 {missedDay && (
@@ -274,6 +289,116 @@ export const WeeklyProgressBar: React.FC = () => {
                                         <span style={styles.routineDay}>Actividad Extra</span>
                                         <span style={styles.routineMuscle}>Cardio, deporte, etc.</span>
                                     </div>
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Modal for Day Details */}
+            <AnimatePresence>
+                {showDetailsModal && selectedDate && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={styles.modalOverlay}
+                        onClick={() => setShowDetailsModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            style={styles.modal}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.modalTitle}>Resumen del día</h3>
+                                <button onClick={() => setShowDetailsModal(false)} style={styles.closeBtn}>
+                                    <X size={20} color={Colors.textSecondary} />
+                                </button>
+                            </div>
+
+                            <div style={styles.detailsContent}>
+                                {(() => {
+                                    const extraActivity = perfil.actividadesExtras?.find(a => a.fecha === selectedDate);
+                                    const workout = perfil.historial?.find(h => h.fecha.startsWith(selectedDate));
+
+                                    if (extraActivity) {
+                                        return (
+                                            <div style={styles.activityCard}>
+                                                <div style={styles.activityHeader}>
+                                                    <Activity size={24} color={Colors.primary} />
+                                                    <span style={styles.activityType}>
+                                                        {extraActivity.analisisIA?.tipoDeporte || extraActivity.descripcion}
+                                                    </span>
+                                                </div>
+
+                                                <div style={styles.statsGrid}>
+                                                    {extraActivity.analisisIA?.duracionMinutos && (
+                                                        <div style={styles.statBox}>
+                                                            <span style={styles.statValue}>
+                                                                {extraActivity.analisisIA.duracionMinutos >= 60
+                                                                    ? `${(extraActivity.analisisIA.duracionMinutos / 60).toFixed(1)}h`
+                                                                    : `${extraActivity.analisisIA.duracionMinutos}m`}
+                                                            </span>
+                                                            <span style={styles.statLabel}>Duración</span>
+                                                        </div>
+                                                    )}
+                                                    {extraActivity.analisisIA?.distanciaKm && (
+                                                        <div style={styles.statBox}>
+                                                            <span style={styles.statValue}>{extraActivity.analisisIA.distanciaKm}km</span>
+                                                            <span style={styles.statLabel}>Distancia</span>
+                                                        </div>
+                                                    )}
+                                                    {extraActivity.analisisIA?.calorias && (
+                                                        <div style={styles.statBox}>
+                                                            <span style={styles.statValue}>{extraActivity.analisisIA.calorias}</span>
+                                                            <span style={styles.statLabel}>Kcal</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {extraActivity.analisisIA?.notas && (
+                                                    <p style={styles.activityNotes}>
+                                                        "{extraActivity.analisisIA.notas}"
+                                                    </p>
+                                                )}
+
+                                                <p style={styles.originalDesc}>
+                                                    <strong>Original:</strong> {extraActivity.descripcion}
+                                                </p>
+                                            </div>
+                                        );
+                                    }
+
+                                    if (workout) {
+                                        return (
+                                            <div style={styles.routineSummary}>
+                                                <Dumbbell size={24} color={Colors.success} />
+                                                <div style={{ flex: 1 }}>
+                                                    <span style={styles.routineNameText}>{workout.nombre}</span>
+                                                    <p style={styles.routineStatsText}>
+                                                        {workout.ejercicios.length} ejercicios • {workout.duracionMinutos} min
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div style={styles.noData}>
+                                            No hay datos específicos registrados para este día.
+                                        </div>
+                                    );
+                                })()}
+
+                                <button
+                                    onClick={() => handleUnmarkDay(selectedDate)}
+                                    style={styles.unmarkBtn}
+                                >
+                                    <X size={16} /> Desmarcar día
                                 </button>
                             </div>
                         </motion.div>
@@ -600,5 +725,106 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 800,
         cursor: 'pointer',
         marginTop: '8px',
+    },
+    detailsContent: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px',
+        padding: '10px 0',
+    },
+    activityCard: {
+        background: `${Colors.primary}10`,
+        borderRadius: '20px',
+        padding: '20px',
+        border: `1px solid ${Colors.primary}30`,
+    },
+    activityHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '20px',
+    },
+    activityType: {
+        fontSize: '20px',
+        fontWeight: 800,
+        color: Colors.text,
+        textTransform: 'capitalize',
+    },
+    statsGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '12px',
+        marginBottom: '16px',
+    },
+    statBox: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        background: Colors.surface,
+        padding: '12px',
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+    },
+    statValue: {
+        fontSize: '16px',
+        fontWeight: 800,
+        color: Colors.primary,
+    },
+    statLabel: {
+        fontSize: '11px',
+        color: Colors.textSecondary,
+        marginTop: '2px',
+    },
+    activityNotes: {
+        fontSize: '14px',
+        color: Colors.text,
+        fontStyle: 'italic',
+        lineHeight: '1.4',
+        margin: '0 0 12px 0',
+    },
+    originalDesc: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+        margin: 0,
+    },
+    routineSummary: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        background: `${Colors.success}10`,
+        padding: '20px',
+        borderRadius: '20px',
+        border: `1px solid ${Colors.success}30`,
+    },
+    routineNameText: {
+        fontSize: '18px',
+        fontWeight: 800,
+        color: Colors.text,
+        display: 'block',
+    },
+    routineStatsText: {
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        margin: '4px 0 0 0',
+    },
+    noData: {
+        textAlign: 'center',
+        color: Colors.textSecondary,
+        padding: '20px',
+    },
+    unmarkBtn: {
+        width: '100%',
+        padding: '14px',
+        borderRadius: '12px',
+        background: 'transparent',
+        border: `1px solid ${Colors.border}`,
+        color: Colors.textSecondary,
+        fontSize: '14px',
+        fontWeight: 600,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        cursor: 'pointer',
     },
 };

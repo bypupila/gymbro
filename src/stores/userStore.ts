@@ -514,11 +514,18 @@ export const useUserStore = create<UserStore>()(
                         ? [...currentCatalog, sportType]
                         : currentCatalog;
 
+                    // Also mark the day as completed in tracking
+                    const newTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    if (activity.fecha) {
+                        newTracking[activity.fecha] = true;
+                    }
+
                     return {
                         perfil: {
                             ...state.perfil,
                             actividadesExtras: newActivities,
-                            catalogoExtras: updatedCatalog
+                            catalogoExtras: updatedCatalog,
+                            weeklyTracking: newTracking
                         }
                     };
                 });
@@ -529,14 +536,9 @@ export const useUserStore = create<UserStore>()(
                     try {
                         const { firebaseService } = await import('../services/firebaseService');
                         await firebaseService.saveExtraActivity(userId, activity);
-
-                        // If catalog changed, sync profile
-                        if (activity.analisisIA?.tipoDeporte && perfil.catalogoExtras.includes(activity.analisisIA.tipoDeporte)) {
-                            await firebaseService.saveProfile(userId, perfil);
-                        }
+                        await firebaseService.saveProfile(userId, perfil);
                     } catch (error) {
                         console.error('Error syncing extra activity:', error);
-                        // We could revert changes here if strict data consistency is required
                     }
                 }
             },
