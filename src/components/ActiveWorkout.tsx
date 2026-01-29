@@ -16,10 +16,12 @@ import {
     ChevronDown,
     ChevronUp,
     SkipForward,
-    Repeat
+    Play,
+    Pause
 } from 'lucide-react';
 import { Card } from './Card';
 import { motion, AnimatePresence } from 'framer-motion';
+import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '../data/exerciseDatabase';
 
 interface ActiveWorkoutProps {
     onFinish: () => void;
@@ -34,10 +36,17 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         finishSession,
         cancelSession,
         replaceExerciseInSession,
-        addExerciseToSession
+        addExerciseToSession,
+        markExerciseAsCompleted
     } = useUserStore();
 
     const [duration, setDuration] = useState(0);
+    const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
+    const [timerSeconds, setTimerSeconds] = useState<number>(0);
+    const [isTimerRunning, setIsTimerRunning] = useState(false);
+    const [currentSetIndex, setCurrentSetIndex] = useState<number>(0);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'preview' | 'active'>('preview');
     const [expandedExercises, setExpandedExercises] = useState<string[]>([]);
     const navigate = useNavigate();
@@ -60,6 +69,65 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             prev.includes(id) ? prev.filter(eid => eid !== id) : [...prev, id]
         );
     };
+
+    // Helper to check if exercise is time-based
+    const isTimeBased = (reps: string): boolean => {
+        return /\d+\s*(s|seg|segundos?)/i.test(reps);
+    };
+
+    // Parse time value from reps string (e.g., "30s" -> 30)
+    const parseTimeSeconds = (reps: string): number => {
+        const match = reps.match(/(\d+)\s*(s|seg|segundos?)/i);
+        return match ? parseInt(match[1]) : 0;
+    };
+
+    // Handle exercise authorization
+    const handleStartExercise = (exerciseId: string, reps: string) => {
+        if (!confirm(`¿Comenzar este ejercicio?`)) return;
+
+        setActiveExerciseId(exerciseId);
+        setCurrentSetIndex(0);
+
+        if (isTimeBased(reps)) {
+            const seconds = parseTimeSeconds(reps);
+            setTimerSeconds(seconds);
+        }
+
+        // Don't toggle expand - exercise is already expanded
+    };
+
+    // Handle set authorization (for time-based exercises)
+    const handleStartSet = (exerciseId: string, setIndex: number, reps: string) => {
+        if (!confirm(`¿Comenzar serie ${setIndex + 1}?`)) return;
+
+        setCurrentSetIndex(setIndex);
+
+        if (isTimeBased(reps)) {
+            const seconds = parseTimeSeconds(reps);
+            setTimerSeconds(seconds);
+            setIsTimerRunning(true);
+        }
+    };
+
+    // Timer countdown effect
+    useEffect(() => {
+        if (!isTimerRunning || timerSeconds <= 0) {
+            if (timerSeconds === 0 && isTimerRunning) {
+                setIsTimerRunning(false);
+                // Auto-mark set as complete when timer finishes
+                if (activeExerciseId) {
+                    updateSet(activeExerciseId, currentSetIndex, { completed: true });
+                }
+            }
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setTimerSeconds(prev => prev - 1);
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [isTimerRunning, timerSeconds, activeExerciseId, currentSetIndex]);
 
     const handleStart = () => {
         setViewMode('active');
@@ -187,7 +255,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             </div>
                         </div>
                         {activeSession.exercises
-                            .filter(ex => ex.categoria === 'calentamiento')
+                            .filter(ex => ex.categoria === 'calentamiento' && !ex.isCompleted)
                             .map((ex, exIdx) => renderExerciseCard(ex, exIdx, 'warmup'))}
                     </>
                 )}
@@ -197,21 +265,91 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     <span style={styles.sectionEmoji}>💪</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
-                        <p style={styles.sectionSubtitle}>Toca el icono 🔄 para cambiar ejercicio si está ocupado</p>
+                        <p style={styles.sectionSubtitle}>Dale al botón Play para comenzar cada ejercicio</p>
                     </div>
                 </div>
                 {activeSession.exercises
-                    .filter(ex => ex.categoria !== 'calentamiento')
+                    .filter(ex => ex.categoria !== 'calentamiento' && !ex.isCompleted)
                     .map((ex, exIdx) => renderExerciseCard(ex, exIdx, 'main'))}
 
                 {/* Add Exercise Button */}
                 <button
                     style={styles.addExerciseBtn}
-                    onClick={() => alert('Próximamente: Agregar ejercicio adicional')}
+                    onClick={() => setShowAddModal(true)}
                 >
                     <Plus size={20} color={Colors.primary} />
                     <span>Agregar Ejercicio Extra</span>
                 </button>
+
+                {/* Exercise Selection Modal */}
+                <AnimatePresence>
+                    {showAddModal && (
+                        <div style={styles.modalOverlay}>
+                            <motion.div
+                                initial={{ opacity: 0, y: 100 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 100 }}
+                                style={styles.modalContent}
+                            >
+                                <div style={styles.modalHeader}>
+                                    <h3 style={styles.modalTitle}>Agregar Ejercicio</h3>
+                                    <button onClick={() => setShowAddModal(false)} style={styles.closeModalBtn}>
+                                        <X size={24} />
+                                    </button>
+                                </div>
+
+                                <div style={styles.searchContainer}>
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar ejercicio..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        style={styles.searchInput}
+                                        autoFocus
+                                    />
+                                </div>
+
+                                <div style={styles.exerciseList}>
+                                    {EJERCICIOS_DATABASE.filter(ex =>
+                                        ex.nombre.toLowerCase().includes(searchQuery.toLowerCase())
+                                    ).map(ex => (
+                                        <div
+                                            key={ex.id}
+                                            style={styles.exerciseListItem}
+                                            onClick={() => {
+                                                addExerciseToSession({
+                                                    id: ex.id,
+                                                    nombre: ex.nombre,
+                                                    series: 3,
+                                                    repeticiones: '10',
+                                                    descanso: 60,
+                                                    categoria: 'maquina'
+                                                });
+                                                setShowAddModal(false);
+                                                setSearchQuery('');
+                                                // Expand the newly added exercise
+                                                // Note: The store will generate a temp ID, so we might not be able to 
+                                                // expand it immediately without checking the updated session
+                                            }}
+                                        >
+                                            <div style={{
+                                                ...styles.groupBadge,
+                                                background: GRUPOS_MUSCULARES[ex.grupoMuscular]?.color || Colors.surfaceLight
+                                            }}>
+                                                {GRUPOS_MUSCULARES[ex.grupoMuscular]?.emoji}
+                                            </div>
+                                            <div style={styles.exerciseInfo}>
+                                                <div style={styles.exerciseLabel}>{ex.nombre}</div>
+                                                <div style={styles.exerciseGroup}>{GRUPOS_MUSCULARES[ex.grupoMuscular]?.nombre}</div>
+                                            </div>
+                                            <Plus size={20} color={Colors.textTertiary} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );
@@ -239,17 +377,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         <p style={styles.exerciseMeta}>{ex.targetSeries} series x {ex.targetReps}</p>
                     </div>
                     <div style={styles.exerciseActions}>
-                        {section === 'main' && (
-                            <button
-                                style={styles.replaceBtn}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    alert(`Próximamente: Reemplazar "${ex.nombre}" por otra alternativa`);
-                                }}
-                            >
-                                <Repeat size={16} color={Colors.textSecondary} />
-                            </button>
-                        )}
                         {expandedExercises.includes(ex.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                     </div>
                 </div>
@@ -284,6 +411,31 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         </div>
                                     );
                                 })()}
+
+                                {/* Start Exercise Button or Timer Display */}
+                                {activeExerciseId !== ex.id ? (
+                                    <div style={styles.startButtonContainer}>
+                                        <button
+                                            style={styles.startExerciseBtn}
+                                            onClick={() => handleStartExercise(ex.id, ex.targetReps)}
+                                        >
+                                            <Play size={24} color={Colors.background} />
+                                            <span>Comenzar Ejercicio</span>
+                                        </button>
+                                    </div>
+                                ) : isTimeBased(ex.targetReps) && isTimerRunning ? (
+                                    <div style={styles.timerDisplay}>
+                                        <Clock size={32} color={Colors.primary} />
+                                        <div style={styles.timerText}>{formatTime(timerSeconds)}</div>
+                                        <button
+                                            style={styles.pauseBtn}
+                                            onClick={() => setIsTimerRunning(false)}
+                                        >
+                                            <Pause size={20} />
+                                        </button>
+                                    </div>
+                                ) : null}
+
                                 <div style={styles.setsHeader}>
                                     <span style={styles.setHeaderCell}>SERIE</span>
                                     <span style={styles.setHeaderCell}>PESO (KG)</span>
@@ -325,12 +477,22 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     >
                                                         <SkipForward size={16} />
                                                     </button>
-                                                    <button
-                                                        style={styles.checkBtn}
-                                                        onClick={() => updateSet(ex.id, sIdx, { completed: true })}
-                                                    >
-                                                        <Check size={18} />
-                                                    </button>
+                                                    {isTimeBased(ex.targetReps) ? (
+                                                        <button
+                                                            style={styles.checkBtn}
+                                                            onClick={() => handleStartSet(ex.id, sIdx, ex.targetReps)}
+                                                            disabled={activeExerciseId !== ex.id}
+                                                        >
+                                                            <Play size={16} />
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            style={styles.checkBtn}
+                                                            onClick={() => updateSet(ex.id, sIdx, { completed: true })}
+                                                        >
+                                                            <Check size={18} />
+                                                        </button>
+                                                    )}
                                                 </>
                                             ) : (
                                                 <button
@@ -343,11 +505,32 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         </div>
                                     </div>
                                 ))}
+
+                                {/* Complete Exercise Button */}
+                                {ex.sets.every(s => s.completed || s.skipped) && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        style={{ marginTop: '16px' }}
+                                    >
+                                        <button
+                                            style={styles.completeExerciseBtn}
+                                            onClick={() => {
+                                                if (confirm('¿Finalizar ejercicio? Desaparecerá de la lista.')) {
+                                                    markExerciseAsCompleted(ex.id);
+                                                }
+                                            }}
+                                        >
+                                            <Check size={20} />
+                                            <span>Finalizar Ejercicio</span>
+                                        </button>
+                                    </motion.div>
+                                )}
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
-            </Card>
+            </Card >
         );
     }
 };
@@ -700,5 +883,166 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '14px',
         fontWeight: 700,
         color: Colors.primary,
+    },
+    startButtonContainer: {
+        display: 'flex',
+        justifyContent: 'center',
+        padding: '20px 0',
+        marginBottom: '16px',
+    },
+    startExerciseBtn: {
+        padding: '14px 32px',
+        borderRadius: '12px',
+        background: Colors.primary,
+        border: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        cursor: 'pointer',
+        fontSize: '16px',
+        fontWeight: 700,
+        color: Colors.background,
+        boxShadow: `0 4px 12px ${Colors.primary}40`,
+        transition: 'all 0.2s ease',
+    },
+    timerDisplay: {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        padding: '24px',
+        marginBottom: '16px',
+        background: `${Colors.primary}10`,
+        borderRadius: '12px',
+        gap: '12px',
+    },
+    timerText: {
+        fontSize: '48px',
+        fontWeight: 900,
+        color: Colors.primary,
+        fontFamily: 'monospace',
+    },
+    pauseBtn: {
+        width: '48px',
+        height: '48px',
+        borderRadius: '50%',
+        background: Colors.surfaceLight,
+        border: `2px solid ${Colors.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+    modalOverlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.85)',
+        backdropFilter: 'blur(10px)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'flex-end',
+    },
+    modalContent: {
+        width: '100%',
+        height: '90vh',
+        background: Colors.background,
+        borderTopLeftRadius: '32px',
+        borderTopRightRadius: '32px',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        overflow: 'hidden',
+    },
+    modalHeader: {
+        padding: '24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottom: `1px solid ${Colors.border}`,
+    },
+    modalTitle: {
+        fontSize: '20px',
+        fontWeight: 800,
+        color: Colors.text,
+        margin: 0,
+    },
+    closeModalBtn: {
+        background: Colors.surface,
+        border: 'none',
+        borderRadius: '50%',
+        width: '40px',
+        height: '40px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: Colors.text,
+        cursor: 'pointer',
+    },
+    searchContainer: {
+        padding: '16px 24px',
+    },
+    searchInput: {
+        width: '100%',
+        padding: '16px 20px',
+        borderRadius: '16px',
+        background: Colors.surface,
+        border: `2px solid ${Colors.border}`,
+        color: Colors.text,
+        fontSize: '16px',
+        outline: 'none',
+    },
+    exerciseList: {
+        flex: 1,
+        overflowY: 'auto' as const,
+        padding: '0 24px 40px 24px',
+    },
+    exerciseListItem: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        padding: '16px',
+        borderRadius: '16px',
+        background: Colors.surfaceLight,
+        marginBottom: '12px',
+        cursor: 'pointer',
+    },
+    groupBadge: {
+        width: '44px',
+        height: '44px',
+        borderRadius: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '20px',
+    },
+    exerciseInfo: {
+        flex: 1,
+    },
+    exerciseLabel: {
+        fontSize: '16px',
+        fontWeight: 700,
+        color: Colors.text,
+        marginBottom: '2px',
+    },
+    exerciseGroup: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+    },
+    completeExerciseBtn: {
+        width: '100%',
+        padding: '16px',
+        borderRadius: '12px',
+        background: Colors.success,
+        border: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        fontSize: '16px',
+        fontWeight: 700,
+        color: '#fff',
+        boxShadow: `0 4px 12px ${Colors.success}40`,
     },
 };

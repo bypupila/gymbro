@@ -143,6 +143,7 @@ export interface ExerciseTracking {
     targetReps: string;
     sets: SetTracking[];
     categoria?: 'calentamiento' | 'maquina'; // For separating warmup from main exercises
+    isCompleted?: boolean;
 }
 
 export interface ActiveSession {
@@ -174,6 +175,7 @@ interface UserStore {
     skipSet: (exerciseId: string, setIndex: number) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
     addExerciseToSession: (newExercise: EjercicioRutina) => void;
+    markExerciseAsCompleted: (exerciseId: string) => void;
     finishSession: (durationMinutos: number) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
@@ -292,6 +294,7 @@ export const useUserStore = create<UserStore>()(
                         targetSeries: ex.series,
                         targetReps: ex.repeticiones,
                         categoria: ex.categoria, // Include category for warmup/main separation
+                        isCompleted: false,
                         sets: Array.from({ length: ex.series }, (_, i) => ({
                             completed: false,
                             skipped: false,
@@ -335,6 +338,7 @@ export const useUserStore = create<UserStore>()(
                         targetSeries: newExercise.series,
                         targetReps: newExercise.repeticiones,
                         categoria: newExercise.categoria,
+                        isCompleted: false,
                         sets: Array.from({ length: newExercise.series }, () => ({
                             completed: false,
                             skipped: false,
@@ -355,6 +359,7 @@ export const useUserStore = create<UserStore>()(
                     targetSeries: newExercise.series,
                     targetReps: newExercise.repeticiones,
                     categoria: newExercise.categoria,
+                    isCompleted: false,
                     sets: Array.from({ length: newExercise.series }, () => ({
                         completed: false,
                         skipped: false,
@@ -366,6 +371,18 @@ export const useUserStore = create<UserStore>()(
                     activeSession: {
                         ...state.activeSession,
                         exercises: [...state.activeSession.exercises, newExerciseTracking]
+                    }
+                };
+            }),
+
+            markExerciseAsCompleted: (exerciseId) => set((state) => {
+                if (!state.activeSession) return state;
+                return {
+                    activeSession: {
+                        ...state.activeSession,
+                        exercises: state.activeSession.exercises.map(ex =>
+                            ex.id === exerciseId ? { ...ex, isCompleted: true } : ex
+                        )
                     }
                 };
             }),
