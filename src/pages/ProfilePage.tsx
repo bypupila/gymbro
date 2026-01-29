@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { firebaseService } from '@/services/firebaseService';
+import { authService } from '@/services/authService';
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
@@ -20,6 +22,9 @@ export const ProfilePage: React.FC = () => {
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(userInfo);
+    const [editAlias, setEditAlias] = useState(perfil.alias || '');
+    const [aliasError, setAliasError] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Modal States
     const [showPartnerModal, setShowPartnerModal] = useState(false);
@@ -58,7 +63,8 @@ export const ProfilePage: React.FC = () => {
     // Sync editData with store when it updates elsewhere
     React.useEffect(() => {
         setEditData(userInfo);
-    }, [userInfo]);
+        setEditAlias(perfil.alias || '');
+    }, [userInfo, perfil.alias]);
 
     const handleReset = () => {
         setShowResetConfirm(true);
@@ -76,9 +82,68 @@ export const ProfilePage: React.FC = () => {
         navigate('/login');
     };
 
-    const handleSaveProfile = () => {
-        setDatosPersonales(editData);
-        setIsEditing(false);
+    const handleSaveProfile = async () => {
+        if (!userId) return;
+        setIsSaving(true);
+        setAliasError(null);
+
+        const cleanAlias = editAlias.trim().toLowerCase();
+        const currentAlias = (perfil.alias || '').toLowerCase();
+
+        try {
+            // 1. Validar alias si cambió
+            if (cleanAlias !== currentAlias) {
+                if (cleanAlias.length < 3) {
+                    setAliasError('El alias debe tener al menos 3 caracteres.');
+                    setIsSaving(false);
+                    return;
+                }
+                // 1. Validar disponibilidad
+                const available = await firebaseService.isAliasAvailable(cleanAlias, userId);
+                if (!available) {
+                    setAliasError('Este alias ya está registrado. Elige otro.');
+                    setIsSaving(false);
+                    return;
+                }
+
+                // 2. Intentar actualizar Auth Email si es una cuenta de alias (@gymbro.app)
+                const currentUser = authService.getCurrentUser();
+                const isGymbroAccount = currentUser?.email?.endsWith('@gymbro.app');
+
+                if (isGymbroAccount) {
+                    try {
+                        await authService.updateEmail(`${cleanAlias}@gymbro.app`);
+                    } catch (authError: any) {
+                        console.error("Auth Email Update Error:", authError);
+                        if (authError.code === 'auth/requires-recent-login') {
+                            setAliasError('Por seguridad, debes cerrar sesión y volver a entrar para cambiar tu alias de login.');
+                            setIsSaving(false);
+                            return;
+                        }
+                        // Otros errores de auth...
+                    }
+                }
+
+                // 3. Actualizar alias en Firestore (indices y user doc)
+                await firebaseService.updateAlias(userId, currentAlias, editAlias.trim());
+
+                // 4. Actualizar localmente el alias en el store
+                useUserStore.setState((state) => ({
+                    perfil: { ...state.perfil, alias: editAlias.trim() }
+                }));
+            }
+
+            // 2. Guardar datos personales
+            setDatosPersonales(editData);
+            setIsEditing(false);
+        } catch (error: any) {
+            console.error("Error saving profile:", error);
+            setAliasError(error.message === 'ALIAS_TAKEN'
+                ? 'Este alias ya está registrado.'
+                : 'Error al conectar con la base de datos.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleToggleEdit = () => {
@@ -101,6 +166,12 @@ export const ProfilePage: React.FC = () => {
             {/* Header */}
             <div style={styles.headerBar}>
                 <h1 style={styles.headerTitle}>MI PERFIL</h1>
+                <button
+                    style={{ ...styles.editToggleBtn, color: isEditing ? Colors.error : Colors.primary }}
+                    onClick={handleToggleEdit}
+                >
+                    {isEditing ? 'Cancelar' : 'Editar'}
+                </button>
             </div>
 
             {/* Profile Header */}
@@ -118,25 +189,80 @@ export const ProfilePage: React.FC = () => {
                         <Camera size={14} color="#FFF" />
                     </div>
                 </div>
-                <h2 style={styles.userName}>{userInfo.nombre || 'GymBro'}</h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <p style={styles.userLevel}>
-                        {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
-                    </p>
-                    {isSyncing ? (
-                        <Loader2 size={14} color={Colors.primary} className="animate-spin" />
-                    ) : lastSyncError ? (
-                        <AlertCircle size={14} color={Colors.error} />
-                    ) : (
-                        <CheckCircle size={14} color={Colors.success} />
-                    )}
-                </div>
-                {lastSyncError && <p style={{ color: Colors.error, fontSize: '10px', marginTop: '4px' }}>{lastSyncError}</p>}
 
-                <div style={styles.aliasBadge}>
-                    <span style={styles.aliasLabel}>ALIAS</span>
-                    <span style={styles.aliasText}>{userId}</span>
-                </div>
+                {isEditing ? (
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            style={{
+                                ...styles.userName,
+                                background: 'transparent',
+                                border: 'none',
+                                borderBottom: `2px solid ${Colors.primary}`,
+                                textAlign: 'center',
+                                padding: '4px',
+                                width: 'auto',
+                                outline: 'none',
+                                color: Colors.text
+                            }}
+                            autoFocus
+                            value={editData.nombre}
+                            onChange={(e) => setEditData({ ...editData, nombre: e.target.value })}
+                            placeholder="Nombre de Guerrero"
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <p style={styles.userLevel}>
+                                {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                            </p>
+                        </div>
+                        <div style={{
+                            ...styles.aliasBadge,
+                            borderStyle: 'dashed',
+                            borderColor: aliasError ? Colors.error : Colors.primary
+                        }}>
+                            <span style={styles.aliasLabel}>EDITAR ALIAS</span>
+                            <input
+                                style={{
+                                    ...styles.aliasText,
+                                    background: 'transparent',
+                                    border: 'none',
+                                    textAlign: 'center',
+                                    width: '180px',
+                                    outline: 'none',
+                                    color: aliasError ? Colors.error : Colors.text
+                                }}
+                                value={editAlias}
+                                onChange={(e) => {
+                                    setEditAlias(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                                    setAliasError(null);
+                                }}
+                                placeholder="ej: titan23"
+                            />
+                        </div>
+                        {aliasError && <p style={{ color: Colors.error, fontSize: '10px', marginTop: '4px', fontWeight: 700 }}>{aliasError}</p>}
+                    </div>
+                ) : (
+                    <>
+                        <h2 style={styles.userName}>{userInfo.nombre || 'GymBro'}</h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <p style={styles.userLevel}>
+                                {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                            </p>
+                            {isSyncing ? (
+                                <Loader2 size={14} color={Colors.primary} className="animate-spin" />
+                            ) : lastSyncError ? (
+                                <AlertCircle size={14} color={Colors.error} />
+                            ) : (
+                                <CheckCircle size={14} color={Colors.success} />
+                            )}
+                        </div>
+                        {lastSyncError && <p style={{ color: Colors.error, fontSize: '10px', marginTop: '4px' }}>{lastSyncError}</p>}
+
+                        <div style={styles.aliasBadge}>
+                            <span style={styles.aliasLabel}>ALIAS</span>
+                            <span style={styles.aliasText}>{perfil.alias || '---'}</span>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Stats */}
@@ -158,25 +284,11 @@ export const ProfilePage: React.FC = () => {
             {/* Personal Info Section */}
             <div style={styles.sectionHeader}>
                 <h3 style={styles.sectionTitle}>Información Personal</h3>
-                <button
-                    style={{ ...styles.editToggleBtn, color: isEditing ? Colors.error : Colors.primary }}
-                    onClick={handleToggleEdit}
-                >
-                    {isEditing ? 'Cancelar' : 'Editar'}
-                </button>
             </div>
 
             <Card style={styles.infoCard}>
                 {isEditing ? (
                     <div style={styles.editForm}>
-                        <div style={styles.inputGroup}>
-                            <label style={styles.editLabel}>Nombre Completo</label>
-                            <input
-                                style={styles.editInput}
-                                value={editData.nombre}
-                                onChange={(e) => setEditData({ ...editData, nombre: e.target.value })}
-                            />
-                        </div>
                         <div style={styles.grid2}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.editLabel}>Edad</label>
@@ -242,8 +354,21 @@ export const ProfilePage: React.FC = () => {
                                 onChange={(e) => setEditData({ ...editData, lesiones: e.target.value })}
                             />
                         </div>
-                        <button style={styles.saveBtn} onClick={handleSaveProfile}>
-                            Guardar Cambios
+                        <button
+                            style={{
+                                ...styles.saveBtn,
+                                opacity: isSaving ? 0.7 : 1,
+                                cursor: isSaving ? 'wait' : 'pointer'
+                            }}
+                            onClick={handleSaveProfile}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? (
+                                <>
+                                    <Loader2 size={18} className="animate-spin" />
+                                    Guardando...
+                                </>
+                            ) : 'Guardar Cambios'}
                         </button>
                     </div>
                 ) : (

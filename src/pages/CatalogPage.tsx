@@ -1,19 +1,91 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Colors from '@/styles/colors';
-import { Search, Filter, Play } from 'lucide-react';
+import { Search, Filter, Play, Pencil, Database, Save, X, Loader2 } from 'lucide-react';
+import { useUserStore } from '@/stores/userStore';
+import { firebaseService } from '@/services/firebaseService';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
 import { getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const CatalogPage: React.FC = () => {
     const navigate = useNavigate();
+    const { perfil } = useUserStore();
+    const isAdmin = perfil.alias === 'bypupila' || perfil.role === 'admin';
+
+    const [exercises, setExercises] = useState(EJERCICIOS_DATABASE);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedGroup, setSelectedGroup] = useState<GrupoMuscularEjercicio | 'todos'>('todos');
+    const [notification, setNotification] = useState<string | null>(null);
+
+    // Editor State
+    const [editingExercise, setEditingExercise] = useState<any | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [useFirebaseData, setUseFirebaseData] = useState(false);
+
+    // Load exercises from Firebase
+    React.useEffect(() => {
+        const loadData = async () => {
+            try {
+                const cloudExercises = await firebaseService.getAllExercises();
+                if (cloudExercises && cloudExercises.length > 0) {
+                    setExercises(cloudExercises);
+                    setUseFirebaseData(true);
+                }
+            } catch (error) {
+                console.error("Error loading exercises from DB:", error);
+            }
+        };
+        loadData();
+    }, []);
+
+    const showNotification = (msg: string) => {
+        setNotification(msg);
+        setTimeout(() => setNotification(null), 3000);
+    };
+
+    const handleSyncCatalog = async () => {
+        if (!confirm('¿Subir el catálogo local a la base de datos? Esto sobreescribirá datos existentes.')) return;
+        setIsSyncing(true);
+        try {
+            await firebaseService.initializeCatalog(EJERCICIOS_DATABASE);
+            showNotification('Catálogo sincronizado exitosamente.');
+            setUseFirebaseData(true);
+            // Reload
+            const cloudExercises = await firebaseService.getAllExercises();
+            setExercises(cloudExercises);
+        } catch (error) {
+            console.error(error);
+            showNotification('Error al sincronizar catálogo.');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingExercise) return;
+        setIsSyncing(true);
+        try {
+            // Generar ID si no tiene
+            const id = editingExercise.id || editingExercise.nombre.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+            await firebaseService.saveExercise(id, editingExercise);
+
+            // Update local state
+            setExercises(prev => prev.map(e => (e.id === id || e.nombre === editingExercise.nombre) ? { ...editingExercise, id } : e));
+            setEditingExercise(null);
+            showNotification('Ejercicio actualizado correctamente.');
+        } catch (error) {
+            console.error(error);
+            showNotification('Error al guardar cambios.');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     // Filter Logic
     const filteredExercises = useMemo(() => {
-        return EJERCICIOS_DATABASE.filter(ej => {
+        return exercises.filter((ej: any) => {
             const matchesSearch = ej.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 ej.equipamiento?.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -21,7 +93,7 @@ export const CatalogPage: React.FC = () => {
 
             return matchesSearch && matchesGroup;
         });
-    }, [searchQuery, selectedGroup]);
+    }, [searchQuery, selectedGroup, exercises]);
 
     // Handle Video Click
     const handleExerciseClick = (name: string) => {
@@ -37,9 +109,31 @@ export const CatalogPage: React.FC = () => {
             <div style={styles.header}>
                 <div>
                     <h1 style={styles.title}>Catálogo de Ejercicios</h1>
-                    <p style={styles.subtitle}>Explora nuestra biblioteca completa de {EJERCICIOS_DATABASE.length} ejercicios.</p>
+                    <p style={styles.subtitle}>
+                        {useFirebaseData ? '☁️ Base de Datos en la Nube' : '💻 Base de Datos Local'} • {exercises.length} ejercicios
+                    </p>
                 </div>
+                {isAdmin && !useFirebaseData && (
+                    <button onClick={handleSyncCatalog} style={styles.syncBtn} disabled={isSyncing}>
+                        {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+                        Subir a BD
+                    </button>
+                )}
             </div>
+
+            {/* Notification Toast */}
+            <AnimatePresence>
+                {notification && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        style={styles.notification}
+                    >
+                        {notification}
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Search & Filter Bar */}
             <div style={styles.controls}>
@@ -78,10 +172,13 @@ export const CatalogPage: React.FC = () => {
             {/* Grid Content */}
             <div style={styles.grid}>
                 <AnimatePresence mode='popLayout'>
-                    {filteredExercises.map((ej) => {
-                        const groupData = GRUPOS_MUSCULARES[ej.grupoMuscular];
-                        const img = getExerciseImage(ej.nombre, ej.grupoMuscular);
-                        const hasVideo = !!getExerciseVideo(ej.nombre);
+                    {filteredExercises.map((ej: any) => {
+                        const groupData = GRUPOS_MUSCULARES[ej.grupoMuscular as GrupoMuscularEjercicio] || GRUPOS_MUSCULARES['Pecho'];
+                        // Use stored image or fallback
+                        const img = ej.imagen || getExerciseImage(ej.nombre, ej.grupoMuscular);
+                        // Use stored video or lookup
+                        const videoUrl = ej.videoUrl || getExerciseVideo(ej.nombre);
+                        const hasVideo = !!videoUrl;
 
                         return (
                             <motion.div
@@ -90,9 +187,11 @@ export const CatalogPage: React.FC = () => {
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 transition={{ duration: 0.2 }}
-                                key={ej.id}
+                                key={ej.id || ej.nombre}
                                 style={styles.card}
-                                onClick={() => handleExerciseClick(ej.nombre)}
+                                onClick={() => {
+                                    if (videoUrl) window.open(videoUrl, '_blank');
+                                }}
                             >
                                 <div style={styles.imageContainer}>
                                     <img src={img} alt={ej.nombre} style={styles.image} loading="lazy" />
@@ -104,6 +203,23 @@ export const CatalogPage: React.FC = () => {
                                     <div style={styles.groupBadge}>
                                         {groupData.emoji} {groupData.nombre}
                                     </div>
+                                    {isAdmin && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                // Prepare edit object
+                                                setEditingExercise({
+                                                    ...ej,
+                                                    // Ensure we have editable fields populated even if they come from static lookups initially
+                                                    videoUrl: ej.videoUrl || getExerciseVideo(ej.nombre) || '',
+                                                    imagen: ej.imagen || getExerciseImage(ej.nombre, ej.grupoMuscular)
+                                                });
+                                            }}
+                                            style={styles.editBtn}
+                                        >
+                                            <Pencil size={14} color="#FFF" />
+                                        </button>
+                                    )}
                                 </div>
                                 <div style={styles.cardContent}>
                                     <h3 style={styles.cardTitle}>{ej.nombre}</h3>
@@ -121,6 +237,77 @@ export const CatalogPage: React.FC = () => {
             {filteredExercises.length === 0 && (
                 <div style={styles.emptyState}>
                     <p>No se encontraron ejercicios con esos criterios.</p>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {editingExercise && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modal}>
+                        <div style={styles.modalHeader}>
+                            <h3 style={styles.title}>Editar Ejercicio</h3>
+                            <button onClick={() => setEditingExercise(null)} style={styles.closeBtn}>
+                                <X size={24} color={Colors.text} />
+                            </button>
+                        </div>
+
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>Nombre</label>
+                            <input
+                                style={styles.input}
+                                value={editingExercise.nombre}
+                                onChange={e => setEditingExercise({ ...editingExercise, nombre: e.target.value })}
+                            />
+                        </div>
+
+                        <div style={styles.grid2}>
+                            <div style={styles.formGroup}>
+                                <label style={styles.label}>Grupo Muscular</label>
+                                <select
+                                    style={styles.input}
+                                    value={editingExercise.grupoMuscular}
+                                    onChange={e => setEditingExercise({ ...editingExercise, grupoMuscular: e.target.value })}
+                                >
+                                    {Object.keys(GRUPOS_MUSCULARES).map(k => (
+                                        <option key={k} value={k}>{GRUPOS_MUSCULARES[k as GrupoMuscularEjercicio].nombre}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={styles.formGroup}>
+                                <label style={styles.label}>Equipamiento</label>
+                                <input
+                                    style={styles.input}
+                                    value={editingExercise.equipamiento || ''}
+                                    onChange={e => setEditingExercise({ ...editingExercise, equipamiento: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>Video URL (YouTube)</label>
+                            <input
+                                style={styles.input}
+                                placeholder="https://youtu.be/..."
+                                value={editingExercise.videoUrl || ''}
+                                onChange={e => setEditingExercise({ ...editingExercise, videoUrl: e.target.value })}
+                            />
+                        </div>
+
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>Imagen URL (Opcional)</label>
+                            <input
+                                style={styles.input}
+                                placeholder="Si dejas vacío, se usa la por defecto"
+                                value={editingExercise.imagen || ''}
+                                onChange={e => setEditingExercise({ ...editingExercise, imagen: e.target.value })}
+                            />
+                        </div>
+
+                        <button style={styles.saveBtn} onClick={handleSaveEdit} disabled={isSyncing}>
+                            {isSyncing ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                            Guardar Cambios
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -247,6 +434,22 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '12px',
         backdropFilter: 'blur(4px)',
     },
+    editBtn: {
+        position: 'absolute',
+        top: '8px',
+        right: '8px',
+        background: Colors.primary,
+        border: 'none',
+        borderRadius: '50%',
+        width: '28px',
+        height: '28px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        zIndex: 10,
+    },
     groupBadge: {
         position: 'absolute',
         bottom: '8px',
@@ -293,6 +496,106 @@ const styles: Record<string, React.CSSProperties> = {
         textAlign: 'center',
         padding: '40px',
         color: Colors.textTertiary,
+    },
+    notification: {
+        position: 'fixed',
+        top: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: Colors.primary,
+        color: '#000',
+        padding: '12px 24px',
+        borderRadius: '24px',
+        fontWeight: 'bold',
+        zIndex: 100,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        whiteSpace: 'nowrap',
+    },
+    syncBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '8px 16px',
+        borderRadius: '12px',
+        background: Colors.surface,
+        border: `1px dashed ${Colors.primary}`,
+        color: Colors.primary,
+        fontSize: '13px',
+        fontWeight: 600,
+        cursor: 'pointer',
+    },
+    modalOverlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.8)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px',
+    },
+    modal: {
+        background: Colors.surface,
+        borderRadius: '24px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '500px',
+        border: `1px solid ${Colors.border}`,
+    },
+    modalHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+    },
+    closeBtn: {
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+    },
+    formGroup: {
+        marginBottom: '16px',
+    },
+    label: {
+        display: 'block',
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        marginBottom: '6px',
+    },
+    input: {
+        width: '100%',
+        padding: '12px',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '12px',
+        color: Colors.text,
+        fontSize: '15px',
+        outline: 'none',
+    },
+    saveBtn: {
+        width: '100%',
+        marginTop: '12px',
+        padding: '16px',
+        background: Colors.primary,
+        border: 'none',
+        borderRadius: '12px',
+        color: '#000',
+        fontSize: '16px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+    },
+    grid2: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '12px',
     },
 };
 

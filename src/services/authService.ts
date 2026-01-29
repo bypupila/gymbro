@@ -31,7 +31,6 @@ export const authService = {
         await firebaseSignOut(auth);
     },
 
-    // Listener de cambios de autenticación
     onAuthChange(callback: (user: User | null) => void) {
         return onAuthStateChanged(auth, callback);
     },
@@ -39,5 +38,11 @@ export const authService = {
     // Usuario actual
     getCurrentUser() {
         return auth.currentUser;
+    },
+
+    async updateEmail(newEmail: string) {
+        if (!auth.currentUser) throw new Error('NO_USER');
+        const { updateEmail } = await import('firebase/auth');
+        await updateEmail(auth.currentUser, newEmail);
     }
 };

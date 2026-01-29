@@ -102,6 +102,9 @@ export interface PerfilCompleto {
     historialRutinas: RutinaUsuario[];
     onboardingCompletado: boolean;
     partnerId?: string; // New field for Cloud ID
+    alias?: string; // Add this
+    role?: 'admin' | 'user'; // Rol del usuario
+    weeklyTracking?: Record<string, boolean>; // Tracking de días entrenados { '2026-01-29': true }
 }
 
 const datosIniciales: DatosPersonales = {
@@ -139,6 +142,7 @@ export interface ExerciseTracking {
     targetSeries: number;
     targetReps: string;
     sets: SetTracking[];
+    categoria?: 'calentamiento' | 'maquina'; // For separating warmup from main exercises
 }
 
 export interface ActiveSession {
@@ -168,6 +172,8 @@ interface UserStore {
     startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>) => void;
     skipSet: (exerciseId: string, setIndex: number) => void;
+    replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
+    addExerciseToSession: (newExercise: EjercicioRutina) => void;
     finishSession: (durationMinutos: number) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
@@ -285,6 +291,7 @@ export const useUserStore = create<UserStore>()(
                         nombre: ex.nombre,
                         targetSeries: ex.series,
                         targetReps: ex.repeticiones,
+                        categoria: ex.categoria, // Include category for warmup/main separation
                         sets: Array.from({ length: ex.series }, (_, i) => ({
                             completed: false,
                             skipped: false,
@@ -315,6 +322,52 @@ export const useUserStore = create<UserStore>()(
                     return { ...ex, sets: newSets };
                 });
                 return { activeSession: { ...state.activeSession, exercises: newExercises } };
+            }),
+
+            // Replace an exercise in the current session only (doesn't affect the main routine)
+            replaceExerciseInSession: (oldExerciseId, newExercise) => set((state) => {
+                if (!state.activeSession) return state;
+                const newExercises = state.activeSession.exercises.map(ex => {
+                    if (ex.id !== oldExerciseId) return ex;
+                    return {
+                        id: `temp_${Date.now()}_${newExercise.id}`,
+                        nombre: newExercise.nombre,
+                        targetSeries: newExercise.series,
+                        targetReps: newExercise.repeticiones,
+                        categoria: newExercise.categoria,
+                        sets: Array.from({ length: newExercise.series }, () => ({
+                            completed: false,
+                            skipped: false,
+                            weight: 0,
+                            reps: parseInt(newExercise.repeticiones) || 10
+                        }))
+                    };
+                });
+                return { activeSession: { ...state.activeSession, exercises: newExercises } };
+            }),
+
+            // Add an extra exercise to the current session only (doesn't affect the main routine)
+            addExerciseToSession: (newExercise) => set((state) => {
+                if (!state.activeSession) return state;
+                const newExerciseTracking = {
+                    id: `temp_${Date.now()}_${newExercise.id}`,
+                    nombre: newExercise.nombre,
+                    targetSeries: newExercise.series,
+                    targetReps: newExercise.repeticiones,
+                    categoria: newExercise.categoria,
+                    sets: Array.from({ length: newExercise.series }, () => ({
+                        completed: false,
+                        skipped: false,
+                        weight: 0,
+                        reps: parseInt(newExercise.repeticiones) || 10
+                    }))
+                };
+                return {
+                    activeSession: {
+                        ...state.activeSession,
+                        exercises: [...state.activeSession.exercises, newExerciseTracking]
+                    }
+                };
             }),
 
             finishSession: async (durationMinutos) => {

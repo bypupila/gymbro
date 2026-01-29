@@ -23,15 +23,23 @@ export const firebaseService = {
 
     async getProfile(userId: string): Promise<PerfilCompleto | null> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
-        const profileSnap = await getDoc(profileRef);
+        const userRef = doc(db, 'users', userId);
+
+        const [profileSnap, userSnap] = await Promise.all([
+            getDoc(profileRef),
+            getDoc(userRef)
+        ]);
 
         if (!profileSnap.exists()) return null;
 
         const data = profileSnap.data();
+        const userData = userSnap.exists() ? userSnap.data() : {};
 
-        // Cargar historial y rutinas
-        const historial = await this.getWorkouts(userId);
-        const historialRutinas = await this.getRoutineHistory(userId);
+        // Cargar historial y rutinas en paralelo
+        const [historial, historialRutinas] = await Promise.all([
+            this.getWorkouts(userId),
+            this.getRoutineHistory(userId)
+        ]);
 
         return {
             usuario: data.usuario,
@@ -42,20 +50,30 @@ export const firebaseService = {
             historialRutinas,
             onboardingCompletado: data.onboardingCompletado,
             partnerId: data.partnerId,
+            alias: userData.displayName || '',
+            role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
         };
     },
 
     // Real-time listener para sync automático
     onProfileChange(userId: string, callback: (profile: PerfilCompleto | null) => void) {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const userRef = doc(db, 'users', userId);
+
         return onSnapshot(profileRef, async (snap) => {
             if (!snap.exists()) {
                 callback(null);
                 return;
             }
             const data = snap.data();
-            const historial = await this.getWorkouts(userId);
-            const historialRutinas = await this.getRoutineHistory(userId);
+            const userSnap = await getDoc(userRef);
+            const userData = userSnap.exists() ? userSnap.data() : {};
+
+            // Cargar historial y rutinas en paralelo
+            const [historial, historialRutinas] = await Promise.all([
+                this.getWorkouts(userId),
+                this.getRoutineHistory(userId)
+            ]);
 
             callback({
                 usuario: data.usuario,
@@ -66,8 +84,69 @@ export const firebaseService = {
                 historialRutinas,
                 onboardingCompletado: data.onboardingCompletado,
                 partnerId: data.partnerId,
+                alias: userData.displayName || '',
+                role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
             });
         });
+    },
+
+    async isAliasAvailable(alias: string, currentUserId: string): Promise<boolean> {
+        const cleanAlias = alias.toLowerCase().trim();
+        const aliasRef = doc(db, 'userAliases', cleanAlias);
+        const aliasSnap = await getDoc(aliasRef);
+
+        if (!aliasSnap.exists()) return true;
+
+        // Si existe, verificar si es del mismo usuario
+        return aliasSnap.data().userId === currentUserId;
+    },
+
+    async updateAlias(userId: string, oldAlias: string, newAlias: string): Promise<void> {
+        const cleanNew = newAlias.toLowerCase().trim();
+        const cleanOld = oldAlias.toLowerCase().trim();
+        if (cleanNew === cleanOld) return;
+
+        console.log('updateAlias called:', { userId, oldAlias, newAlias, cleanOld, cleanNew });
+
+        // Verificar disponibilidad de nuevo (por seguridad si no se hizo antes)
+        const available = await this.isAliasAvailable(cleanNew, userId);
+        if (!available) {
+            throw new Error('ALIAS_TAKEN');
+        }
+
+        try {
+            const batch = writeBatch(db);
+
+            // 1. Crear nuevo alias lookup
+            const newAliasRef = doc(db, 'userAliases', cleanNew);
+            batch.set(newAliasRef, {
+                userId: userId,
+                displayName: newAlias,
+                createdAt: new Date(),
+            });
+            console.log('Created new alias ref:', cleanNew);
+
+            // 2. Eliminar antiguo alias lookup
+            if (cleanOld) {
+                const oldAliasRef = doc(db, 'userAliases', cleanOld);
+                batch.delete(oldAliasRef);
+                console.log('Deleting old alias ref:', cleanOld);
+            }
+
+            // 3. ActualizarDisplayName en el doc del usuario (usar set merge para evitar fallo si no existe)
+            const userRef = doc(db, 'users', userId);
+            batch.set(userRef, {
+                displayName: newAlias,
+                lastAliasUpdate: new Date(),
+            }, { merge: true });
+            console.log('Updating user doc:', userId);
+
+            await batch.commit();
+            console.log('Batch committed successfully');
+        } catch (error) {
+            console.error('updateAlias error:', error);
+            throw error;
+        }
     },
 
     // ========== WORKOUT HISTORY ==========
@@ -211,7 +290,7 @@ export const firebaseService = {
         // Crear metadata de usuario
         const userRef = doc(db, 'users', userId);
         batch.set(userRef, {
-            email: alias, // Using alias as email/primary identifier/display name based on context
+            email: alias,
             displayName: alias,
             createdAt: new Date(),
             lastSyncedAt: new Date(),
@@ -227,4 +306,44 @@ export const firebaseService = {
 
         await batch.commit();
     },
+
+    // ========== CATALOG MANAGEMENT (ADMIN) ==========
+
+    async getAllExercises(): Promise<any[]> {
+        const querySnapshot = await getDocs(collection(db, 'exercises'));
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    async saveExercise(exerciseId: string, data: any): Promise<void> {
+        const ref = doc(db, 'exercises', exerciseId);
+        await setDoc(ref, {
+            ...data,
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
+    },
+
+    async deleteExercise(exerciseId: string): Promise<void> {
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'exercises', exerciseId));
+    },
+
+    async initializeCatalog(initialData: any[]): Promise<void> {
+        // Subir en lotes de 500 (límite de Firestore batch)
+        const chunks = [];
+        for (let i = 0; i < initialData.length; i += 400) {
+            chunks.push(initialData.slice(i, i + 400));
+        }
+
+        for (const chunk of chunks) {
+            const batch = writeBatch(db);
+            chunk.forEach((ex) => {
+                // Usar el nombre como ID para fácil lookup o generar uno nuevo
+                // Preferible generar ID sanitizando el nombre o usar el ID existente si lo hay
+                const id = ex.id || ex.nombre.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                const ref = doc(db, 'exercises', id);
+                batch.set(ref, ex);
+            });
+            await batch.commit();
+        }
+    }
 };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCircle2, ArrowRight, Loader2, KeyRound } from 'lucide-react';
+import { UserCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
 import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
@@ -12,6 +12,7 @@ export const LoginPage: React.FC = () => {
     const [mode, setMode] = useState<'login' | 'register'>('login');
     const [alias, setAlias] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [statusMsg, setStatusMsg] = useState<string | null>(null);
     const [registerHint, setRegisterHint] = useState<string | null>(null);
@@ -21,22 +22,39 @@ export const LoginPage: React.FC = () => {
     const handleLogin = async () => {
         if (!alias.trim() || !password.trim()) return;
 
-        const cleanAlias = alias.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanAlias.length < 3) {
-            setStatusMsg('El alias debe tener al menos 3 caracteres.');
-            return;
+        const cleanInput = alias.trim().toLowerCase();
+        let email = '';
+
+        if (cleanInput.includes('@')) {
+            email = cleanInput;
+        } else {
+            const cleanAlias = cleanInput.replace(/[^a-z0-9]/g, '');
+            if (cleanAlias.length < 3) {
+                setStatusMsg('El alias debe tener al menos 3 caracteres.');
+                return;
+            }
+            email = `${cleanAlias}@gymbro.app`;
         }
 
         setIsLoading(true);
         setStatusMsg('Conectando...');
 
-        const email = `${cleanAlias}@gymbro.app`;
-
         try {
             // Intentar Login
             const user = await authService.signIn(email, password);
             if (user) {
-                setStatusMsg('¡Bienvenido de nuevo!');
+                setStatusMsg('Preparando tu entrenamiento...');
+
+                // Fetch profile BEFORE navigating to avoid initial onboarding redirect
+                try {
+                    const cloudData = await firebaseService.getProfile(user.uid);
+                    if (cloudData) {
+                        useUserStore.setState({ perfil: cloudData });
+                    }
+                } catch (e) {
+                    console.error("Error fetching profile during login:", e);
+                }
+
                 setUserId(user.uid);
                 navigate('/', { replace: true });
             }
@@ -68,25 +86,32 @@ export const LoginPage: React.FC = () => {
     const handleRegister = async () => {
         if (!alias.trim() || !password.trim()) return;
 
-        const cleanAlias = alias.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanInput = alias.trim().toLowerCase();
         setIsLoading(true);
         setStatusMsg('Creando perfil de guerrero...');
 
-        const email = `${cleanAlias}@gymbro.app`;
+        // Determine if user entered email or alias
+        let email: string;
+        let displayAlias: string;
+
+        if (cleanInput.includes('@')) {
+            // User entered a full email
+            email = cleanInput;
+            // Create alias from email prefix
+            displayAlias = cleanInput.split('@')[0].replace(/[^a-z0-9]/g, '');
+        } else {
+            // User entered an alias, create gymbro email
+            displayAlias = cleanInput.replace(/[^a-z0-9]/g, '');
+            email = `${displayAlias}@gymbro.app`;
+        }
 
         try {
-            // Verificar si el alias ya está en uso logicamente (aunque firebase lo haría por email)
-            const existingAlias = await firebaseService.findUserByAlias(cleanAlias);
-            if (existingAlias && existingAlias.id !== cleanAlias) { // Check real collision
-                // Si auth falló antes, es que el email no existe, pero tal vez el alias está tomado en userAliases?
-                // Si findUserByAlias retorna algo, es q ya existe record.
-                // Auth email check es definitivo.
-            }
-
+            // Firebase Auth will return 'auth/email-already-in-use' if email is taken
+            // No need to check alias beforehand since user isn't authenticated yet
             const user = await authService.signUp(email, password);
             if (user) {
                 // Crear alias y perfil inicial
-                await firebaseService.createUserAlias(user.uid, cleanAlias);
+                await firebaseService.createUserAlias(user.uid, displayAlias);
 
                 // Crear perfil vacío en firebaseService.createUserAlias? No, solo crea indices.
                 // saveProfile inicial se maneja en CloudSyncManager o aqui?
@@ -206,12 +231,12 @@ export const LoginPage: React.FC = () => {
                 )}
 
                 <div style={styles.inputWrapper}>
-                    <label style={styles.label}>Tu Alias de Guerrero</label>
+                    <label style={styles.label}>Tu Alias o Email</label>
                     <div style={styles.inputContainer}>
                         <UserCircle2 size={24} color={Colors.textSecondary} style={styles.icon} />
                         <input
                             style={styles.input}
-                            placeholder="Ej: TitanFit"
+                            placeholder="Ej: TitanFit o usuario@email.com"
                             value={alias}
                             onChange={(e) => {
                                 setAlias(e.target.value);
@@ -231,7 +256,7 @@ export const LoginPage: React.FC = () => {
                         <input
                             style={styles.input}
                             placeholder="******"
-                            type="password"
+                            type={showPassword ? "text" : "password"}
                             value={password}
                             onChange={(e) => {
                                 setPassword(e.target.value);
@@ -240,6 +265,26 @@ export const LoginPage: React.FC = () => {
                             }}
                             onKeyDown={(e) => e.key === 'Enter' && (mode === 'register' ? handleRegister() : handleLogin())}
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            style={{
+                                position: 'absolute',
+                                right: '16px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: Colors.textSecondary,
+                                padding: 0,
+                            }}
+                        >
+                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
                     </div>
                 </div>
 

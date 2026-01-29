@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUserStore, SetTracking } from '../stores/userStore';
+import { useUserStore, SetTracking, ExerciseTracking } from '../stores/userStore';
 import { getExerciseImage, getExerciseVideo } from '../data/exerciseMedia';
 import Colors from '../styles/colors';
 import {
@@ -15,7 +15,8 @@ import {
     AlertCircle,
     ChevronDown,
     ChevronUp,
-    SkipForward
+    SkipForward,
+    Repeat
 } from 'lucide-react';
 import { Card } from './Card';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -31,12 +32,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         updateSet,
         skipSet,
         finishSession,
-        cancelSession
+        cancelSession,
+        replaceExerciseInSession,
+        addExerciseToSession
     } = useUserStore();
 
     const [duration, setDuration] = useState(0);
     const [viewMode, setViewMode] = useState<'preview' | 'active'>('preview');
     const [expandedExercises, setExpandedExercises] = useState<string[]>([]);
+    const navigate = useNavigate();
 
     useEffect(() => {
         if (viewMode === 'active') {
@@ -51,8 +55,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return `${mins}:${s.toString().padStart(2, '0')}`;
     };
 
-    if (!activeSession) return null;
-
     const toggleExpand = (id: string) => {
         setExpandedExercises(prev =>
             prev.includes(id) ? prev.filter(eid => eid !== id) : [...prev, id]
@@ -62,25 +64,29 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const handleStart = () => {
         setViewMode('active');
         // Expand first exercise by default
-        if (activeSession.exercises.length > 0) {
+        if (activeSession && activeSession.exercises.length > 0) {
             setExpandedExercises([activeSession.exercises[0].id]);
         }
     };
 
     const totalSets = useMemo(() => {
+        if (!activeSession) return 0;
         return activeSession.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
-    }, [activeSession.exercises]);
+    }, [activeSession]);
 
     const completedSets = useMemo(() => {
+        if (!activeSession) return 0;
         return activeSession.exercises.reduce((acc, ex) =>
             acc + ex.sets.filter(s => s.completed || s.skipped).length, 0
         );
-    }, [activeSession.exercises]);
+    }, [activeSession]);
 
     const progress = (completedSets / totalSets) * 100;
 
+    // Early return if no active session
+    if (!activeSession) return null;
+
     if (viewMode === 'preview') {
-        const navigate = useNavigate();
         return (
             <div style={styles.fullOverlay}>
                 <div style={styles.header}>
@@ -170,126 +176,180 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             </div>
 
             <div style={styles.activeContent}>
-                {activeSession.exercises.map((ex, exIdx) => (
-                    <Card key={ex.id} style={{
-                        ...styles.exerciseCard,
-                        borderColor: expandedExercises.includes(ex.id) ? `${Colors.primary}40` : Colors.border
-                    }}>
-                        <div
-                            style={styles.exerciseHeader}
-                            onClick={() => toggleExpand(ex.id)}
-                        >
-                            <div style={{ flex: 1 }}>
-                                <h3 style={{
-                                    ...styles.exerciseName,
-                                    color: ex.sets.every(s => s.completed || s.skipped) ? Colors.textTertiary : Colors.text
-                                }}>
-                                    {exIdx + 1}. {ex.nombre}
-                                    {ex.sets.every(s => s.completed || s.skipped) && ' ✓'}
-                                </h3>
-                                <p style={styles.exerciseMeta}>{ex.targetSeries} series x {ex.targetReps}</p>
+                {/* Warmup Section */}
+                {activeSession.exercises.filter(ex => ex.categoria === 'calentamiento').length > 0 && (
+                    <>
+                        <div style={styles.sectionHeader}>
+                            <span style={styles.sectionEmoji}>🔥</span>
+                            <div style={styles.sectionTextContainer}>
+                                <h3 style={styles.sectionTitle}>CALENTAMIENTO</h3>
+                                <p style={styles.sectionSubtitle}>Prepara tu cuerpo antes de empezar</p>
                             </div>
-                            {expandedExercises.includes(ex.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                         </div>
+                        {activeSession.exercises
+                            .filter(ex => ex.categoria === 'calentamiento')
+                            .map((ex, exIdx) => renderExerciseCard(ex, exIdx, 'warmup'))}
+                    </>
+                )}
 
-                        <AnimatePresence>
-                            {expandedExercises.includes(ex.id) && (
-                                <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    style={{ overflow: 'hidden' }}
-                                >
-                                    <div style={styles.setsContainer}>
-                                        {(() => {
-                                            const videoUrl = getExerciseVideo(ex.nombre);
-                                            const imageSrc = getExerciseImage(ex.nombre);
-                                            return (
-                                                <div style={styles.previewContainer}>
-                                                    <img
-                                                        src={imageSrc}
-                                                        style={styles.previewImage}
-                                                        alt={ex.nombre}
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
-                                                        }}
-                                                    />
-                                                    {videoUrl && (
-                                                        <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={styles.playOverlay}>
-                                                            ▶
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
-                                        <div style={styles.setsHeader}>
-                                            <span style={styles.setHeaderCell}>SERIE</span>
-                                            <span style={styles.setHeaderCell}>PESO (KG)</span>
-                                            <span style={styles.setHeaderCell}>REPS</span>
-                                            <span style={styles.setHeaderCell}>ACCIONES</span>
-                                        </div>
-                                        {ex.sets.map((set, sIdx) => (
-                                            <div
-                                                key={sIdx}
-                                                style={{
-                                                    ...styles.setRow,
-                                                    background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : 'transparent',
-                                                    opacity: (set.completed || set.skipped) ? 0.7 : 1
-                                                }}
-                                            >
-                                                <span style={styles.setNumber}>{sIdx + 1}</span>
-                                                <input
-                                                    type="number"
-                                                    placeholder="0"
-                                                    value={set.weight || ''}
-                                                    onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
-                                                    style={styles.setInput}
-                                                    disabled={set.completed || set.skipped}
-                                                />
-                                                <input
-                                                    type="number"
-                                                    placeholder="10"
-                                                    value={set.reps || ''}
-                                                    onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
-                                                    style={styles.setInput}
-                                                    disabled={set.completed || set.skipped}
-                                                />
-                                                <div style={styles.setActions}>
-                                                    {!set.completed && !set.skipped ? (
-                                                        <>
-                                                            <button
-                                                                style={styles.skipBtn}
-                                                                onClick={() => skipSet(ex.id, sIdx)}
-                                                            >
-                                                                <SkipForward size={16} />
-                                                            </button>
-                                                            <button
-                                                                style={styles.checkBtn}
-                                                                onClick={() => updateSet(ex.id, sIdx, { completed: true })}
-                                                            >
-                                                                <Check size={18} />
-                                                            </button>
-                                                        </>
-                                                    ) : (
-                                                        <button
-                                                            style={styles.undoBtn}
-                                                            onClick={() => updateSet(ex.id, sIdx, { completed: false, skipped: false })}
-                                                        >
-                                                            Deshacer
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </Card>
-                ))}
+                {/* Main Routine Section */}
+                <div style={styles.sectionHeader}>
+                    <span style={styles.sectionEmoji}>💪</span>
+                    <div style={styles.sectionTextContainer}>
+                        <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
+                        <p style={styles.sectionSubtitle}>Toca el icono 🔄 para cambiar ejercicio si está ocupado</p>
+                    </div>
+                </div>
+                {activeSession.exercises
+                    .filter(ex => ex.categoria !== 'calentamiento')
+                    .map((ex, exIdx) => renderExerciseCard(ex, exIdx, 'main'))}
+
+                {/* Add Exercise Button */}
+                <button
+                    style={styles.addExerciseBtn}
+                    onClick={() => alert('Próximamente: Agregar ejercicio adicional')}
+                >
+                    <Plus size={20} color={Colors.primary} />
+                    <span>Agregar Ejercicio Extra</span>
+                </button>
             </div>
         </div>
     );
+
+    function renderExerciseCard(ex: ExerciseTracking, exIdx: number, section: 'warmup' | 'main') {
+        if (!activeSession) return null;
+        const globalIdx = activeSession.exercises.findIndex(e => e.id === ex.id);
+        return (
+            <Card key={ex.id} style={{
+                ...styles.exerciseCard,
+                borderColor: expandedExercises.includes(ex.id) ? `${Colors.primary}40` : Colors.border
+            }}>
+                <div
+                    style={styles.exerciseHeader}
+                    onClick={() => toggleExpand(ex.id)}
+                >
+                    <div style={{ flex: 1 }}>
+                        <h3 style={{
+                            ...styles.exerciseName,
+                            color: ex.sets.every(s => s.completed || s.skipped) ? Colors.textTertiary : Colors.text
+                        }}>
+                            {globalIdx + 1}. {ex.nombre}
+                            {ex.sets.every(s => s.completed || s.skipped) && ' ✓'}
+                        </h3>
+                        <p style={styles.exerciseMeta}>{ex.targetSeries} series x {ex.targetReps}</p>
+                    </div>
+                    <div style={styles.exerciseActions}>
+                        {section === 'main' && (
+                            <button
+                                style={styles.replaceBtn}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    alert(`Próximamente: Reemplazar "${ex.nombre}" por otra alternativa`);
+                                }}
+                            >
+                                <Repeat size={16} color={Colors.textSecondary} />
+                            </button>
+                        )}
+                        {expandedExercises.includes(ex.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    </div>
+                </div>
+
+                <AnimatePresence>
+                    {expandedExercises.includes(ex.id) && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            style={{ overflow: 'hidden' }}
+                        >
+                            <div style={styles.setsContainer}>
+                                {(() => {
+                                    const videoUrl = getExerciseVideo(ex.nombre);
+                                    const imageSrc = getExerciseImage(ex.nombre);
+                                    return (
+                                        <div style={styles.previewContainer}>
+                                            <img
+                                                src={imageSrc}
+                                                style={styles.previewImage}
+                                                alt={ex.nombre}
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
+                                                }}
+                                            />
+                                            {videoUrl && (
+                                                <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={styles.playOverlay}>
+                                                    ▶
+                                                </a>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                                <div style={styles.setsHeader}>
+                                    <span style={styles.setHeaderCell}>SERIE</span>
+                                    <span style={styles.setHeaderCell}>PESO (KG)</span>
+                                    <span style={styles.setHeaderCell}>REPS</span>
+                                    <span style={styles.setHeaderCell}>ACCIONES</span>
+                                </div>
+                                {ex.sets.map((set, sIdx) => (
+                                    <div
+                                        key={sIdx}
+                                        style={{
+                                            ...styles.setRow,
+                                            background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : 'transparent',
+                                            opacity: (set.completed || set.skipped) ? 0.7 : 1
+                                        }}
+                                    >
+                                        <span style={styles.setNumber}>{sIdx + 1}</span>
+                                        <input
+                                            type="number"
+                                            placeholder="0"
+                                            value={set.weight || ''}
+                                            onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
+                                            style={styles.setInput}
+                                            disabled={set.completed || set.skipped}
+                                        />
+                                        <input
+                                            type="number"
+                                            placeholder="10"
+                                            value={set.reps || ''}
+                                            onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
+                                            style={styles.setInput}
+                                            disabled={set.completed || set.skipped}
+                                        />
+                                        <div style={styles.setActions}>
+                                            {!set.completed && !set.skipped ? (
+                                                <>
+                                                    <button
+                                                        style={styles.skipBtn}
+                                                        onClick={() => skipSet(ex.id, sIdx)}
+                                                    >
+                                                        <SkipForward size={16} />
+                                                    </button>
+                                                    <button
+                                                        style={styles.checkBtn}
+                                                        onClick={() => updateSet(ex.id, sIdx, { completed: true })}
+                                                    >
+                                                        <Check size={18} />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button
+                                                    style={styles.undoBtn}
+                                                    onClick={() => updateSet(ex.id, sIdx, { completed: false, skipped: false })}
+                                                >
+                                                    Deshacer
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </Card>
+        );
+    }
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -581,5 +641,64 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '18px',
         boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
         textDecoration: 'none',
+    },
+    sectionHeader: {
+        padding: '20px 0 16px 0',
+        borderBottom: `2px solid ${Colors.border}`,
+        marginBottom: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+    },
+    sectionEmoji: {
+        fontSize: '28px',
+    },
+    sectionTextContainer: {
+        flex: 1,
+    },
+    sectionTitle: {
+        fontSize: '14px',
+        fontWeight: 900,
+        color: Colors.text,
+        textTransform: 'uppercase',
+        letterSpacing: '1.5px',
+        margin: '0 0 4px 0',
+    },
+    sectionSubtitle: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+        margin: 0,
+    },
+    exerciseActions: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+    },
+    replaceBtn: {
+        width: '32px',
+        height: '32px',
+        borderRadius: '8px',
+        background: Colors.surfaceLight,
+        border: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+    addExerciseBtn: {
+        width: '100%',
+        padding: '16px',
+        marginTop: '16px',
+        borderRadius: '16px',
+        background: `${Colors.primary}15`,
+        border: `2px dashed ${Colors.primary}40`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 700,
+        color: Colors.primary,
     },
 };

@@ -1,12 +1,12 @@
 // =====================================================
-// GymBro PWA - Progress Page
+// GymBro PWA - Progress Page (Enhanced with Stats)
 // =====================================================
 
 import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Calendar, Camera, Flame, TrendingUp } from 'lucide-react';
-import React from 'react';
+import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy } from 'lucide-react';
+import React, { useMemo } from 'react';
 
 export const ProgressPage: React.FC = () => {
     const { perfil } = useUserStore();
@@ -16,12 +16,20 @@ export const ProgressPage: React.FC = () => {
     // Calculate Streak (consecutive days with workouts)
     const calculateStreak = () => {
         if (history.length === 0) return 0;
-        let streak = 0;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const sortedDates = history
+            .map(h => new Date(h.fecha).toDateString())
+            .filter((v, i, a) => a.indexOf(v) === i) // unique dates
+            .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
-        // This is a simplified version
-        return history.length > 5 ? 12 : history.length;
+        let streak = 1;
+        for (let i = 0; i < sortedDates.length - 1; i++) {
+            const curr = new Date(sortedDates[i]);
+            const next = new Date(sortedDates[i + 1]);
+            const diffDays = (curr.getTime() - next.getTime()) / (1000 * 60 * 60 * 24);
+            if (diffDays === 1) streak++;
+            else break;
+        }
+        return streak;
     };
 
     // Calculate Yearly Total
@@ -32,9 +40,7 @@ export const ProgressPage: React.FC = () => {
     const now = new Date();
     const monthName = now.toLocaleDateString('es-ES', { month: 'long' });
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getDay(); // 0 is Sunday
-
-    // Adjust first day to Monday (0) to Sunday (6)
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
     const startOffset = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
 
     // Calculate Compliance (workouts done this week vs planned)
@@ -44,7 +50,7 @@ export const ProgressPage: React.FC = () => {
 
         const startOfWeek = new Date();
         const day = startOfWeek.getDay();
-        const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+        const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
         startOfWeek.setDate(diff);
         startOfWeek.setHours(0, 0, 0, 0);
 
@@ -52,6 +58,71 @@ export const ProgressPage: React.FC = () => {
         const percent = Math.round((doneThisWeek / plannedDays) * 100);
         return Math.min(percent, 100);
     };
+
+    // Advanced Stats Calculations
+    const advancedStats = useMemo(() => {
+        if (history.length === 0) {
+            return {
+                avgDuration: 0,
+                totalVolume: 0,
+                avgWeightPerSession: 0,
+                totalSets: 0,
+                totalReps: 0,
+                heaviestLift: 0,
+                mostTrained: 'N/A',
+                weeklyAvg: 0,
+            };
+        }
+
+        // Average duration
+        const totalDuration = history.reduce((acc, h) => acc + (h.duracionMinutos || 0), 0);
+        const avgDuration = Math.round(totalDuration / history.length);
+
+        // Total volume, sets, reps
+        let totalVolume = 0;
+        let totalSets = 0;
+        let totalReps = 0;
+        let heaviestLift = 0;
+        const exerciseCount: Record<string, number> = {};
+
+        history.forEach(session => {
+            session.ejercicios?.forEach(ex => {
+                exerciseCount[ex.nombre] = (exerciseCount[ex.nombre] || 0) + 1;
+                ex.sets?.forEach(set => {
+                    totalSets++;
+                    totalReps += set.reps || 0;
+                    const volume = (set.peso || 0) * (set.reps || 0);
+                    totalVolume += volume;
+                    if ((set.peso || 0) > heaviestLift) {
+                        heaviestLift = set.peso || 0;
+                    }
+                });
+            });
+        });
+
+        const avgWeightPerSession = history.length > 0 ? Math.round(totalVolume / history.length) : 0;
+
+        // Most trained exercise
+        const mostTrained = Object.entries(exerciseCount)
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+        // Weekly average (last 4 weeks)
+        const fourWeeksAgo = new Date();
+        fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+        const sessionsLast4Weeks = history.filter(h => new Date(h.fecha) >= fourWeeksAgo).length;
+        const weeklyAvg = Math.round((sessionsLast4Weeks / 4) * 10) / 10;
+
+        return {
+            avgDuration,
+            totalVolume,
+            avgWeightPerSession,
+            totalSets,
+            totalReps,
+            heaviestLift,
+            mostTrained,
+            weeklyAvg,
+        };
+    }, [history]);
 
     const workoutDaysInMonth = new Set(
         history
@@ -62,15 +133,21 @@ export const ProgressPage: React.FC = () => {
             .map(h => new Date(h.fecha).getDate())
     );
 
-    const stats = [
+    const mainStats = [
         { icon: Flame, label: 'Racha', value: calculateStreak().toString(), unit: 'd', color: Colors.warning },
         { icon: TrendingUp, label: 'Cumplimiento', value: calculateCompliance().toString(), unit: '%', color: Colors.primary },
         { icon: Calendar, label: 'Sesiones', value: history.length.toString(), unit: '', color: Colors.info },
     ];
 
+    const detailedStats = [
+        { icon: Clock, label: 'Duración Promedio', value: advancedStats.avgDuration, unit: 'min', color: Colors.accent },
+        { icon: Weight, label: 'Volumen Total', value: Math.round(advancedStats.totalVolume / 1000), unit: 'ton', color: Colors.primary },
+        { icon: BarChart3, label: 'Promedio Sesión', value: advancedStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
+        { icon: Trophy, label: 'Max Levantado', value: advancedStats.heaviestLift, unit: 'kg', color: Colors.warning },
+    ];
+
     const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
-    // Weekly activity (last 7 days)
     const last7Days = [...Array(7)].map((_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
@@ -117,9 +194,9 @@ export const ProgressPage: React.FC = () => {
                 </button>
             </div>
 
-            {/* Stats Grid */}
+            {/* Main Stats Grid */}
             <div style={styles.statsGrid}>
-                {stats.map((stat, i) => (
+                {mainStats.map((stat, i) => (
                     <Card key={i} style={styles.statCard}>
                         <stat.icon size={24} color={stat.color} />
                         <span style={styles.statValue}>{stat.value}{stat.unit}</span>
@@ -127,6 +204,63 @@ export const ProgressPage: React.FC = () => {
                     </Card>
                 ))}
             </div>
+
+            {/* Detailed Training Stats */}
+            <h3 style={styles.sectionTitle}>📊 Estadísticas de Entrenamiento</h3>
+            <div style={styles.detailedStatsGrid}>
+                {detailedStats.map((stat, i) => (
+                    <Card key={i} style={styles.detailedStatCard}>
+                        <div style={styles.detailedStatIcon}>
+                            <stat.icon size={20} color={stat.color} />
+                        </div>
+                        <div style={styles.detailedStatInfo}>
+                            <span style={styles.detailedStatValue}>{stat.value} <small style={styles.detailedStatUnit}>{stat.unit}</small></span>
+                            <span style={styles.detailedStatLabel}>{stat.label}</span>
+                        </div>
+                    </Card>
+                ))}
+            </div>
+
+            {/* Summary Cards */}
+            <div style={styles.summaryRow}>
+                <Card style={styles.summaryCard}>
+                    <Dumbbell size={20} color={Colors.primary} />
+                    <div style={styles.summaryInfo}>
+                        <span style={styles.summaryValue}>{advancedStats.totalSets}</span>
+                        <span style={styles.summaryLabel}>Series Totales</span>
+                    </div>
+                </Card>
+                <Card style={styles.summaryCard}>
+                    <BarChart3 size={20} color={Colors.accent} />
+                    <div style={styles.summaryInfo}>
+                        <span style={styles.summaryValue}>{advancedStats.totalReps}</span>
+                        <span style={styles.summaryLabel}>Reps Totales</span>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Weekly Average */}
+            <Card style={styles.weeklyAvgCard}>
+                <div style={styles.weeklyAvgContent}>
+                    <span style={styles.weeklyAvgLabel}>Promedio Semanal</span>
+                    <span style={styles.weeklyAvgValue}>{advancedStats.weeklyAvg}</span>
+                    <span style={styles.weeklyAvgUnit}>entrenamientos/semana</span>
+                </div>
+                <div style={styles.weeklyAvgIcon}>
+                    <TrendingUp size={32} color={Colors.primary} />
+                </div>
+            </Card>
+
+            {/* Most Trained */}
+            {advancedStats.mostTrained !== 'N/A' && (
+                <Card style={styles.mostTrainedCard}>
+                    <Trophy size={24} color={Colors.warning} />
+                    <div style={styles.mostTrainedInfo}>
+                        <span style={styles.mostTrainedLabel}>Ejercicio Más Realizado</span>
+                        <span style={styles.mostTrainedValue}>{advancedStats.mostTrained}</span>
+                    </div>
+                </Card>
+            )}
 
             {/* Weekly Activity */}
             <h3 style={styles.sectionTitle}>Constancia Semanal</h3>
@@ -208,6 +342,7 @@ const styles: Record<string, React.CSSProperties> = {
     container: {
         padding: '20px',
         paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))',
+        paddingBottom: '100px',
     },
     header: {
         display: 'flex',
@@ -278,6 +413,137 @@ const styles: Record<string, React.CSSProperties> = {
         color: Colors.text,
         margin: '0 0 16px 0',
     },
+    detailedStatsGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: '12px',
+        marginBottom: '16px',
+    },
+    detailedStatCard: {
+        padding: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+    },
+    detailedStatIcon: {
+        width: '40px',
+        height: '40px',
+        borderRadius: '12px',
+        background: Colors.surfaceLight,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    detailedStatInfo: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+    },
+    detailedStatValue: {
+        fontSize: '18px',
+        fontWeight: 900,
+        color: Colors.text,
+    },
+    detailedStatUnit: {
+        fontSize: '12px',
+        fontWeight: 600,
+        color: Colors.textSecondary,
+    },
+    detailedStatLabel: {
+        fontSize: '11px',
+        fontWeight: 600,
+        color: Colors.textTertiary,
+    },
+    summaryRow: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: '12px',
+        marginBottom: '16px',
+    },
+    summaryCard: {
+        padding: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+    },
+    summaryInfo: {
+        display: 'flex',
+        flexDirection: 'column',
+    },
+    summaryValue: {
+        fontSize: '20px',
+        fontWeight: 900,
+        color: Colors.text,
+    },
+    summaryLabel: {
+        fontSize: '11px',
+        fontWeight: 600,
+        color: Colors.textTertiary,
+    },
+    weeklyAvgCard: {
+        padding: '20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '32px',
+        background: Colors.surface,
+        borderRadius: '20px',
+        border: `1px solid ${Colors.border}`,
+    },
+    weeklyAvgContent: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+    },
+    weeklyAvgLabel: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+    },
+    weeklyAvgValue: {
+        fontSize: '36px',
+        fontWeight: 900,
+        color: Colors.primary,
+    },
+    weeklyAvgUnit: {
+        fontSize: '12px',
+        fontWeight: 600,
+        color: Colors.textTertiary,
+    },
+    weeklyAvgIcon: {
+        width: '60px',
+        height: '60px',
+        borderRadius: '16px',
+        background: `${Colors.primary}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    mostTrainedCard: {
+        padding: '16px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        marginBottom: '32px',
+        background: Colors.surface,
+        borderRadius: '20px',
+        border: `1px solid ${Colors.border}`,
+    },
+    mostTrainedInfo: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+    },
+    mostTrainedLabel: {
+        fontSize: '11px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+    },
+    mostTrainedValue: {
+        fontSize: '16px',
+        fontWeight: 800,
+        color: Colors.text,
+    },
     weeklyCard: {
         padding: '24px',
         marginBottom: '32px',
@@ -305,12 +571,6 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '12px',
         fontWeight: 600,
         color: Colors.textSecondary,
-    },
-    weeklySubtext: {
-        textAlign: 'center',
-        fontSize: '13px',
-        color: Colors.textTertiary,
-        margin: 0,
     },
     photosEmpty: {
         display: 'flex',

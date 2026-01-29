@@ -28,10 +28,11 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // Alias lookup: Todos pueden leer, nadie escribe directamente
+    // Alias lookup: Todos pueden leer, usuarios autenticados pueden crear su propio alias
     match /userAliases/{alias} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     // Metadata de usuario
@@ -39,5 +40,15 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isOwner(userId);
     }
+
+    // Catálogo de Ejercicios: Todos pueden leer, solo admin puede escribir
+    match /exercises/{exerciseId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName == 'bypupila'
+      );
+    }
   }
 }
+
