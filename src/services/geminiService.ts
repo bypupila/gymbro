@@ -71,7 +71,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
             "series": 3,
             "repeticiones": "12-15",
             "observaciones": "notas extra",
-            "grupo_muscular": "Pecho",
+            "grupo_muscular": "pectoral",
             "categoria": "calentamiento o maquina"
         }
     ],
@@ -108,9 +108,14 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
 
         const result = await model.generateContent([prompt, ...imageParts]);
         const response = await result.response;
-        const text = response.text();
+        let text = response.text();
         // Evitar volcar la respuesta completa en consola (puede contener datos del usuario).
         if (IS_DEV) console.debug("Gemini: respuesta recibida.");
+
+        // Clean markdown if present
+        if (text.trim().startsWith('```')) {
+            text = text.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '');
+        }
 
         try {
             const parsed = JSON.parse(text);
@@ -234,7 +239,12 @@ export const generateRoutineFromProfile = async (
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        const text = response.text();
+        let text = response.text();
+
+        // Clean markdown if present
+        if (text.trim().startsWith('```')) {
+            text = text.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '');
+        }
 
         try {
             const parsed = JSON.parse(text);
@@ -317,15 +327,31 @@ export const reorganizeRoutine = async (
                     "categoria": "calentamiento o maquina",
                     "series": 3,
                     "repeticiones": "12",
-                    "grupo_muscular": "Pecho"
+                    "grupo_muscular": "pectoral"
                 }
             ]
         }`;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        const text = response.text();
-        const parsed = JSON.parse(text);
+        let text = response.text();
+
+        // Clean markdown if present
+        if (text.trim().startsWith('```')) {
+            text = text.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '');
+        }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (e) {
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                parsed = JSON.parse(jsonMatch[0]);
+            } else {
+                throw e;
+            }
+        }
 
         return {
             exercises: (parsed.exercises || []).map((ex: any) => ({

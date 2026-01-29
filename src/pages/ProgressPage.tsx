@@ -12,19 +12,38 @@ export const ProgressPage: React.FC = () => {
     const { perfil } = useUserStore();
     const hasPartner = !!perfil.pareja;
     const history = perfil.historial || [];
+    const extraActivities = perfil.actividadesExtras || [];
 
-    // Calculate Streak (consecutive days with workouts)
+    // Unified dates of activity (workouts + extras)
+    const activeDates = useMemo(() => {
+        const dates = new Set<string>();
+        history.forEach(h => dates.add(new Date(h.fecha).toDateString()));
+        extraActivities.forEach(e => dates.add(new Date(e.fecha).toDateString()));
+
+        return Array.from(dates)
+            .map(d => new Date(d))
+            .sort((a, b) => b.getTime() - a.getTime()); // Descending
+    }, [history, extraActivities]);
+
+    // Calculate Streak (consecutive days with any activity)
     const calculateStreak = () => {
-        if (history.length === 0) return 0;
-        const sortedDates = history
-            .map(h => new Date(h.fecha).toDateString())
-            .filter((v, i, a) => a.indexOf(v) === i) // unique dates
-            .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+        if (activeDates.length === 0) return 0;
 
-        let streak = 1;
-        for (let i = 0; i < sortedDates.length - 1; i++) {
-            const curr = new Date(sortedDates[i]);
-            const next = new Date(sortedDates[i + 1]);
+        let streak = 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Check if the most recent activity was today or yesterday to keep streak alive
+        const lastActivity = activeDates[0];
+        lastActivity.setHours(0, 0, 0, 0);
+
+        const diffToLast = (today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffToLast > 1) return 0; // Streak broken if gap > 1 day
+
+        streak = 1;
+        for (let i = 0; i < activeDates.length - 1; i++) {
+            const curr = activeDates[i];
+            const next = activeDates[i + 1];
             const diffDays = (curr.getTime() - next.getTime()) / (1000 * 60 * 60 * 24);
             if (diffDays === 1) streak++;
             else break;
@@ -32,9 +51,9 @@ export const ProgressPage: React.FC = () => {
         return streak;
     };
 
-    // Calculate Yearly Total
+    // Calculate Yearly Total (Any activity count)
     const currentYear = new Date().getFullYear();
-    const yearlyTotal = history.filter(h => new Date(h.fecha).getFullYear() === currentYear).length;
+    const yearlyTotal = activeDates.filter(d => d.getFullYear() === currentYear).length;
 
     // Monthly Calendar Data
     const now = new Date();
@@ -43,7 +62,7 @@ export const ProgressPage: React.FC = () => {
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
     const startOffset = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
 
-    // Calculate Compliance (workouts done this week vs planned)
+    // Calculate Compliance (days active vs planned days)
     const calculateCompliance = () => {
         const plannedDays = perfil.horario.dias.filter(d => d.entrena).length;
         if (plannedDays === 0) return 100;
@@ -54,8 +73,8 @@ export const ProgressPage: React.FC = () => {
         startOfWeek.setDate(diff);
         startOfWeek.setHours(0, 0, 0, 0);
 
-        const doneThisWeek = history.filter(h => new Date(h.fecha) >= startOfWeek).length;
-        const percent = Math.round((doneThisWeek / plannedDays) * 100);
+        const activeDaysThisWeek = activeDates.filter(d => d >= startOfWeek).length;
+        const percent = Math.round((activeDaysThisWeek / plannedDays) * 100);
         return Math.min(percent, 100);
     };
 
@@ -125,18 +144,15 @@ export const ProgressPage: React.FC = () => {
     }, [history]);
 
     const workoutDaysInMonth = new Set(
-        history
-            .filter(h => {
-                const d = new Date(h.fecha);
-                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-            })
-            .map(h => new Date(h.fecha).getDate())
+        activeDates
+            .filter(d => d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear())
+            .map(d => d.getDate())
     );
 
     const mainStats = [
         { icon: Flame, label: 'Racha', value: calculateStreak().toString(), unit: 'd', color: Colors.warning },
         { icon: TrendingUp, label: 'Cumplimiento', value: calculateCompliance().toString(), unit: '%', color: Colors.primary },
-        { icon: Calendar, label: 'Sesiones', value: history.length.toString(), unit: '', color: Colors.info },
+        { icon: Calendar, label: 'Sesiones', value: history.length.toString(), unit: '', color: Colors.info }, // Keep "Sesiones" as just workouts? Or combined? Let's keep it as workouts for now but add extra count below
     ];
 
     const detailedStats = [
@@ -152,10 +168,9 @@ export const ProgressPage: React.FC = () => {
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
         d.setHours(0, 0, 0, 0);
-        const hasWorkout = history.some(h => {
-            const wh = new Date(h.fecha);
-            wh.setHours(0, 0, 0, 0);
-            return wh.getTime() === d.getTime();
+        const hasWorkout = activeDates.some(ad => {
+            ad.setHours(0, 0, 0, 0);
+            return ad.getTime() === d.getTime();
         });
         return { label: weekDays[(d.getDay() + 6) % 7], active: hasWorkout };
     });

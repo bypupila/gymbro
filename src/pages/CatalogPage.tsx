@@ -173,7 +173,7 @@ export const CatalogPage: React.FC = () => {
             <div style={styles.grid}>
                 <AnimatePresence mode='popLayout'>
                     {filteredExercises.map((ej: any) => {
-                        const groupData = GRUPOS_MUSCULARES[ej.grupoMuscular as GrupoMuscularEjercicio] || GRUPOS_MUSCULARES['Pecho'];
+                        const groupData = GRUPOS_MUSCULARES[ej.grupoMuscular as GrupoMuscularEjercicio] || GRUPOS_MUSCULARES['pectoral'];
                         // Use stored image or fallback
                         const img = ej.imagen || getExerciseImage(ej.nombre, ej.grupoMuscular);
                         // Use stored video or lookup

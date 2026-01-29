@@ -18,6 +18,7 @@ export const firebaseService = {
             onboardingCompletado: profile.onboardingCompletado,
             partnerId: profile.partnerId || null,
             weeklyTracking: profile.weeklyTracking || {},
+            catalogoExtras: profile.catalogoExtras || [],
             updatedAt: new Date().toISOString(),
         });
     },
@@ -225,6 +226,12 @@ export const firebaseService = {
         // Clean undefined values for Firestore
         const cleaned = JSON.parse(JSON.stringify(activity));
         await setDoc(activityRef, cleaned);
+    },
+
+    async deleteExtraActivity(userId: string, activityId: string): Promise<void> {
+        const { deleteDoc } = await import('firebase/firestore');
+        const activityRef = doc(db, 'users', userId, 'extraActivities', activityId);
+        await deleteDoc(activityRef);
     },
 
     async getExtraActivities(userId: string): Promise<ExtraActivity[]> {

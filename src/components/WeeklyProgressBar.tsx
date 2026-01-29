@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Check, X, Calendar, Dumbbell, Activity } from 'lucide-react';
+import { Check, X, Calendar, Dumbbell, Activity, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { analyzeExtraActivity } from '@/services/geminiExtraActivityService';
 
 export const WeeklyProgressBar: React.FC = () => {
     const { perfil } = useUserStore();
@@ -12,12 +11,19 @@ export const WeeklyProgressBar: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showExtraActivityForm, setShowExtraActivityForm] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
-    const [activityDescription, setActivityDescription] = useState('');
-    const [activityUrl, setActivityUrl] = useState('');
-    const [selectedActivityType, setSelectedActivityType] = useState<string>('');
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-    const { addExtraActivity } = useUserStore();
+    // Manual Entry State
+    const [selectedActivityType, setSelectedActivityType] = useState<string>('');
+    const [duration, setDuration] = useState<string>('');
+    const [distance, setDistance] = useState<string>('');
+    const [intensity, setIntensity] = useState<'baja' | 'media' | 'alta'>('media');
+    const [videoUrl, setVideoUrl] = useState('');
+
+    // Custom Activity State
+    const [isAddingCustom, setIsAddingCustom] = useState(false);
+    const [customActivityName, setCustomActivityName] = useState('');
+
+    const { addExtraActivity, removeExtraActivitiesOnDate } = useUserStore();
 
     // Get current week days (Monday as start)
     const getWeekDays = () => {
@@ -49,21 +55,8 @@ export const WeeklyProgressBar: React.FC = () => {
         }
     };
 
-    const handleUnmarkDay = (dateStr: string) => {
-        const newTracking = { ...weeklyTracking };
-        delete newTracking[dateStr];
-
-        // Also remove from extra activities if it exists
-        const newExtraActivities = perfil.actividadesExtras.filter(a => a.fecha !== dateStr);
-
-        useUserStore.setState((state) => ({
-            perfil: {
-                ...state.perfil,
-                weeklyTracking: newTracking,
-                actividadesExtras: newExtraActivities
-            }
-        }));
-
+    const handleUnmarkDay = async (dateStr: string) => {
+        await removeExtraActivitiesOnDate(dateStr);
         setShowDetailsModal(false);
         setSelectedDate(null);
     };
@@ -88,43 +81,69 @@ export const WeeklyProgressBar: React.FC = () => {
         }
     };
 
-    const handleSaveExtraActivity = async () => {
-        if (!selectedDate || (!activityDescription.trim() && !selectedActivityType)) return;
+    const handleAddCustomActivity = async () => {
+        if (!customActivityName.trim()) return;
 
-        setIsAnalyzing(true);
+        const newCatalog = [...(perfil.catalogoExtras || []), customActivityName.trim()];
+        // Filter unique
+        const uniqueCatalog = Array.from(new Set(newCatalog));
+
+        useUserStore.setState((state) => ({
+            perfil: {
+                ...state.perfil,
+                catalogoExtras: uniqueCatalog
+            }
+        }));
+
+        setSelectedActivityType(customActivityName.trim());
+        setCustomActivityName('');
+        setIsAddingCustom(false);
+    };
+
+    const handleSaveExtraActivity = async () => {
+        if (!selectedDate || !selectedActivityType || !duration) return;
+
         try {
-            // Use AI to analyze the description
-            const analisis = await analyzeExtraActivity(
-                activityDescription || selectedActivityType,
-                activityUrl || undefined
-            );
+            // Calculate calories estimation (METs approx)
+            // Low: 4, Med: 8, High: 12
+            const mets = intensity === 'baja' ? 4 : intensity === 'media' ? 8 : 12;
+            const weight = perfil.usuario.peso || 70;
+            const durationHrs = parseInt(duration) / 60;
+            const estimatedCalories = Math.round(mets * weight * durationHrs);
 
             // Save the extra activity
             const activityToSave: any = {
                 id: `extra_${Date.now()}`,
                 fecha: selectedDate,
-                descripcion: activityDescription || selectedActivityType,
-                analisisIA: analisis
+                descripcion: selectedActivityType, // For backward compatibility/display
+                analisisIA: {
+                    tipoDeporte: selectedActivityType,
+                    duracionMinutos: parseInt(duration),
+                    distanciaKm: distance ? parseFloat(distance) : undefined,
+                    intensidad: intensity,
+                    calorias: estimatedCalories,
+                    notas: 'Registro manual'
+                }
             };
 
             // Only add videoUrl if it has a value
-            if (activityUrl && activityUrl.trim()) {
-                activityToSave.videoUrl = activityUrl;
+            if (videoUrl && videoUrl.trim()) {
+                activityToSave.videoUrl = videoUrl;
             }
 
             await addExtraActivity(activityToSave);
 
             // Reset form
             setShowExtraActivityForm(false);
-            setActivityDescription('');
-            setActivityUrl('');
+            setDuration('');
+            setDistance('');
+            setVideoUrl('');
+            setIntensity('media');
             setSelectedActivityType('');
             setSelectedDate(null);
         } catch (error) {
             console.error('Error saving extra activity:', error);
             alert('Error al guardar la actividad. Intenta de nuevo.');
-        } finally {
-            setIsAnalyzing(false);
         }
     };
 
@@ -158,6 +177,9 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
 
+    const defaultActivities = ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
+    const currentActivityCatalog = perfil.catalogoExtras?.length ? perfil.catalogoExtras : defaultActivities;
+
     return (
         <>
             <div style={styles.container}>
@@ -185,9 +207,6 @@ export const WeeklyProgressBar: React.FC = () => {
                         const past = isPast(date);
                         const missedDay = past && isScheduled && !isCompleted;
 
-                        // Check if it was an extra activity
-                        const extraActivity = perfil.actividadesExtras?.find(a => a.fecha === dateStr);
-
                         return (
                             <button
                                 key={dateStr}
@@ -196,43 +215,38 @@ export const WeeklyProgressBar: React.FC = () => {
                                     ...styles.dayButton,
                                     background: isCompleted
                                         ? Colors.success
-                                        : today
-                                            ? Colors.primary
-                                            : isScheduled
-                                                ? Colors.surface
-                                                : 'transparent',
+                                        : missedDay
+                                            ? `${Colors.error}40`
+                                            : today
+                                                ? Colors.primary
+                                                : isScheduled
+                                                    ? Colors.surface
+                                                    : 'transparent',
                                     border: `2px solid ${isCompleted
                                         ? Colors.success
-                                        : today
-                                            ? Colors.primary
-                                            : isScheduled
-                                                ? Colors.border
-                                                : Colors.border
+                                        : missedDay
+                                            ? Colors.error
+                                            : today
+                                                ? Colors.primary
+                                                : isScheduled
+                                                    ? Colors.border
+                                                    : Colors.border
                                         }`,
-                                    opacity: isScheduled || isCompleted ? 1 : 0.5,
+                                    opacity: isScheduled || isCompleted || missedDay ? 1 : 0.5,
                                 }}
                             >
-                                <div style={styles.dayName}>{dayNames[index]}</div>
-                                <div style={styles.dayDate}>{date.getDate()}</div>
-                                {isCompleted && (
-                                    <div style={styles.checkIcon}>
-                                        {extraActivity ? (
-                                            <Activity size={12} color="#FFF" />
-                                        ) : (
-                                            <Check size={12} color="#FFF" />
-                                        )}
-                                    </div>
-                                )}
-                                {missedDay && (
-                                    <div style={styles.missedIcon}>
-                                        <X size={14} color={Colors.error} />
-                                    </div>
-                                )}
-                                {!isScheduled && !isCompleted && !missedDay && (
-                                    <div style={styles.skipIcon}>
-                                        <X size={10} color={Colors.textTertiary} />
-                                    </div>
-                                )}
+                                <div style={{
+                                    ...styles.dayName,
+                                    color: (isCompleted || today) ? '#000' : (missedDay ? Colors.error : Colors.text)
+                                }}>
+                                    {dayNames[index]}
+                                </div>
+                                <div style={{
+                                    ...styles.dayDate,
+                                    color: (isCompleted || today) ? '#000' : (missedDay ? Colors.error : Colors.text)
+                                }}>
+                                    {date.getDate()}
+                                </div>
                             </button>
                         );
                     })}
@@ -349,7 +363,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                                     {extraActivity.analisisIA?.distanciaKm && (
                                                         <div style={styles.statBox}>
                                                             <span style={styles.statValue}>{extraActivity.analisisIA.distanciaKm}km</span>
-                                                            <span style={styles.statLabel}>Distancia</span>
+                                                            <span style={styles.statLabel}>Recorrido</span>
                                                         </div>
                                                     )}
                                                     {extraActivity.analisisIA?.calorias && (
@@ -360,15 +374,11 @@ export const WeeklyProgressBar: React.FC = () => {
                                                     )}
                                                 </div>
 
-                                                {extraActivity.analisisIA?.notas && (
+                                                {extraActivity.analisisIA?.notas && extraActivity.analisisIA.notas !== 'Registro manual' && (
                                                     <p style={styles.activityNotes}>
                                                         "{extraActivity.analisisIA.notas}"
                                                     </p>
                                                 )}
-
-                                                <p style={styles.originalDesc}>
-                                                    <strong>Original:</strong> {extraActivity.descripcion}
-                                                </p>
                                             </div>
                                         );
                                     }
@@ -430,12 +440,12 @@ export const WeeklyProgressBar: React.FC = () => {
                                 </button>
                             </div>
 
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                 {/* Activity Type Selection */}
                                 <div>
                                     <label style={styles.label}>Tipo de Actividad</label>
                                     <div style={styles.activityTypeGrid}>
-                                        {(perfil.catalogoExtras || ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga']).map((type) => (
+                                        {currentActivityCatalog.map((type) => (
                                             <button
                                                 key={type}
                                                 onClick={() => setSelectedActivityType(type)}
@@ -449,20 +459,83 @@ export const WeeklyProgressBar: React.FC = () => {
                                                 {type}
                                             </button>
                                         ))}
+                                        <button
+                                            onClick={() => setIsAddingCustom(true)}
+                                            style={{
+                                                ...styles.activityTypeBtn,
+                                                background: Colors.surface,
+                                                color: Colors.primary,
+                                                borderColor: Colors.border,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                        >
+                                            <Plus size={18} />
+                                        </button>
+                                    </div>
+
+                                    {isAddingCustom && (
+                                        <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                                            <input
+                                                autoFocus
+                                                value={customActivityName}
+                                                onChange={(e) => setCustomActivityName(e.target.value)}
+                                                placeholder="Nombre de actividad..."
+                                                style={styles.input}
+                                            />
+                                            <button onClick={handleAddCustomActivity} style={styles.smallAddBtn}>
+                                                Agregar
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Stats Inputs */}
+                                <div style={styles.statsInputGrid}>
+                                    <div>
+                                        <label style={styles.label}>Duración (min)</label>
+                                        <input
+                                            type="number"
+                                            value={duration}
+                                            onChange={(e) => setDuration(e.target.value)}
+                                            placeholder="45"
+                                            style={styles.input}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={styles.label}>Recorrido (km)</label>
+                                        <input
+                                            type="number"
+                                            value={distance}
+                                            onChange={(e) => setDistance(e.target.value)}
+                                            placeholder="Opcional"
+                                            style={styles.input}
+                                        />
                                     </div>
                                 </div>
 
-                                {/* Description */}
+                                {/* Intensity Selection */}
                                 <div>
-                                    <label style={styles.label}>Descripción (opcional)</label>
-                                    <textarea
-                                        value={activityDescription}
-                                        onChange={(e) => setActivityDescription(e.target.value)}
-                                        placeholder="Ej: Corrí 5km en 25 minutos por el parque..."
-                                        style={styles.textarea}
-                                        rows={3}
-                                    />
-                                    <p style={styles.hint}>💡 La IA extraerá automáticamente duración, distancia y calorías</p>
+                                    <label style={styles.label}>Esfuerzo Percibido</label>
+                                    <div style={styles.intensityGrid}>
+                                        {(['baja', 'media', 'alta'] as const).map((level) => (
+                                            <button
+                                                key={level}
+                                                onClick={() => setIntensity(level)}
+                                                style={{
+                                                    ...styles.intensityBtn,
+                                                    background: intensity === level
+                                                        ? (level === 'alta' ? Colors.error : level === 'media' ? Colors.warning : Colors.success)
+                                                        : Colors.surface,
+                                                    color: intensity === level ? '#FFF' : Colors.textSecondary,
+                                                    borderColor: intensity === level ? 'transparent' : Colors.border
+                                                }}
+                                            >
+                                                {level.toUpperCase()}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 {/* Video URL */}
@@ -470,8 +543,8 @@ export const WeeklyProgressBar: React.FC = () => {
                                     <label style={styles.label}>Video URL (opcional)</label>
                                     <input
                                         type="url"
-                                        value={activityUrl}
-                                        onChange={(e) => setActivityUrl(e.target.value)}
+                                        value={videoUrl}
+                                        onChange={(e) => setVideoUrl(e.target.value)}
                                         placeholder="https://youtube.com/..."
                                         style={styles.input}
                                     />
@@ -480,13 +553,13 @@ export const WeeklyProgressBar: React.FC = () => {
                                 {/* Save Button */}
                                 <button
                                     onClick={handleSaveExtraActivity}
-                                    disabled={isAnalyzing || (!activityDescription.trim() && !selectedActivityType)}
+                                    disabled={!selectedActivityType || !duration}
                                     style={{
                                         ...styles.saveBtn,
-                                        opacity: (isAnalyzing || (!activityDescription.trim() && !selectedActivityType)) ? 0.5 : 1
+                                        opacity: (!selectedActivityType || !duration) ? 0.5 : 1
                                     }}
                                 >
-                                    {isAnalyzing ? '⏳ Analizando...' : '💾 Guardar Actividad'}
+                                    💾 Guardar Actividad
                                 </button>
                             </div>
                         </motion.div>
@@ -564,35 +637,6 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 800,
         color: Colors.text,
     },
-    checkIcon: {
-        position: 'absolute',
-        top: '4px',
-        right: '4px',
-        background: 'rgba(0,0,0,0.3)',
-        borderRadius: '50%',
-        width: '16px',
-        height: '16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    skipIcon: {
-        position: 'absolute',
-        top: '4px',
-        right: '4px',
-    },
-    missedIcon: {
-        position: 'absolute',
-        top: '4px',
-        right: '4px',
-        background: `${Colors.error}20`,
-        borderRadius: '50%',
-        width: '20px',
-        height: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     modalOverlay: {
         position: 'fixed',
         top: 0,
@@ -613,6 +657,8 @@ const styles: Record<string, React.CSSProperties> = {
         width: '100%',
         maxWidth: '400px',
         border: `1px solid ${Colors.border}`,
+        maxHeight: '85vh',
+        overflowY: 'auto'
     },
     modalHeader: {
         display: 'flex',
@@ -672,31 +718,39 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'block',
     },
     activityTypeGrid: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        display: 'flex',
+        flexWrap: 'wrap',
         gap: '8px',
-        marginTop: '8px',
+        marginBottom: '8px',
     },
     activityTypeBtn: {
-        padding: '12px',
+        padding: '10px 16px',
         borderRadius: '12px',
-        border: '2px solid',
-        fontSize: '14px',
-        fontWeight: 700,
+        border: '1px solid',
+        fontSize: '13px',
+        fontWeight: 600,
         cursor: 'pointer',
         transition: 'all 0.2s',
+        whiteSpace: 'nowrap'
     },
-    textarea: {
-        width: '100%',
+    statsInputGrid: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '16px',
+    },
+    intensityGrid: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        gap: '8px',
+    },
+    intensityBtn: {
         padding: '12px',
         borderRadius: '12px',
-        border: `1px solid ${Colors.border}`,
-        background: Colors.background,
-        color: Colors.text,
-        fontSize: '14px',
-        fontFamily: 'inherit',
-        resize: 'vertical',
-        marginTop: '8px',
+        border: '1px solid',
+        fontSize: '12px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        textAlign: 'center'
     },
     input: {
         width: '100%',
@@ -706,13 +760,17 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.background,
         color: Colors.text,
         fontSize: '14px',
-        marginTop: '8px',
+        outline: 'none',
+        transition: 'border-color 0.2s',
     },
-    hint: {
-        fontSize: '12px',
-        color: Colors.textSecondary,
-        margin: '8px 0 0 0',
-        fontStyle: 'italic',
+    smallAddBtn: {
+        padding: '0 16px',
+        background: Colors.primary,
+        color: '#000',
+        borderRadius: '12px',
+        fontWeight: 700,
+        border: 'none',
+        cursor: 'pointer',
     },
     saveBtn: {
         width: '100%',
@@ -782,36 +840,6 @@ const styles: Record<string, React.CSSProperties> = {
         lineHeight: '1.4',
         margin: '0 0 12px 0',
     },
-    originalDesc: {
-        fontSize: '12px',
-        color: Colors.textSecondary,
-        margin: 0,
-    },
-    routineSummary: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-        background: `${Colors.success}10`,
-        padding: '20px',
-        borderRadius: '20px',
-        border: `1px solid ${Colors.success}30`,
-    },
-    routineNameText: {
-        fontSize: '18px',
-        fontWeight: 800,
-        color: Colors.text,
-        display: 'block',
-    },
-    routineStatsText: {
-        fontSize: '14px',
-        color: Colors.textSecondary,
-        margin: '4px 0 0 0',
-    },
-    noData: {
-        textAlign: 'center',
-        color: Colors.textSecondary,
-        padding: '20px',
-    },
     unmarkBtn: {
         width: '100%',
         padding: '14px',
@@ -826,5 +854,30 @@ const styles: Record<string, React.CSSProperties> = {
         justifyContent: 'center',
         gap: '8px',
         cursor: 'pointer',
+    },
+    routineSummary: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        padding: '16px',
+        background: Colors.background,
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+    },
+    routineNameText: {
+        fontSize: '16px',
+        fontWeight: 700,
+        color: Colors.text,
+        display: 'block',
+    },
+    routineStatsText: {
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        margin: '4px 0 0 0',
+    },
+    noData: {
+        textAlign: 'center',
+        color: Colors.textSecondary,
+        padding: '20px',
     },
 };

@@ -25,7 +25,6 @@ import {
 import { Card } from './Card';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '../data/exerciseDatabase';
-import { analyzeExtraActivity } from '../services/geminiExtraActivityService';
 
 interface ActiveWorkoutProps {
     onFinish: () => void;
@@ -34,6 +33,7 @@ interface ActiveWorkoutProps {
 
 export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel }) => {
     const {
+        perfil,
         activeSession,
         updateSet,
         skipSet,
@@ -58,9 +58,14 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     // Completion Modal State
     const [showCompletionModal, setShowCompletionModal] = useState(false);
     const [completionType, setCompletionType] = useState<'routine' | 'extra' | null>(null);
-    const [extraActivityDesc, setExtraActivityDesc] = useState('');
+    // Manual Extra Activity State
+    const [extraActivityType, setExtraActivityType] = useState<string>('');
+    const [extraActivityDuration, setExtraActivityDuration] = useState<string>('');
+    const [extraActivityDistance, setExtraActivityDistance] = useState<string>('');
+    const [extraActivityIntensity, setExtraActivityIntensity] = useState<'baja' | 'media' | 'alta'>('media');
     const [extraActivityUrl, setExtraActivityUrl] = useState('');
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isAddingCustom, setIsAddingCustom] = useState(false);
+    const [customActivityName, setCustomActivityName] = useState('');
 
     const navigate = useNavigate();
 
@@ -420,69 +425,168 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         </button>
                                     </div>
                                 ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        {/* Activity Type */}
                                         <div>
-                                            <label style={styles.inputLabel}>Describe tu actividad</label>
-                                            <textarea
-                                                value={extraActivityDesc}
-                                                onChange={(e) => setExtraActivityDesc(e.target.value)}
-                                                placeholder="Ej: Corrí 5km en 25 minutos..."
-                                                style={styles.textArea}
-                                                rows={4}
-                                            />
+                                            <label style={styles.inputLabel}>Tipo de Actividad</label>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                                                {(perfil.catalogoExtras?.length ? perfil.catalogoExtras : ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo']).map((type) => (
+                                                    <button
+                                                        key={type}
+                                                        onClick={() => setExtraActivityType(type)}
+                                                        style={{
+                                                            padding: '8px 12px',
+                                                            borderRadius: '12px',
+                                                            border: `1px solid ${extraActivityType === type ? Colors.primary : Colors.border}`,
+                                                            background: extraActivityType === type ? Colors.primary : Colors.surface,
+                                                            color: extraActivityType === type ? '#000' : Colors.text,
+                                                            fontSize: '13px',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        {type}
+                                                    </button>
+                                                ))}
+                                                <button
+                                                    onClick={() => setIsAddingCustom(true)}
+                                                    style={{
+                                                        padding: '8px 12px',
+                                                        borderRadius: '12px',
+                                                        border: `1px solid ${Colors.border}`,
+                                                        background: Colors.surface,
+                                                        color: Colors.primary,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <Plus size={16} />
+                                                </button>
+                                            </div>
+
+                                            {isAddingCustom && (
+                                                <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                                                    <input
+                                                        autoFocus
+                                                        value={customActivityName}
+                                                        onChange={(e) => setCustomActivityName(e.target.value)}
+                                                        placeholder="Nombre..."
+                                                        style={{ ...styles.searchInput, marginTop: 0 }}
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!customActivityName.trim()) return;
+                                                            const newCatalog = [...(perfil.catalogoExtras || []), customActivityName.trim()];
+                                                            const uniqueCatalog = Array.from(new Set(newCatalog));
+                                                            useUserStore.setState((state) => ({
+                                                                perfil: { ...state.perfil, catalogoExtras: uniqueCatalog }
+                                                            }));
+                                                            setExtraActivityType(customActivityName.trim());
+                                                            setCustomActivityName('');
+                                                            setIsAddingCustom(false);
+                                                        }}
+                                                        style={{
+                                                            background: Colors.primary,
+                                                            color: '#000',
+                                                            border: 'none',
+                                                            borderRadius: '10px',
+                                                            padding: '0 16px',
+                                                            fontWeight: 700,
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        OK
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        <div>
-                                            <label style={styles.inputLabel}>Video URL (Opcional)</label>
-                                            <input
-                                                type="url"
-                                                value={extraActivityUrl}
-                                                onChange={(e) => setExtraActivityUrl(e.target.value)}
-                                                placeholder="https://youtube.com/..."
-                                                style={styles.searchInput}
-                                            />
+                                        {/* Stats */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                            <div>
+                                                <label style={styles.inputLabel}>Duración (min)</label>
+                                                <input
+                                                    type="number"
+                                                    value={extraActivityDuration}
+                                                    onChange={(e) => setExtraActivityDuration(e.target.value)}
+                                                    placeholder="45"
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={styles.inputLabel}>Recorrido (km)</label>
+                                                <input
+                                                    type="number"
+                                                    value={extraActivityDistance}
+                                                    onChange={(e) => setExtraActivityDistance(e.target.value)}
+                                                    placeholder="Opcional"
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
                                         </div>
 
+                                        {/* Intensity */}
+                                        <div>
+                                            <label style={styles.inputLabel}>Esfuerzo</label>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                                                {(['baja', 'media', 'alta'] as const).map((level) => (
+                                                    <button
+                                                        key={level}
+                                                        onClick={() => setExtraActivityIntensity(level)}
+                                                        style={{
+                                                            padding: '10px',
+                                                            borderRadius: '10px',
+                                                            border: '1px solid',
+                                                            background: extraActivityIntensity === level
+                                                                ? (level === 'alta' ? Colors.error : level === 'media' ? Colors.warning : Colors.success)
+                                                                : Colors.surface,
+                                                            color: extraActivityIntensity === level ? '#FFF' : Colors.textSecondary,
+                                                            borderColor: extraActivityIntensity === level ? 'transparent' : Colors.border,
+                                                            fontSize: '12px',
+                                                            fontWeight: 700,
+                                                            cursor: 'pointer',
+                                                            textTransform: 'uppercase'
+                                                        }}
+                                                    >
+                                                        {level}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Submit */}
                                         <button
                                             style={{
                                                 ...styles.startExerciseBtn,
-                                                opacity: (isAnalyzing || !extraActivityDesc.trim()) ? 0.7 : 1,
-                                                width: '100%'
+                                                opacity: (!extraActivityType || !extraActivityDuration) ? 0.5 : 1,
+                                                width: '100%',
+                                                marginTop: '8px'
                                             }}
-                                            disabled={isAnalyzing || !extraActivityDesc.trim()}
+                                            disabled={!extraActivityType || !extraActivityDuration}
                                             onClick={async () => {
-                                                setIsAnalyzing(true);
-                                                try {
-                                                    const analisis = await analyzeExtraActivity(extraActivityDesc, extraActivityUrl);
+                                                const mets = extraActivityIntensity === 'baja' ? 4 : extraActivityIntensity === 'media' ? 8 : 12;
+                                                const weight = perfil.usuario.peso || 70;
+                                                const durationHrs = parseInt(extraActivityDuration) / 60;
+                                                const estimatedCalories = Math.round(mets * weight * durationHrs);
 
-                                                    await addExtraActivity({
-                                                        id: `extra_${Date.now()}`,
-                                                        fecha: new Date().toISOString(),
-                                                        descripcion: extraActivityDesc,
-                                                        videoUrl: extraActivityUrl || undefined,
-                                                        analisisIA: analisis
-                                                    });
-
-                                                    // Finish session after adding extra
-                                                    await finishSession(Math.floor(duration / 60));
-                                                    onFinish();
-                                                } catch (error) {
-                                                    console.error(error);
-                                                    alert('Error al analizar la actividad. Intenta de nuevo.');
-                                                } finally {
-                                                    setIsAnalyzing(false);
-                                                }
+                                                await addExtraActivity({
+                                                    id: `extra_${Date.now()}`,
+                                                    fecha: new Date().toISOString(),
+                                                    descripcion: extraActivityType,
+                                                    videoUrl: extraActivityUrl || undefined,
+                                                    analisisIA: {
+                                                        tipoDeporte: extraActivityType,
+                                                        duracionMinutos: parseInt(extraActivityDuration),
+                                                        distanciaKm: extraActivityDistance ? parseFloat(extraActivityDistance) : undefined,
+                                                        intensidad: extraActivityIntensity,
+                                                        calorias: estimatedCalories,
+                                                        notas: 'Registro manual'
+                                                    }
+                                                });
+                                                await finishSession(Math.floor(duration / 60));
+                                                onFinish();
                                             }}
                                         >
-                                            {isAnalyzing ? (
-                                                <>
-                                                    <span className="spin">⏳</span> Analizando...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Save size={20} /> Guardar y Finalizar
-                                                </>
-                                            )}
+                                            <Save size={20} /> Guardar y Finalizar
                                         </button>
                                     </div>
                                 )}

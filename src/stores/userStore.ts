@@ -202,6 +202,7 @@ interface UserStore {
     setRole: (role: 'admin' | 'user') => void;
     deleteRoutineFromHistory: (index: number) => void;
     addExtraActivity: (activity: ExtraActivity) => Promise<void>;
+    removeExtraActivitiesOnDate: (dateStr: string) => Promise<void>;
     getExtraActivitiesCatalog: () => string[];
 }
 
@@ -517,7 +518,8 @@ export const useUserStore = create<UserStore>()(
                     // Also mark the day as completed in tracking
                     const newTracking = { ...(state.perfil.weeklyTracking || {}) };
                     if (activity.fecha) {
-                        newTracking[activity.fecha] = true;
+                        const dateKey = activity.fecha.split('T')[0];
+                        newTracking[dateKey] = true;
                     }
 
                     return {
@@ -543,10 +545,50 @@ export const useUserStore = create<UserStore>()(
                 }
             },
 
+            removeExtraActivitiesOnDate: async (dateStr: string) => {
+                const { userId, perfil } = get();
+                const activitiesToDelete = perfil.actividadesExtras.filter(a => a.fecha === dateStr);
+
+                if (activitiesToDelete.length === 0 && !perfil.weeklyTracking?.[dateStr]) return;
+
+                // 1. Optimistic Update
+                set((state) => {
+                    const newTracking = { ...state.perfil.weeklyTracking };
+                    delete newTracking[dateStr];
+
+                    const newActivities = state.perfil.actividadesExtras.filter(a => a.fecha !== dateStr);
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            weeklyTracking: newTracking,
+                            actividadesExtras: newActivities
+                        }
+                    };
+                });
+
+                // 2. Persist to Firebase
+                if (userId) {
+                    try {
+                        const { firebaseService } = await import('../services/firebaseService');
+                        // Update Profile (for weeklyTracking)
+                        const updatedProfile = get().perfil;
+                        await firebaseService.saveProfile(userId, updatedProfile);
+
+                        // Delete extra activity documents
+                        await Promise.all(activitiesToDelete.map(activity =>
+                            firebaseService.deleteExtraActivity(userId, activity.id)
+                        ));
+                    } catch (error) {
+                        console.error('Error removing extra activity:', error);
+                    }
+                }
+            },
+
             getExtraActivitiesCatalog: () => {
                 const state = get();
                 return state.perfil.catalogoExtras;
-            },
+            }
         }),
         {
             name: 'gymbro-user-auth',
@@ -557,5 +599,6 @@ export const useUserStore = create<UserStore>()(
         }
     )
 );
+
 
 export default useUserStore;
