@@ -9,10 +9,12 @@ import {
     Bell, Calendar, Heart, RefreshCw, Settings, Shield, Users,
     Cloud, Download, Upload, CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, Image as ImageIcon, UserCircle
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { firebaseService } from '@/services/firebaseService';
 import { authService } from '@/services/authService';
+import { toast } from 'react-hot-toast';
+import { calculateGlobalStats } from '@/utils/statsUtils';
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
@@ -25,6 +27,7 @@ export const ProfilePage: React.FC = () => {
     const [editAlias, setEditAlias] = useState(perfil.alias || '');
     const [aliasError, setAliasError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const stats = useMemo(() => calculateGlobalStats(perfil), [perfil]);
 
     // Modal States
     const [showPartnerModal, setShowPartnerModal] = useState(false);
@@ -157,8 +160,8 @@ export const ProfilePage: React.FC = () => {
         { icon: Heart, label: 'Mis Rutinas Activas', color: '#3B82F6', action: () => navigate('/routine') },
         { icon: Calendar, label: 'Configurar Horario', color: '#8B5CF6', action: () => navigate('/profile/schedule') },
 
-        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => alert('Próximamente') },
-        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => alert('Próximamente') },
+        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('Próximamente 🚧', { icon: '🔔' }) },
+        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('Próximamente 🚧', { icon: '🛡️' }) },
     ];
 
     return (
@@ -268,16 +271,16 @@ export const ProfilePage: React.FC = () => {
             {/* Stats */}
             <div style={styles.statsRow}>
                 <div style={styles.statItem}>
-                    <span style={styles.statVal}>{perfil.historial.length}</span>
+                    <span style={styles.statVal}>{stats.totalSessions}</span>
                     <span style={styles.statLabel}>SESIONES</span>
                 </div>
                 <div style={styles.statItem}>
-                    <span style={styles.statVal}>0</span>
-                    <span style={styles.statLabel}>STREAK</span>
+                    <span style={styles.statVal}>{stats.streak}</span>
+                    <span style={styles.statLabel}>RACHA</span>
                 </div>
                 <div style={styles.statItem}>
-                    <span style={styles.statVal}>70%</span>
-                    <span style={styles.statLabel}>FORMA</span>
+                    <span style={styles.statVal}>{stats.consistency}%</span>
+                    <span style={styles.statLabel}>CONSTANCIA</span>
                 </div>
             </div>
 
@@ -445,9 +448,29 @@ export const ProfilePage: React.FC = () => {
                                         </div>
                                         <button
                                             onClick={() => {
-                                                if (confirm('¿Eliminar esta rutina del historial?')) {
-                                                    deleteRoutineFromHistory(i);
-                                                }
+                                                toast((t) => (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta rutina del historial?</span>
+                                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                            <button
+                                                                onClick={() => toast.dismiss(t.id)}
+                                                                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                                                            >
+                                                                Cancelar
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    deleteRoutineFromHistory(i);
+                                                                    toast.dismiss(t.id);
+                                                                    toast.success('Rutina eliminada del historial');
+                                                                }}
+                                                                style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                                                            >
+                                                                Eliminar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ), { duration: 5000 });
                                             }}
                                             style={styles.deleteHistoryBtn}
                                         >

@@ -36,6 +36,7 @@ import { reorganizeRoutine } from '@/services/geminiService';
 import { firebaseService } from '@/services/firebaseService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 
 const DAY_STYLE: Record<string, { color: string, bg: string }> = {
     'Lunes': { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.05)' },
@@ -953,7 +954,6 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                             />
                         </div>
                         <div style={styles.editField}>
-                            <label style={styles.editLabel}>Descanso</label>
                             <input
                                 type="number"
                                 value={editedExercise.descanso}
@@ -963,6 +963,28 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                 })}
                                 style={styles.editInputSmall}
                             />
+                        </div>
+                        <div style={styles.editField}>
+                            <label style={styles.editLabel}>Opcional</label>
+                            <div
+                                onClick={() => setEditedExercise({
+                                    ...editedExercise,
+                                    isOptional: !editedExercise.isOptional
+                                })}
+                                style={styles.progressiveCheckboxRow}
+                            >
+                                <div style={{
+                                    ...styles.checkbox,
+                                    borderColor: editedExercise.isOptional ? Colors.primary : Colors.border,
+                                    background: editedExercise.isOptional ? Colors.primary : 'transparent'
+                                }}>
+                                    {editedExercise.isOptional && <Check size={10} color="#000" />}
+                                </div>
+                                <span style={{
+                                    ...styles.checkboxLabel,
+                                    color: editedExercise.isOptional ? Colors.text : Colors.textTertiary
+                                }}>{editedExercise.isOptional ? 'Sí' : 'No'}</span>
+                            </div>
                         </div>
                     </div>
                     <div style={styles.editRow}>
@@ -1287,10 +1309,12 @@ export const RoutineDetailPage: React.FC = () => {
         setIsSharing(true);
         const result = await firebaseService.shareRoutine(shareAlias.trim(), rutina);
         setIsSharing(false);
-        alert(result.message);
         if (result.success) {
+            toast.success(result.message);
             setShowShareModal(false);
             setShareAlias('');
+        } else {
+            toast.error(result.message);
         }
     };
 
@@ -1315,10 +1339,10 @@ export const RoutineDetailPage: React.FC = () => {
                 ejercicios: cleanupRoutineExercises(result.exercises),
                 nombre: result.routineName || rutina.nombre
             });
-            alert("¡Rutina organizada con éxito por la IA!");
+            toast.success("¡Rutina organizada con éxito por la IA!");
         } catch (error) {
             console.error(error);
-            alert("No se pudo organizar la rutina con IA.");
+            toast.error("No se pudo organizar la rutina con IA.");
         } finally {
             setIsReorganizing(false);
         }
@@ -1423,10 +1447,32 @@ export const RoutineDetailPage: React.FC = () => {
     };
 
     const handleDeleteExercise = (id: string) => {
-        if (rutina && confirm('¿Eliminar este ejercicio?')) {
-            const updatedEjercicios = rutina.ejercicios.filter(ej => ej.id !== id);
-            setRutina({ ...rutina, ejercicios: updatedEjercicios });
-        }
+        if (!rutina) return;
+
+        toast((t) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar este ejercicio?</span>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={() => {
+                            const updatedEjercicios = rutina.ejercicios.filter(ej => ej.id !== id);
+                            setRutina({ ...rutina, ejercicios: updatedEjercicios });
+                            toast.dismiss(t.id);
+                            toast.success('Ejercicio eliminado');
+                        }}
+                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                    >
+                        Eliminar
+                    </button>
+                </div>
+            </div>
+        ), { duration: 5000 });
     };
 
     const handleMoveExercise = (index: number, direction: 'up' | 'down') => {

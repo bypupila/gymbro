@@ -3,6 +3,8 @@ import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import { Check, X, Calendar, Dumbbell, Activity, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-hot-toast';
+import { calculateGlobalStats } from '@/utils/statsUtils';
 
 export const WeeklyProgressBar: React.FC = () => {
     const { perfil } = useUserStore();
@@ -143,7 +145,7 @@ export const WeeklyProgressBar: React.FC = () => {
             setSelectedDate(null);
         } catch (error) {
             console.error('Error saving extra activity:', error);
-            alert('Error al guardar la actividad. Intenta de nuevo.');
+            toast.error('Error al guardar la actividad. Intenta de nuevo.');
         }
     };
 
@@ -172,8 +174,11 @@ export const WeeklyProgressBar: React.FC = () => {
         return perfil.horario.dias.find(d => d.dia === dayName);
     };
 
-    const completedDays = weekDays.filter(d => weeklyTracking[formatDate(d)]).length;
-    const scheduledDays = weekDays.filter((_, i) => getDaySchedule(i)?.entrena).length;
+    const stats = calculateGlobalStats(perfil);
+    const activeDatesSet = new Set(stats.unifiedHistory.map(h => formatDate(h.date)));
+
+    const completedDays = weekDays.filter(d => activeDatesSet.has(formatDate(d))).length;
+    const scheduledDays = weekDays.filter((_, i) => getDaySchedule((i + 1) % 7)?.entrena).length;
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
 
@@ -187,7 +192,7 @@ export const WeeklyProgressBar: React.FC = () => {
                     <div>
                         <h3 style={styles.title}>Progreso Semanal</h3>
                         <p style={styles.subtitle}>
-                            {completedDays} de {scheduledDays} días completados
+                            {completedDays} de {scheduledDays} actividades completadas
                         </p>
                     </div>
                     <div style={styles.progressCircle}>
@@ -200,7 +205,7 @@ export const WeeklyProgressBar: React.FC = () => {
                 <div style={styles.daysContainer}>
                     {weekDays.map((date, index) => {
                         const dateStr = formatDate(date);
-                        const isCompleted = weeklyTracking[dateStr];
+                        const isCompleted = activeDatesSet.has(dateStr);
                         const schedule = getDaySchedule((index + 1) % 7); // Adjust for Monday start
                         const isScheduled = schedule?.entrena;
                         const today = isToday(date);

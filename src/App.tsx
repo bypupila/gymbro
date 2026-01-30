@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import MainLayout from './components/MainLayout';
 import { BodyStatusPage } from './pages/BodyStatusPage';
 import { CoachPage } from './pages/CoachPage';
@@ -57,6 +58,15 @@ const OnboardingRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
 function App() {
     return (
         <BrowserRouter>
+            <Toaster position="top-center" toastOptions={{
+                duration: 3000,
+                style: {
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.1)'
+                }
+            }} />
             <CloudSyncManager />
             <Routes>
                 {/* Onboarding Routes - Full screen experience */}

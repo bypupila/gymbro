@@ -153,38 +153,7 @@ export const HomePage: React.FC = () => {
 
 
             {/* Premium Windows Grid (Pencil Mockup) */}
-            <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Funciones Premium</h3>
-                <div style={styles.premiumGrid}>
-                    <button
-                        style={styles.premiumCard}
-                        onClick={() => navigate('/body-status')}
-                    >
-                        <div style={{ ...styles.premiumIcon, background: `${Colors.error}15` }}>
-                            <Activity size={20} color={Colors.error} />
-                        </div>
-                        <span style={styles.premiumLabel}>Body Status</span>
-                    </button>
-                    <button
-                        style={styles.premiumCard}
-                        onClick={() => navigate('/dual-training')}
-                    >
-                        <div style={{ ...styles.premiumIcon, background: `${Colors.info}15` }}>
-                            <Zap size={20} color={Colors.info} />
-                        </div>
-                        <span style={styles.premiumLabel}>Dual Training</span>
-                    </button>
-                    <button
-                        style={styles.premiumCard}
-                        onClick={() => navigate('/migrator')}
-                    >
-                        <div style={{ ...styles.premiumIcon, background: `${Colors.accent}15` }}>
-                            <FileText size={20} color={Colors.accent} />
-                        </div>
-                        <span style={styles.premiumLabel}>AI Migrator</span>
-                    </button>
-                </div>
-            </div>
+
         </div>
     );
 };

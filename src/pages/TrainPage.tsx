@@ -9,11 +9,15 @@ import { Dumbbell, History, Play, Zap, Calendar, ChevronRight } from 'lucide-rea
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
+import { MoodCheckin } from '@/components/MoodCheckin';
+import { MoodLog } from '@/stores/userStore';
+import { toast } from 'react-hot-toast';
 
 export const TrainPage: React.FC = () => {
     const navigate = useNavigate();
     const { perfil, getEntrenamientoHoy, activeSession, startSession } = useUserStore();
     const entrenamientoHoy = getEntrenamientoHoy();
+    const [showMoodCheckin, setShowMoodCheckin] = useState(false);
 
     const hoyEjercicios = useMemo(() => {
         if (!perfil.rutina) return [];
@@ -24,11 +28,17 @@ export const TrainPage: React.FC = () => {
 
     const handleStartWorkout = () => {
         if (!perfil.rutina) {
-            alert('Primero debes crear una rutina en el Inicio.');
+            toast.error('Primero debes crear una rutina en el Inicio.');
             navigate('/');
             return;
         }
-        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre);
+        setShowMoodCheckin(true);
+    };
+
+    const handleMoodComplete = (moodData: MoodLog) => {
+        if (!perfil.rutina) return;
+        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre, moodData);
+        setShowMoodCheckin(false);
     };
 
     if (activeSession) {
@@ -47,6 +57,13 @@ export const TrainPage: React.FC = () => {
 
     return (
         <div style={styles.container}>
+            {showMoodCheckin && (
+                <MoodCheckin
+                    type="pre"
+                    onComplete={handleMoodComplete}
+                    onCancel={() => setShowMoodCheckin(false)}
+                />
+            )}
             <h1 style={styles.title}>Entrenar</h1>
             <p style={styles.subtitle}>
                 {entrenamientoHoy.entrena
@@ -86,7 +103,7 @@ export const TrainPage: React.FC = () => {
                 {quickActions.map((action, i) => (
                     <Card
                         key={i}
-                        onClick={() => alert('Próximamente')}
+                        onClick={() => toast('Próximamente', { icon: '⏳' })}
                         style={styles.actionCard}
                     >
                         <div style={{ ...styles.actionIcon, background: `${action.color}20` }}>

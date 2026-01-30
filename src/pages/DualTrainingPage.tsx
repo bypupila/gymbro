@@ -8,6 +8,7 @@ import { ChevronLeft, Users, Zap, Heart, ShieldCheck, Share2 } from 'lucide-reac
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
+import { toast } from 'react-hot-toast';
 
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
@@ -35,7 +36,7 @@ export const DualTrainingPage: React.FC = () => {
                     nombre: user.name || user.alias || 'Partner',
                     edad: 0, peso: 0, altura: 0, nivel: 'intermedio', objetivo: 'mantener', lesiones: ''
                 });
-                alert('¡Pareja Conectada!');
+                toast.success('¡Pareja Conectada!');
             } else {
                 setConnectError('Alias no encontrado');
             }

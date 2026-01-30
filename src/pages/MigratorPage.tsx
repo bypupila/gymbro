@@ -7,6 +7,7 @@ import Colors from '@/styles/colors';
 import { ChevronLeft, Scan, Camera, FileText, Zap, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
+import { toast } from 'react-hot-toast';
 
 export const MigratorPage: React.FC = () => {
     const navigate = useNavigate();
@@ -44,16 +45,16 @@ export const MigratorPage: React.FC = () => {
                         analizadaPorIA: true
                     });
 
-                    alert(`¡Rutina digitalizada con éxito! ${result.exercises.length} ejercicios detectados.`);
+                    toast.success(`¡Rutina digitalizada con éxito! ${result.exercises.length} ejercicios detectados.`);
                     navigate('/routine');
                 } else {
-                    alert('No pude detectar ejercicios en la imagen. Intenta con una más clara.');
+                    toast.error('No pude detectar ejercicios en la imagen. Intenta con una más clara.');
                 }
             };
             reader.readAsDataURL(file);
         } catch (error) {
             console.error("Scanning error:", error);
-            alert("Error al procesar la imagen.");
+            toast.error("Error al procesar la imagen.");
         } finally {
             setIsScanning(false);
         }

@@ -4,6 +4,7 @@ import Colors from '@/styles/colors';
 import { Search, Filter, Play, Pencil, Database, Save, X, Loader2 } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
 import { firebaseService } from '@/services/firebaseService';
+import { toast } from 'react-hot-toast';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
 import { getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,7 +17,6 @@ export const CatalogPage: React.FC = () => {
     const [exercises, setExercises] = useState(EJERCICIOS_DATABASE);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedGroup, setSelectedGroup] = useState<GrupoMuscularEjercicio | 'todos'>('todos');
-    const [notification, setNotification] = useState<string | null>(null);
 
     // Editor State
     const [editingExercise, setEditingExercise] = useState<any | null>(null);
@@ -39,27 +39,43 @@ export const CatalogPage: React.FC = () => {
         loadData();
     }, []);
 
-    const showNotification = (msg: string) => {
-        setNotification(msg);
-        setTimeout(() => setNotification(null), 3000);
-    };
+
 
     const handleSyncCatalog = async () => {
-        if (!confirm('¿Subir el catálogo local a la base de datos? Esto sobreescribirá datos existentes.')) return;
-        setIsSyncing(true);
-        try {
-            await firebaseService.initializeCatalog(EJERCICIOS_DATABASE);
-            showNotification('Catálogo sincronizado exitosamente.');
-            setUseFirebaseData(true);
-            // Reload
-            const cloudExercises = await firebaseService.getAllExercises();
-            setExercises(cloudExercises);
-        } catch (error) {
-            console.error(error);
-            showNotification('Error al sincronizar catálogo.');
-        } finally {
-            setIsSyncing(false);
-        }
+        toast((t) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Subir el catálogo local a la base de datos? Esto sobreescribirá datos existentes.</span>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={async () => {
+                            toast.dismiss(t.id);
+                            setIsSyncing(true);
+                            try {
+                                await firebaseService.initializeCatalog(EJERCICIOS_DATABASE);
+                                toast.success('Catálogo sincronizado exitosamente.');
+                                setUseFirebaseData(true);
+                                const cloudExercises = await firebaseService.getAllExercises();
+                                setExercises(cloudExercises);
+                            } catch (error) {
+                                console.error(error);
+                                toast.error('Error al sincronizar catálogo.');
+                            } finally {
+                                setIsSyncing(false);
+                            }
+                        }}
+                        style={{ background: Colors.primary, border: 'none', color: '#000', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                    >
+                        Subir
+                    </button>
+                </div>
+            </div>
+        ), { duration: 6000 });
     };
 
     const handleSaveEdit = async () => {
@@ -74,10 +90,10 @@ export const CatalogPage: React.FC = () => {
             // Update local state
             setExercises(prev => prev.map(e => (e.id === id || e.nombre === editingExercise.nombre) ? { ...editingExercise, id } : e));
             setEditingExercise(null);
-            showNotification('Ejercicio actualizado correctamente.');
+            toast.success('Ejercicio actualizado correctamente.');
         } catch (error) {
             console.error(error);
-            showNotification('Error al guardar cambios.');
+            toast.error('Error al guardar cambios.');
         } finally {
             setIsSyncing(false);
         }
@@ -121,19 +137,7 @@ export const CatalogPage: React.FC = () => {
                 )}
             </div>
 
-            {/* Notification Toast */}
-            <AnimatePresence>
-                {notification && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        style={styles.notification}
-                    >
-                        {notification}
-                    </motion.div>
-                )}
-            </AnimatePresence>
+
 
             {/* Search & Filter Bar */}
             <div style={styles.controls}>
@@ -497,20 +501,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '40px',
         color: Colors.textTertiary,
     },
-    notification: {
-        position: 'fixed',
-        top: '20px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        background: Colors.primary,
-        color: '#000',
-        padding: '12px 24px',
-        borderRadius: '24px',
-        fontWeight: 'bold',
-        zIndex: 100,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        whiteSpace: 'nowrap',
-    },
+
     syncBtn: {
         display: 'flex',
         alignItems: 'center',

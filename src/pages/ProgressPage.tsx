@@ -5,55 +5,23 @@
 import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy, Activity } from 'lucide-react';
-import React, { useMemo } from 'react';
+import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy, Activity, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { toast } from 'react-hot-toast';
+import { calculateGlobalStats } from '@/utils/statsUtils';
 
 export const ProgressPage: React.FC = () => {
-    const { perfil } = useUserStore();
+    const { perfil, removeExtraActivity } = useUserStore();
     const hasPartner = !!perfil.pareja;
     const history = perfil.historial || [];
-    const extraActivities = perfil.actividadesExtras || [];
+    const [showAllExtras, setShowAllExtras] = useState(false);
 
-    // Unified dates of activity (workouts + extras)
-    const activeDates = useMemo(() => {
-        const dates = new Set<string>();
-        history.forEach(h => dates.add(new Date(h.fecha).toDateString()));
-        extraActivities.forEach(e => dates.add(new Date(e.fecha).toDateString()));
+    // Global Stats Calculation
+    const stats = useMemo(() => calculateGlobalStats(perfil), [perfil]);
+    const { unifiedHistory, totalSessions, totalMinutes, totalCalories, streak, consistency } = stats;
 
-        return Array.from(dates)
-            .map(d => new Date(d))
-            .sort((a, b) => b.getTime() - a.getTime()); // Descending
-    }, [history, extraActivities]);
-
-    // Calculate Streak (consecutive days with any activity)
-    const calculateStreak = () => {
-        if (activeDates.length === 0) return 0;
-
-        let streak = 0;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        // Check if the most recent activity was today or yesterday to keep streak alive
-        const lastActivity = activeDates[0];
-        lastActivity.setHours(0, 0, 0, 0);
-
-        const diffToLast = (today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24);
-        if (diffToLast > 1) return 0; // Streak broken if gap > 1 day
-
-        streak = 1;
-        for (let i = 0; i < activeDates.length - 1; i++) {
-            const curr = activeDates[i];
-            const next = activeDates[i + 1];
-            const diffDays = (curr.getTime() - next.getTime()) / (1000 * 60 * 60 * 24);
-            if (diffDays === 1) streak++;
-            else break;
-        }
-        return streak;
-    };
-
-    // Calculate Yearly Total (Any activity count)
     const currentYear = new Date().getFullYear();
-    const yearlyTotal = activeDates.filter(d => d.getFullYear() === currentYear).length;
+    const yearlyTotal = unifiedHistory.filter(h => h.date.getFullYear() === currentYear).length;
 
     // Monthly Calendar Data
     const now = new Date();
@@ -62,24 +30,8 @@ export const ProgressPage: React.FC = () => {
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
     const startOffset = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
 
-    // Calculate Compliance (days active vs planned days)
-    const calculateCompliance = () => {
-        const plannedDays = perfil.horario.dias.filter(d => d.entrena).length;
-        if (plannedDays === 0) return 100;
-
-        const startOfWeek = new Date();
-        const day = startOfWeek.getDay();
-        const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
-        startOfWeek.setDate(diff);
-        startOfWeek.setHours(0, 0, 0, 0);
-
-        const activeDaysThisWeek = activeDates.filter(d => d >= startOfWeek).length;
-        const percent = Math.round((activeDaysThisWeek / plannedDays) * 100);
-        return Math.min(percent, 100);
-    };
-
-    // Advanced Stats Calculations
-    const advancedStats = useMemo(() => {
+    // Advanced Stats Calculations (Gym Specific)
+    const gymStats = useMemo(() => {
         if (history.length === 0) {
             return {
                 avgDuration: 0,
@@ -93,11 +45,9 @@ export const ProgressPage: React.FC = () => {
             };
         }
 
-        // Average duration
         const totalDuration = history.reduce((acc, h) => acc + (h.duracionMinutos || 0), 0);
         const avgDuration = Math.round(totalDuration / history.length);
 
-        // Total volume, sets, reps
         let totalVolume = 0;
         let totalSets = 0;
         let totalReps = 0;
@@ -120,10 +70,7 @@ export const ProgressPage: React.FC = () => {
         });
 
         const avgWeightPerSession = history.length > 0 ? Math.round(totalVolume / history.length) : 0;
-
-        // Most trained exercise
-        const mostTrained = Object.entries(exerciseCount)
-            .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+        const mostTrained = Object.entries(exerciseCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
 
         // Weekly average (last 4 weeks)
         const fourWeeksAgo = new Date();
@@ -143,36 +90,56 @@ export const ProgressPage: React.FC = () => {
         };
     }, [history]);
 
+    const moodStats = useMemo(() => {
+        const sessionsWithMood = history.filter(h => h.preWorkoutMood || h.postWorkoutMood);
+        if (sessionsWithMood.length === 0) return null;
+
+        const avgPreMood = sessionsWithMood.reduce((acc, h) => acc + (h.preWorkoutMood?.mood || 0), 0) / sessionsWithMood.length;
+        const avgPostMood = sessionsWithMood.reduce((acc, h) => acc + (h.postWorkoutMood?.mood || 0), 0) / sessionsWithMood.length;
+        const avgPreEnergy = sessionsWithMood.reduce((acc, h) => acc + (h.preWorkoutMood?.energy || 0), 0) / sessionsWithMood.length;
+        const avgPostEnergy = sessionsWithMood.reduce((acc, h) => acc + (h.postWorkoutMood?.energy || 0), 0) / sessionsWithMood.length;
+        const improvement = avgPostMood - avgPreMood;
+
+        return {
+            preMood: avgPreMood.toFixed(1),
+            postMood: avgPostMood.toFixed(1),
+            preEnergy: avgPreEnergy.toFixed(1),
+            postEnergy: avgPostEnergy.toFixed(1),
+            improvement: improvement.toFixed(1),
+            totalsessions: sessionsWithMood.length
+        };
+    }, [history]);
+
     const workoutDaysInMonth = new Set(
-        activeDates
-            .filter(d => d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear())
-            .map(d => d.getDate())
+        unifiedHistory
+            .filter(h => h.date.getMonth() === now.getMonth() && h.date.getFullYear() === now.getFullYear())
+            .map(h => h.date.getDate())
     );
 
     const mainStats = [
-        { icon: Flame, label: 'Racha', value: calculateStreak().toString(), unit: 'd', color: Colors.warning },
-        { icon: TrendingUp, label: 'Cumplimiento', value: calculateCompliance().toString(), unit: '%', color: Colors.primary },
-        { icon: Calendar, label: 'Sesiones', value: history.length.toString(), unit: '', color: Colors.info }, // Keep "Sesiones" as just workouts? Or combined? Let's keep it as workouts for now but add extra count below
+        { icon: Flame, label: 'Racha', value: streak.toString(), unit: 'd', color: Colors.warning },
+        { icon: TrendingUp, label: 'Constancia', value: consistency.toString(), unit: '%', color: Colors.primary },
+        { icon: Calendar, label: 'Total Sesiones', value: totalSessions.toString(), unit: '', color: Colors.info },
     ];
 
     const detailedStats = [
-        { icon: Clock, label: 'Duración Promedio', value: advancedStats.avgDuration, unit: 'min', color: Colors.accent },
-        { icon: Weight, label: 'Volumen Total', value: Math.round(advancedStats.totalVolume / 1000), unit: 'ton', color: Colors.primary },
-        { icon: BarChart3, label: 'Promedio Sesión', value: advancedStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
-        { icon: Trophy, label: 'Max Levantado', value: advancedStats.heaviestLift, unit: 'kg', color: Colors.warning },
+        { icon: Clock, label: 'Minutos Totales', value: totalMinutes, unit: 'min', color: Colors.accent },
+        { icon: Weight, label: 'Volumen Gym', value: Math.round(gymStats.totalVolume / 1000), unit: 'ton', color: Colors.primary },
+        { icon: BarChart3, label: 'Promedio Sesión', value: gymStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
+        { icon: Zap, label: 'Calorías (Est.)', value: totalCalories, unit: 'kcal', color: Colors.warning },
     ];
 
     const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-
     const last7Days = [...Array(7)].map((_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
         d.setHours(0, 0, 0, 0);
-        const hasWorkout = activeDates.some(ad => {
-            ad.setHours(0, 0, 0, 0);
-            return ad.getTime() === d.getTime();
+        const hasActivity = unifiedHistory.some(h => {
+            const hDate = new Date(h.date);
+            hDate.setHours(0, 0, 0, 0);
+            return hDate.getTime() === d.getTime();
         });
-        return { label: weekDays[(d.getDay() + 6) % 7], active: hasWorkout };
+        return { label: weekDays[(d.getDay() + 6) % 7], active: hasActivity };
     });
 
     return (
@@ -202,7 +169,7 @@ export const ProgressPage: React.FC = () => {
                     </div>
                 </div>
                 <button
-                    onClick={() => alert('Próximamente: Análisis visual con IA')}
+                    onClick={() => toast('Próximamente: Análisis visual con IA', { icon: '🤖' })}
                     style={styles.cameraBtn}
                 >
                     <Camera size={24} color={Colors.primary} />
@@ -221,7 +188,7 @@ export const ProgressPage: React.FC = () => {
             </div>
 
             {/* Detailed Training Stats */}
-            <h3 style={styles.sectionTitle}>📊 Estadísticas de Entrenamiento</h3>
+            <h3 style={styles.sectionTitle}>📊 Estadísticas Globales</h3>
             <div style={styles.detailedStatsGrid}>
                 {detailedStats.map((stat, i) => (
                     <Card key={i} style={styles.detailedStatCard}>
@@ -240,55 +207,206 @@ export const ProgressPage: React.FC = () => {
             {perfil.actividadesExtras && perfil.actividadesExtras.length > 0 && (
                 <>
                     <h3 style={styles.sectionTitle}>🏃 Actividades Extras</h3>
-                    <div style={styles.detailedStatsGrid}>
-                        <Card style={styles.detailedStatCard}>
-                            <div style={styles.detailedStatIcon}>
-                                <Activity size={20} color={Colors.primary} />
-                            </div>
-                            <div style={styles.detailedStatInfo}>
-                                <span style={styles.detailedStatValue}>{perfil.actividadesExtras.length}</span>
-                                <span style={styles.detailedStatLabel}>Sesiones Extras</span>
-                            </div>
-                        </Card>
-                        <Card style={styles.detailedStatCard}>
-                            <div style={styles.detailedStatIcon}>
-                                <Flame size={20} color={Colors.warning} />
-                            </div>
-                            <div style={styles.detailedStatInfo}>
-                                <span style={styles.detailedStatValue}>
-                                    {perfil.actividadesExtras.reduce((acc, curr) => acc + (curr.analisisIA?.calorias || 0), 0)}
-                                    <small style={styles.detailedStatUnit}> kcal</small>
-                                </span>
-                                <span style={styles.detailedStatLabel}>Calorías Extras</span>
-                            </div>
-                        </Card>
-                    </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '32px' }}>
-                        {perfil.actividadesExtras.slice(0, 3).map((extra) => (
-                            <Card key={extra.id} style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
+                        {(showAllExtras ? perfil.actividadesExtras : perfil.actividadesExtras.slice(0, 3)).map((extra) => (
+                            <Card key={extra.id} style={{
+                                padding: '16px',
+                                border: `1px solid ${Colors.border}40`,
+                                position: 'relative',
+                                overflow: 'hidden'
+                            }}>
+                                {/* Header Row */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                        <div style={{
+                                            width: '44px', height: '44px', borderRadius: '12px',
+                                            background: `${Colors.primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                            <Activity size={22} color={Colors.primary} />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
+                                                {extra.analisisIA?.tipoDeporte || 'Actividad Varia'}
+                                            </div>
+                                            <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
+                                                {new Date(extra.fecha).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {extra.analisisIA?.intensidad && (
+                                        <div style={{
+                                            padding: '4px 8px', borderRadius: '8px',
+                                            background: extra.analisisIA.intensidad === 'alta' ? `${Colors.error}20` : extra.analisisIA.intensidad === 'media' ? `${Colors.warning}20` : `${Colors.success}20`,
+                                            border: `1px solid ${extra.analisisIA.intensidad === 'alta' ? Colors.error : extra.analisisIA.intensidad === 'media' ? Colors.warning : Colors.success}`,
+                                        }}>
+                                            <span style={{
+                                                fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
+                                                color: extra.analisisIA.intensidad === 'alta' ? Colors.error : extra.analisisIA.intensidad === 'media' ? Colors.warning : Colors.success
+                                            }}>
+                                                {extra.analisisIA.intensidad}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Stats Row */}
                                 <div style={{
-                                    width: '40px', height: '40px', borderRadius: '12px',
-                                    background: `${Colors.primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px',
+                                    background: Colors.background, padding: '12px', borderRadius: '12px', marginBottom: '12px'
                                 }}>
-                                    <Activity size={20} color={Colors.primary} />
-                                </div>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '14px', fontWeight: 700, color: Colors.text }}>
-                                        {extra.analisisIA?.tipoDeporte || 'Actividad Varia'}
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.duracionMinutos || 0}<small>m</small></div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACIÓN</div>
                                     </div>
-                                    <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
-                                        {new Date(extra.fecha).toLocaleDateString()} • {extra.analisisIA?.duracionMinutos} min
+                                    <div style={{ textAlign: 'center', borderLeft: `1px solid ${Colors.border}`, borderRight: `1px solid ${Colors.border}` }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.calorias || 0}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>KCAL</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.distanciaKm || '--'}<small>km</small></div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DISTANCIA</div>
                                     </div>
                                 </div>
-                                {extra.analisisIA?.calorias && (
-                                    <div style={{ fontSize: '14px', fontWeight: 800, color: Colors.warning }}>
-                                        {extra.analisisIA.calorias} kcal
+
+                                {/* Notes/Description */}
+                                {extra.analisisIA?.notas && (
+                                    <div style={{ fontSize: '13px', color: Colors.textSecondary, fontStyle: 'italic', marginBottom: '8px', padding: '0 4px' }}>
+                                        "{extra.analisisIA.notas}"
                                     </div>
                                 )}
+
+                                {/* Delete Action */}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                                    <button
+                                        onClick={() => {
+                                            toast((t) => (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta actividad?</span>
+                                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                        <button
+                                                            onClick={() => toast.dismiss(t.id)}
+                                                            style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                                                        >
+                                                            Cancelar
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                removeExtraActivity(extra.id);
+                                                                toast.dismiss(t.id);
+                                                                toast.success('Actividad eliminada');
+                                                            }}
+                                                            style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                                                        >
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ), { duration: 5000 });
+                                        }}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            color: Colors.error,
+                                            fontSize: '12px',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            cursor: 'pointer',
+                                            opacity: 0.8
+                                        }}
+                                    >
+                                        <Trash2 size={14} /> Eliminar Actividad
+                                    </button>
+                                </div>
                             </Card>
                         ))}
+
+                        {perfil.actividadesExtras.length > 3 && (
+                            <button
+                                onClick={() => setShowAllExtras(!showAllExtras)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: Colors.primary,
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    padding: '12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                    cursor: 'pointer',
+                                    marginTop: '8px'
+                                }}
+                            >
+                                {showAllExtras ? (
+                                    <><ChevronUp size={16} /> Ver menos</>
+                                ) : (
+                                    <><ChevronDown size={16} /> Ver todas ({perfil.actividadesExtras.length})</>
+                                )}
+                            </button>
+                        )}
                     </div>
+                </>
+            )}
+
+            {/* Mood & Energy Insights */}
+            {moodStats && (
+                <>
+                    <h3 style={styles.sectionTitle}>🧠 Bienestar y Energía</h3>
+                    <Card style={{ padding: '20px', marginBottom: '32px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                            <div>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '12px', textAlign: 'center' }}>
+                                    Ánimo (1-5)
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.text }}>{moodStats.preMood}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>PRE</div>
+                                    </div>
+                                    <TrendingUp size={20} color={parseFloat(moodStats.improvement) >= 0 ? Colors.success : Colors.error} style={{ transform: parseFloat(moodStats.improvement) >= 0 ? 'rotate(0deg)' : 'rotate(90deg)' }} />
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.primary }}>{moodStats.postMood}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>POST</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '12px', textAlign: 'center' }}>
+                                    Energía (1-5)
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.text }}>{moodStats.preEnergy}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>PRE</div>
+                                    </div>
+                                    <Zap size={20} color={Colors.warning} />
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.primary }}>{moodStats.postEnergy}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>POST</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '12px',
+                            background: `${Colors.primary}10`,
+                            borderRadius: '12px',
+                            textAlign: 'center',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: Colors.text
+                        }}>
+                            {parseFloat(moodStats.improvement) > 0
+                                ? `✨ Tu ánimo mejora un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% después de entrenar.`
+                                : `💪 Mantienes tu enfoque durante todo el entrenamiento.`}
+                        </div>
+                    </Card>
                 </>
             )}
 
@@ -297,14 +415,14 @@ export const ProgressPage: React.FC = () => {
                 <Card style={styles.summaryCard}>
                     <Dumbbell size={20} color={Colors.primary} />
                     <div style={styles.summaryInfo}>
-                        <span style={styles.summaryValue}>{advancedStats.totalSets}</span>
+                        <span style={styles.summaryValue}>{gymStats.totalSets}</span>
                         <span style={styles.summaryLabel}>Series Totales</span>
                     </div>
                 </Card>
                 <Card style={styles.summaryCard}>
                     <BarChart3 size={20} color={Colors.accent} />
                     <div style={styles.summaryInfo}>
-                        <span style={styles.summaryValue}>{advancedStats.totalReps}</span>
+                        <span style={styles.summaryValue}>{gymStats.totalReps}</span>
                         <span style={styles.summaryLabel}>Reps Totales</span>
                     </div>
                 </Card>
@@ -314,7 +432,7 @@ export const ProgressPage: React.FC = () => {
             <Card style={styles.weeklyAvgCard}>
                 <div style={styles.weeklyAvgContent}>
                     <span style={styles.weeklyAvgLabel}>Promedio Semanal</span>
-                    <span style={styles.weeklyAvgValue}>{advancedStats.weeklyAvg}</span>
+                    <span style={styles.weeklyAvgValue}>{gymStats.weeklyAvg}</span>
                     <span style={styles.weeklyAvgUnit}>entrenamientos/semana</span>
                 </div>
                 <div style={styles.weeklyAvgIcon}>
@@ -323,12 +441,12 @@ export const ProgressPage: React.FC = () => {
             </Card>
 
             {/* Most Trained */}
-            {advancedStats.mostTrained !== 'N/A' && (
+            {gymStats.mostTrained !== 'N/A' && (
                 <Card style={styles.mostTrainedCard}>
                     <Trophy size={24} color={Colors.warning} />
                     <div style={styles.mostTrainedInfo}>
                         <span style={styles.mostTrainedLabel}>Ejercicio Más Realizado</span>
-                        <span style={styles.mostTrainedValue}>{advancedStats.mostTrained}</span>
+                        <span style={styles.mostTrainedValue}>{gymStats.mostTrained}</span>
                     </div>
                 </Card>
             )}

@@ -21,6 +21,12 @@ export interface DatosPersonales {
     avatar?: string;
 }
 
+export interface MoodLog {
+    mood: number; // 1-5 (1: Terrible, 5: Excelente)
+    energy: number; // 1-5 (1: Agotado, 5: A tope)
+    note?: string;
+}
+
 export interface DiaEntrenamiento {
     dia: string;
     entrena: boolean;
@@ -46,6 +52,7 @@ export interface EjercicioRutina {
     observaciones?: string;
     grupoMuscular?: string; // Ej: "pectoral", "espalda", etc.
     imagen?: string;
+    isOptional?: boolean;
 }
 
 export interface RutinaUsuario {
@@ -83,6 +90,8 @@ export interface EntrenamientoRealizado {
     duracionMinutos: number;
     nombre: string;
     ejercicios: EjercicioRealizado[];
+    preWorkoutMood?: MoodLog;
+    postWorkoutMood?: MoodLog;
 }
 
 export interface AnalysisResult {
@@ -151,6 +160,9 @@ export interface SetTracking {
     skipped: boolean;
     weight: number;
     reps: number;
+    startTime?: number; // timestamp
+    duration?: number; // seconds
+    rest?: number; // seconds
 }
 
 export interface ExerciseTracking {
@@ -161,6 +173,7 @@ export interface ExerciseTracking {
     sets: SetTracking[];
     categoria?: 'calentamiento' | 'maquina'; // For separating warmup from main exercises
     isCompleted?: boolean;
+    isOptional?: boolean;
 }
 
 export interface ActiveSession {
@@ -168,6 +181,7 @@ export interface ActiveSession {
     dayName: string;
     exercises: ExerciseTracking[];
     routineName: string;
+    preWorkoutMood?: MoodLog;
 }
 
 interface UserStore {
@@ -187,13 +201,13 @@ interface UserStore {
     agregarEntrenamiento: (entrenamiento: EntrenamientoRealizado) => void;
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
-    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string) => void;
+    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: MoodLog) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>) => void;
     skipSet: (exerciseId: string, setIndex: number) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
     addExerciseToSession: (newExercise: EjercicioRutina) => void;
     markExerciseAsCompleted: (exerciseId: string) => void;
-    finishSession: (durationMinutos: number) => Promise<void>;
+    finishSession: (durationMinutos: number, postWorkoutMood?: MoodLog) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
     logout: () => void;
@@ -202,6 +216,7 @@ interface UserStore {
     setRole: (role: 'admin' | 'user') => void;
     deleteRoutineFromHistory: (index: number) => void;
     addExtraActivity: (activity: ExtraActivity) => Promise<void>;
+    removeExtraActivity: (activityId: string) => Promise<void>;
     removeExtraActivitiesOnDate: (dateStr: string) => Promise<void>;
     getExtraActivitiesCatalog: () => string[];
 }
@@ -306,23 +321,27 @@ export const useUserStore = create<UserStore>()(
                 return { entrena: false, grupoMuscular: 'Descanso' as GrupoMuscular, hora: '', dia: diaNombre };
             },
 
-            startSession: (dayName, exercises, routineName) => set((state) => ({
+            startSession: (dayName, exercises, routineName, preWorkoutMood) => set((state) => ({
                 activeSession: {
                     startTime: new Date().toISOString(),
                     dayName,
                     routineName,
+                    preWorkoutMood,
                     exercises: exercises.map(ex => ({
                         id: ex.id,
                         nombre: ex.nombre,
                         targetSeries: ex.series,
                         targetReps: ex.repeticiones,
                         categoria: ex.categoria, // Include category for warmup/main separation
+                        isOptional: ex.isOptional,
                         isCompleted: false,
                         sets: Array.from({ length: ex.series }, (_, i) => ({
                             completed: false,
                             skipped: false,
                             weight: 0,
-                            reps: parseInt(ex.repeticiones) || 10
+                            reps: parseInt(ex.repeticiones) || 10,
+                            duration: 0,
+                            rest: 0
                         }))
                     }))
                 }
@@ -366,7 +385,9 @@ export const useUserStore = create<UserStore>()(
                             completed: false,
                             skipped: false,
                             weight: 0,
-                            reps: parseInt(newExercise.repeticiones) || 10
+                            reps: parseInt(newExercise.repeticiones) || 10,
+                            duration: 0,
+                            rest: 0
                         }))
                     };
                 });
@@ -387,7 +408,9 @@ export const useUserStore = create<UserStore>()(
                         completed: false,
                         skipped: false,
                         weight: 0,
-                        reps: parseInt(newExercise.repeticiones) || 10
+                        reps: parseInt(newExercise.repeticiones) || 10,
+                        duration: 0,
+                        rest: 0
                     }))
                 };
                 return {
@@ -410,7 +433,7 @@ export const useUserStore = create<UserStore>()(
                 };
             }),
 
-            finishSession: async (durationMinutos) => {
+            finishSession: async (durationMinutos, postWorkoutMood) => {
                 const state = get();
                 if (!state.activeSession) return;
 
@@ -419,6 +442,8 @@ export const useUserStore = create<UserStore>()(
                     fecha: new Date().toISOString(),
                     duracionMinutos: durationMinutos,
                     nombre: `${state.activeSession.dayName} - ${state.activeSession.routineName}`,
+                    preWorkoutMood: state.activeSession.preWorkoutMood,
+                    postWorkoutMood: postWorkoutMood,
                     ejercicios: state.activeSession.exercises.map(ex => ({
                         nombre: ex.nombre,
                         sets: ex.sets
@@ -541,6 +566,48 @@ export const useUserStore = create<UserStore>()(
                         await firebaseService.saveProfile(userId, perfil);
                     } catch (error) {
                         console.error('Error syncing extra activity:', error);
+                    }
+                }
+            },
+
+            removeExtraActivity: async (activityId: string) => {
+                const { userId, perfil } = get();
+                const activityToDelete = perfil.actividadesExtras.find(a => a.id === activityId);
+                if (!activityToDelete) return;
+
+                // 1. Optimistic Update
+                set((state) => {
+                    const newActivities = state.perfil.actividadesExtras.filter(a => a.id !== activityId);
+
+                    // Check if there are other activities or workouts on that same date to keep weeklyTracking
+                    const dateKey = activityToDelete.fecha.split('T')[0];
+                    const otherOnSameDay = newActivities.some(a => a.fecha.split('T')[0] === dateKey) ||
+                        state.perfil.historial.some(h => h.fecha.split('T')[0] === dateKey);
+
+                    const newTracking = { ...state.perfil.weeklyTracking };
+                    if (!otherOnSameDay) {
+                        delete newTracking[dateKey];
+                    }
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            actividadesExtras: newActivities,
+                            weeklyTracking: newTracking
+                        }
+                    };
+                });
+
+                // 2. Persist to Firebase
+                if (userId) {
+                    try {
+                        const { firebaseService } = await import('../services/firebaseService');
+                        await firebaseService.deleteExtraActivity(userId, activityId);
+                        // Also update profile if tracking changed
+                        const updatedProfile = get().perfil;
+                        await firebaseService.saveProfile(userId, updatedProfile);
+                    } catch (error) {
+                        console.error('Error removing extra activity:', error);
                     }
                 }
             },

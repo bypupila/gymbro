@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUserStore, SetTracking, ExerciseTracking } from '../stores/userStore';
-import { getExerciseImage, getExerciseVideo } from '../data/exerciseMedia';
-import Colors from '../styles/colors';
+import { useUserStore, ExerciseTracking, EjercicioRutina, ExtraActivity, MoodLog } from '@/stores/userStore';
+import Colors from '@/styles/colors';
 import {
     Check,
     ChevronLeft,
@@ -20,11 +19,15 @@ import {
     Pause,
     Activity,
     ChevronRight,
-    Loader
+    Loader,
+    RotateCcw
 } from 'lucide-react';
 import { Card } from './Card';
+import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '@/data/exerciseDatabase';
+import { getExerciseVideo, getExerciseImage } from '@/data/exerciseMedia';
 import { motion, AnimatePresence } from 'framer-motion';
-import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '../data/exerciseDatabase';
+import { MoodCheckin } from './MoodCheckin';
+import { toast } from 'react-hot-toast';
 
 interface ActiveWorkoutProps {
     onFinish: () => void;
@@ -52,8 +55,21 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [currentSetIndex, setCurrentSetIndex] = useState<number>(0);
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [viewMode, setViewMode] = useState<'preview' | 'active'>('preview');
     const [expandedExercises, setExpandedExercises] = useState<string[]>([]);
+    const [guidedMode, setGuidedMode] = useState<{
+        active: boolean;
+        exerciseId: string | null;
+        setIndex: number;
+        phase: 'work' | 'rest';
+    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
+
+    // Add Exercise Flow State
+    const [selectedExerciseForAdd, setSelectedExerciseForAdd] = useState<EjercicioBase | null>(null);
+    const [addConfig, setAddConfig] = useState({
+        series: 3,
+        repeticiones: '10',
+        descanso: 60
+    });
 
     // Completion Modal State
     const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -67,14 +83,20 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [isAddingCustom, setIsAddingCustom] = useState(false);
     const [customActivityName, setCustomActivityName] = useState('');
 
+    // Post-Workout Mood State
+    const [showMoodCheckin, setShowMoodCheckin] = useState(false);
+    const [pendingCompletion, setPendingCompletion] = useState<{
+        type: 'routine' | 'extra';
+        duration: number;
+        extraData?: ExtraActivity;
+    } | null>(null);
+
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (viewMode === 'active') {
-            const timer = setInterval(() => setDuration(d => d + 1), 1000);
-            return () => clearInterval(timer);
-        }
-    }, [viewMode]);
+        const timer = setInterval(() => setDuration(d => d + 1), 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     const formatTime = (secs: number) => {
         const mins = Math.floor(secs / 60);
@@ -101,10 +123,30 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     // Handle exercise authorization
     const handleStartExercise = (exerciseId: string, reps: string) => {
-        if (!confirm(`¿Comenzar este ejercicio?`)) return;
+        const exercise = activeSession?.exercises.find(e => e.id === exerciseId);
+
+        // Guided Mode for Warmup
+        if (exercise?.categoria === 'calentamiento') {
+            setGuidedMode({
+                active: true,
+                exerciseId: exerciseId,
+                setIndex: 0,
+                phase: 'work'
+            });
+
+            // Set initial timer
+            if (isTimeBased(reps)) {
+                setTimerSeconds(parseTimeSeconds(reps));
+            } else {
+                setTimerSeconds(0);
+            }
+            setIsTimerRunning(true);
+            return;
+        }
 
         setActiveExerciseId(exerciseId);
         setCurrentSetIndex(0);
+        toast.success(`Entrenamiento iniciado`);
 
         if (isTimeBased(reps)) {
             const seconds = parseTimeSeconds(reps);
@@ -116,9 +158,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     // Handle set authorization (for time-based exercises)
     const handleStartSet = (exerciseId: string, setIndex: number, reps: string) => {
-        if (!confirm(`¿Comenzar serie ${setIndex + 1}?`)) return;
-
+        setActiveExerciseId(exerciseId);
         setCurrentSetIndex(setIndex);
+        setIsTimerRunning(true);
+        toast.success(`Serie ${setIndex + 1} iniciada`);
 
         if (isTimeBased(reps)) {
             const seconds = parseTimeSeconds(reps);
@@ -127,33 +170,92 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         }
     };
 
-    // Timer countdown effect
+    // Timer effect
     useEffect(() => {
-        if (!isTimerRunning || timerSeconds <= 0) {
-            if (timerSeconds === 0 && isTimerRunning) {
-                setIsTimerRunning(false);
-                // Auto-mark set as complete when timer finishes
-                if (activeExerciseId) {
-                    updateSet(activeExerciseId, currentSetIndex, { completed: true });
-                }
-            }
-            return;
-        }
+        if (!isTimerRunning) return;
 
         const interval = setInterval(() => {
-            setTimerSeconds(prev => prev - 1);
+            setTimerSeconds(prev => {
+                const isRest = guidedMode.active && guidedMode.phase === 'rest';
+
+                // If Rest Phase (Guided Mode) - Always Count Down
+                if (isRest) {
+                    if (prev > 0) return prev - 1;
+                    if (prev <= 0) {
+                        setIsTimerRunning(false); // Rest done, wait for user
+                        return 0;
+                    }
+                    return prev;
+                }
+
+                // If Work Phase (Guided or Active)
+                const exercise = activeSession?.exercises.find(e => e.id === activeExerciseId || e.id === guidedMode.exerciseId);
+                const targetReps = exercise?.targetReps || '';
+                const isTimedWork = isTimeBased(targetReps);
+
+                if (isTimedWork) {
+                    // Count Down
+                    if (prev > 0) return prev - 1;
+                    if (prev <= 0) {
+                        setIsTimerRunning(false);
+                        if (activeExerciseId && !guidedMode.active) {
+                            updateSet(activeExerciseId, currentSetIndex, { completed: true });
+                        }
+                        return 0;
+                    }
+                    return prev;
+                } else {
+                    // Count Up (Elapsed Time)
+                    return prev + 1;
+                }
+            });
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isTimerRunning, timerSeconds, activeExerciseId, currentSetIndex]);
+    }, [isTimerRunning, activeExerciseId, currentSetIndex, guidedMode.active, guidedMode.exerciseId, guidedMode.phase]);
 
-    const handleStart = () => {
-        setViewMode('active');
-        // Expand first exercise by default
-        if (activeSession && activeSession.exercises.length > 0) {
-            setExpandedExercises([activeSession.exercises[0].id]);
+    const handleGuidedNext = () => {
+        if (!guidedMode.active || !guidedMode.exerciseId) return;
+
+        const exercise = activeSession?.exercises.find(e => e.id === guidedMode.exerciseId);
+        if (!exercise) return;
+
+        if (guidedMode.phase === 'work') {
+            // Finish Set
+            updateSet(guidedMode.exerciseId, guidedMode.setIndex, { completed: true });
+
+            // Should we go to rest?
+            const isLastSet = guidedMode.setIndex >= exercise.sets.length - 1;
+
+            setGuidedMode(prev => ({ ...prev, phase: 'rest' }));
+            // Default rest 30s for warmup if not specified, or 0 if it's just a transition
+            setTimerSeconds(30);
+            setIsTimerRunning(true);
+        } else {
+            // Finish Rest -> Next Work or Finish Exercise
+            const nextSetIndex = guidedMode.setIndex + 1;
+            if (nextSetIndex >= exercise.sets.length) {
+                // Exercise Complete
+                setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
+                setIsTimerRunning(false);
+                setTimerSeconds(0);
+                // Optional: Auto-mark exercise as completed or just close modal
+                // markExerciseAsCompleted(exercise.id);
+            } else {
+                // Next Set
+                setGuidedMode(prev => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
+                const nextSetReps = exercise.targetReps;
+                if (isTimeBased(nextSetReps)) {
+                    setTimerSeconds(parseTimeSeconds(nextSetReps));
+                } else {
+                    setTimerSeconds(0);
+                }
+                setIsTimerRunning(true);
+            }
         }
     };
+
+
 
     const totalSets = useMemo(() => {
         if (!activeSession) return 0;
@@ -172,69 +274,46 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     // Early return if no active session
     if (!activeSession) return null;
 
-    if (viewMode === 'preview') {
-        return (
-            <div style={styles.fullOverlay}>
-                <div style={styles.header}>
-                    <button onClick={() => {
-                        cancelSession();
-                        onCancel();
-                        navigate('/');
-                    }} style={styles.iconBtn}>
-                        <ChevronLeft size={24} color={Colors.text} />
-                    </button>
-                    <h2 style={styles.headerTitle}>Resumen de Hoy</h2>
-                    <div style={{ width: 40 }} />
-                </div>
-
-                <div style={styles.previewContent}>
-                    <div style={styles.previewHero}>
-                        <span style={styles.previewDay}>{activeSession.dayName}</span>
-                        <h1 style={styles.previewRoutineName}>{activeSession.routineName}</h1>
-                        <div style={styles.previewStats}>
-                            <div style={styles.prevStat}>
-                                <Dumbbell size={16} color={Colors.primary} />
-                                <span>{activeSession.exercises.length} Ejercicios</span>
-                            </div>
-                            <div style={styles.prevStat}>
-                                <Clock size={16} color={Colors.primary} />
-                                <span>~45-60 min</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style={styles.exerciseListPreview}>
-                        {activeSession.exercises.map((ex, i) => (
-                            <div key={ex.id} style={styles.previewItem}>
-                                <span style={styles.previewNumber}>{i + 1}</span>
-                                <div style={styles.previewItemInfo}>
-                                    <h4 style={styles.previewItemName}>{ex.nombre}</h4>
-                                    <p style={styles.previewItemMeta}>{ex.targetSeries} series x {ex.targetReps} reps</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div style={styles.bottomAction}>
-                    <button style={styles.startBtn} onClick={handleStart}>
-                        ¡COMENZAR ENTRENAMIENTO!
-                    </button>
-                </div>
-            </div>
-        );
-    }
+    // Expand first exercise by default if none expanded
+    useEffect(() => {
+        if (activeSession?.exercises.length > 0 && expandedExercises.length === 0) {
+            setExpandedExercises([activeSession.exercises[0].id]);
+        }
+    }, []);
 
     return (
         <div style={styles.fullOverlay}>
             {/* Active Header */}
             <div style={styles.header}>
-                <button onClick={() => {
-                    if (confirm('¿Cancelar entrenamiento actual? No se guardará el progreso.')) {
-                        cancelSession();
-                        onCancel();
-                    }
-                }} style={styles.iconBtn}>
+                <button
+                    onClick={() => {
+                        toast((t) => (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Cancelar entrenamiento actual?</span>
+                                <span style={{ fontSize: '12px', color: '#aaa', marginTop: '-8px' }}>No se guardará el progreso.</span>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                    <button
+                                        onClick={() => toast.dismiss(t.id)}
+                                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                                    >
+                                        Seguir
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            cancelSession();
+                                            onCancel();
+                                            toast.dismiss(t.id);
+                                        }}
+                                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                                    >
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        ), { duration: 5000 });
+                    }}
+                    style={styles.iconBtn}
+                >
                     <X size={24} color={Colors.textSecondary} />
                 </button>
                 <div style={styles.timerBadge}>
@@ -308,61 +387,120 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 exit={{ opacity: 0, y: 100 }}
                                 style={styles.modalContent}
                             >
-                                <div style={styles.modalHeader}>
-                                    <h3 style={styles.modalTitle}>Agregar Ejercicio</h3>
-                                    <button onClick={() => setShowAddModal(false)} style={styles.closeModalBtn}>
-                                        <X size={24} />
-                                    </button>
-                                </div>
-
-                                <div style={styles.searchContainer}>
-                                    <input
-                                        type="text"
-                                        placeholder="Buscar ejercicio..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        style={styles.searchInput}
-                                        autoFocus
-                                    />
-                                </div>
-
-                                <div style={styles.exerciseList}>
-                                    {EJERCICIOS_DATABASE.filter(ex =>
-                                        ex.nombre.toLowerCase().includes(searchQuery.toLowerCase())
-                                    ).map(ex => (
-                                        <div
-                                            key={ex.id}
-                                            style={styles.exerciseListItem}
-                                            onClick={() => {
-                                                addExerciseToSession({
-                                                    id: ex.id,
-                                                    nombre: ex.nombre,
-                                                    series: 3,
-                                                    repeticiones: '10',
-                                                    descanso: 60,
-                                                    categoria: 'maquina'
-                                                });
-                                                setShowAddModal(false);
-                                                setSearchQuery('');
-                                                // Expand the newly added exercise
-                                                // Note: The store will generate a temp ID, so we might not be able to 
-                                                // expand it immediately without checking the updated session
-                                            }}
-                                        >
-                                            <div style={{
-                                                ...styles.groupBadge,
-                                                background: GRUPOS_MUSCULARES[ex.grupoMuscular]?.color || Colors.surfaceLight
-                                            }}>
-                                                {GRUPOS_MUSCULARES[ex.grupoMuscular]?.emoji}
-                                            </div>
-                                            <div style={styles.exerciseInfo}>
-                                                <div style={styles.exerciseLabel}>{ex.nombre}</div>
-                                                <div style={styles.exerciseGroup}>{GRUPOS_MUSCULARES[ex.grupoMuscular]?.nombre}</div>
-                                            </div>
-                                            <Plus size={20} color={Colors.textTertiary} />
+                                {selectedExerciseForAdd ? (
+                                    <div style={{ padding: '0 20px 20px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                                            <button
+                                                onClick={() => setSelectedExerciseForAdd(null)}
+                                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: Colors.textSecondary }}
+                                            >
+                                                <ChevronLeft size={24} />
+                                            </button>
+                                            <h3 style={{ ...styles.modalTitle, margin: 0 }}>{selectedExerciseForAdd.nombre}</h3>
                                         </div>
-                                    ))}
-                                </div>
+
+                                        <div style={{ display: 'grid', gap: '16px' }}>
+                                            <div>
+                                                <label style={styles.inputLabel}>Series</label>
+                                                <input
+                                                    type="number"
+                                                    value={addConfig.series}
+                                                    onChange={(e) => setAddConfig({ ...addConfig, series: parseInt(e.target.value) || 0 })}
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={styles.inputLabel}>Repeticiones (o Tiempo)</label>
+                                                <input
+                                                    type="text"
+                                                    value={addConfig.repeticiones}
+                                                    onChange={(e) => setAddConfig({ ...addConfig, repeticiones: e.target.value })}
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={styles.inputLabel}>Descanso (seg)</label>
+                                                <input
+                                                    type="number"
+                                                    value={addConfig.descanso}
+                                                    onChange={(e) => setAddConfig({ ...addConfig, descanso: parseInt(e.target.value) || 0 })}
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    if (!selectedExerciseForAdd) return;
+                                                    addExerciseToSession({
+                                                        id: selectedExerciseForAdd.id,
+                                                        nombre: selectedExerciseForAdd.nombre,
+                                                        series: addConfig.series,
+                                                        repeticiones: addConfig.repeticiones,
+                                                        descanso: addConfig.descanso,
+                                                        categoria: 'maquina'
+                                                    });
+                                                    setShowAddModal(false);
+                                                    setSelectedExerciseForAdd(null);
+                                                    setSearchQuery('');
+                                                }}
+                                                style={styles.startExerciseBtn}
+                                            >
+                                                <Plus size={20} />
+                                                <span>Agregar a la Rutina</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div style={styles.modalHeader}>
+                                            <h3 style={styles.modalTitle}>Agregar Ejercicio</h3>
+                                            <button onClick={() => setShowAddModal(false)} style={styles.closeModalBtn}>
+                                                <X size={24} />
+                                            </button>
+                                        </div>
+
+                                        <div style={styles.searchContainer}>
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar ejercicio..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                style={styles.searchInput}
+                                                autoFocus
+                                            />
+                                        </div>
+
+                                        <div style={styles.exerciseList}>
+                                            {EJERCICIOS_DATABASE.filter(ex =>
+                                                ex.nombre.toLowerCase().includes(searchQuery.toLowerCase())
+                                            ).map(ex => (
+                                                <div
+                                                    key={ex.id}
+                                                    style={styles.exerciseListItem}
+                                                    onClick={() => {
+                                                        setSelectedExerciseForAdd(ex);
+                                                        setAddConfig({
+                                                            series: 3,
+                                                            repeticiones: '10',
+                                                            descanso: 60
+                                                        });
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        ...styles.groupBadge,
+                                                        background: GRUPOS_MUSCULARES[ex.grupoMuscular]?.color || Colors.surfaceLight
+                                                    }}>
+                                                        {GRUPOS_MUSCULARES[ex.grupoMuscular]?.emoji}
+                                                    </div>
+                                                    <div style={styles.exerciseInfo}>
+                                                        <div style={styles.exerciseLabel}>{ex.nombre}</div>
+                                                        <div style={styles.exerciseGroup}>{GRUPOS_MUSCULARES[ex.grupoMuscular]?.nombre}</div>
+                                                    </div>
+                                                    <ChevronRight size={20} color={Colors.textTertiary} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
                             </motion.div>
                         </div>
                     )}
@@ -400,8 +538,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         <button
                                             style={styles.optionBtn}
                                             onClick={() => {
-                                                finishSession(Math.floor(duration / 60));
-                                                onFinish();
+                                                setPendingCompletion({
+                                                    type: 'routine',
+                                                    duration: Math.floor(duration / 60)
+                                                });
+                                                setShowCompletionModal(false);
+                                                setShowMoodCheckin(true);
                                             }}
                                         >
                                             <div style={styles.optionIcon}>📋</div>
@@ -568,7 +710,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 const durationHrs = parseInt(extraActivityDuration) / 60;
                                                 const estimatedCalories = Math.round(mets * weight * durationHrs);
 
-                                                await addExtraActivity({
+                                                const extraData: ExtraActivity = {
                                                     id: `extra_${Date.now()}`,
                                                     fecha: new Date().toISOString(),
                                                     descripcion: extraActivityType,
@@ -581,9 +723,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         calorias: estimatedCalories,
                                                         notas: 'Registro manual'
                                                     }
+                                                };
+
+                                                setPendingCompletion({
+                                                    type: 'extra',
+                                                    duration: Math.floor(duration / 60),
+                                                    extraData
                                                 });
-                                                await finishSession(Math.floor(duration / 60));
-                                                onFinish();
+                                                setShowCompletionModal(false);
+                                                setShowMoodCheckin(true);
                                             }}
                                         >
                                             <Save size={20} /> Guardar y Finalizar
@@ -595,12 +743,120 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Guided Mode Overlay */}
+            <AnimatePresence>
+                {guidedMode.active && (
+                    <div style={styles.modalOverlay}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            style={styles.guidedContainer}
+                        >
+                            <div style={styles.guidedHeader}>
+                                {(() => {
+                                    const ex = activeSession.exercises.find(e => e.id === guidedMode.exerciseId);
+                                    return (
+                                        <>
+                                            <h2 style={styles.guidedTitle}>{ex?.nombre}</h2>
+                                            <p style={styles.guidedSubtitle}>
+                                                Serie {guidedMode.setIndex + 1} de {ex?.sets.length}
+                                            </p>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+
+                            <div style={styles.guidedTimerContainer}>
+                                <div style={{
+                                    ...styles.guidedTimerCircle,
+                                    borderColor: guidedMode.phase === 'work' ? Colors.primary : Colors.success
+                                }}>
+                                    <span style={styles.guidedTimerValue}>{formatTime(timerSeconds)}</span>
+                                    <span style={styles.guidedTimerLabel}>
+                                        {guidedMode.phase === 'work' ? 'TRABAJO' : 'DESCANSO'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div style={styles.guidedActions}>
+                                <button
+                                    onClick={handleGuidedNext}
+                                    style={{
+                                        ...styles.guidedActionBtn,
+                                        background: guidedMode.phase === 'work' ? Colors.primary : Colors.success
+                                    }}
+                                >
+                                    {guidedMode.phase === 'work' ? (
+                                        <>
+                                            <Check size={24} /> Terminar Serie
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Play size={24} /> Siguiente Serie
+                                        </>
+                                    )}
+                                </button>
+
+                                <button
+                                    style={styles.guidedCancelBtn}
+                                    onClick={() => {
+                                        toast((t) => (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Salir del modo guiado?</span>
+                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                        onClick={() => toast.dismiss(t.id)}
+                                                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                                                    >
+                                                        Seguir
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
+                                                            setIsTimerRunning(false);
+                                                            toast.dismiss(t.id);
+                                                        }}
+                                                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                                                    >
+                                                        Salir
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ), { duration: 5000 });
+                                    }}
+                                >
+                                    Salir
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Mood Checkin Modal */}
+            {showMoodCheckin && (
+                <MoodCheckin
+                    type="post"
+                    onComplete={async (moodData) => {
+                        if (!pendingCompletion) return;
+
+                        if (pendingCompletion.type === 'extra' && pendingCompletion.extraData) {
+                            await addExtraActivity(pendingCompletion.extraData);
+                        }
+
+                        await finishSession(pendingCompletion.duration, moodData);
+                        onFinish();
+                    }}
+                    onCancel={() => setShowMoodCheckin(false)}
+                />
+            )}
         </div>
     );
 
     function renderExerciseCard(ex: ExerciseTracking, exIdx: number, section: 'warmup' | 'main') {
-        if (!activeSession) return null;
-        const globalIdx = activeSession.exercises.findIndex(e => e.id === ex.id);
+        const globalIdx = activeSession?.exercises.findIndex(e => e.id === ex.id) ?? 0;
         return (
             <Card key={ex.id} style={{
                 ...styles.exerciseCard,
@@ -617,6 +873,19 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         }}>
                             {globalIdx + 1}. {ex.nombre}
                             {ex.sets.every(s => s.completed || s.skipped) && ' ✓'}
+                            {ex.isOptional && (
+                                <span style={{
+                                    fontSize: '10px',
+                                    backgroundColor: Colors.surfaceLight,
+                                    color: Colors.textSecondary,
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    marginLeft: '8px',
+                                    border: `1px solid ${Colors.border}`
+                                }}>
+                                    OPCIONAL
+                                </span>
+                            )}
                         </h3>
                         <p style={styles.exerciseMeta}>{ex.targetSeries} series x {ex.targetReps}</p>
                     </div>
@@ -680,48 +949,79 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     </div>
                                 ) : null}
 
-                                <div style={styles.setsHeader}>
-                                    <span style={styles.setHeaderCell}>SERIE</span>
-                                    <span style={styles.setHeaderCell}>PESO (KG)</span>
-                                    <span style={styles.setHeaderCell}>REPS</span>
-                                    <span style={styles.setHeaderCell}>ACCIONES</span>
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
+                                    gap: '8px',
+                                    marginBottom: '12px',
+                                    marginTop: '8px',
+                                    padding: '0 4px'
+                                }}>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>#</span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>PESO (kg)</span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>REPS</span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>TIEMPO (s)</span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>DESC. (s)</span>
+                                    <span></span>
                                 </div>
-                                {ex.sets.map((set, sIdx) => (
-                                    <div
-                                        key={sIdx}
-                                        style={{
-                                            ...styles.setRow,
-                                            background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : 'transparent',
-                                            opacity: (set.completed || set.skipped) ? 0.7 : 1
-                                        }}
-                                    >
-                                        <span style={styles.setNumber}>{sIdx + 1}</span>
-                                        <input
-                                            type="number"
-                                            placeholder="0"
-                                            value={set.weight || ''}
-                                            onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
-                                            style={styles.setInput}
-                                            disabled={set.completed || set.skipped}
-                                        />
-                                        <input
-                                            type="number"
-                                            placeholder="10"
-                                            value={set.reps || ''}
-                                            onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
-                                            style={styles.setInput}
-                                            disabled={set.completed || set.skipped}
-                                        />
-                                        <div style={styles.setActions}>
-                                            {!set.completed && !set.skipped ? (
-                                                <>
-                                                    <button
-                                                        style={styles.skipBtn}
-                                                        onClick={() => skipSet(ex.id, sIdx)}
-                                                    >
-                                                        <SkipForward size={16} />
-                                                    </button>
-                                                    {isTimeBased(ex.targetReps) ? (
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {ex.sets.map((set, sIdx) => (
+                                        <div
+                                            key={sIdx}
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
+                                                gap: '8px',
+                                                alignItems: 'center',
+                                                background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : Colors.surface,
+                                                padding: '8px 4px',
+                                                borderRadius: '12px',
+                                                border: `1px solid ${set.completed ? `${Colors.success}30` : Colors.border}`,
+                                                opacity: (set.completed || set.skipped) ? 0.7 : 1
+                                            }}
+                                        >
+                                            <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
+
+                                            <input
+                                                type="number"
+                                                placeholder="0"
+                                                value={set.weight || ''}
+                                                onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
+                                                style={styles.newInput}
+                                                disabled={set.completed || set.skipped}
+                                            />
+
+                                            <input
+                                                type="number"
+                                                placeholder="0"
+                                                value={set.reps || ''}
+                                                onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
+                                                style={styles.newInput}
+                                                disabled={set.completed || set.skipped}
+                                            />
+
+                                            <input
+                                                type="number"
+                                                placeholder="-"
+                                                value={set.duration || ''}
+                                                onChange={(e) => updateSet(ex.id, sIdx, { duration: parseInt(e.target.value) || 0 })}
+                                                style={styles.newInput}
+                                                disabled={set.completed || set.skipped}
+                                            />
+
+                                            <input
+                                                type="number"
+                                                placeholder="-"
+                                                value={set.rest || ''}
+                                                onChange={(e) => updateSet(ex.id, sIdx, { rest: parseInt(e.target.value) || 0 })}
+                                                style={styles.newInput}
+                                                disabled={set.completed || set.skipped}
+                                            />
+
+                                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                {!set.completed && !set.skipped ? (
+                                                    isTimeBased(ex.targetReps) ? (
                                                         <button
                                                             style={styles.checkBtn}
                                                             onClick={() => handleStartSet(ex.id, sIdx, ex.targetReps)}
@@ -736,19 +1036,19 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         >
                                                             <Check size={18} />
                                                         </button>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <button
-                                                    style={styles.undoBtn}
-                                                    onClick={() => updateSet(ex.id, sIdx, { completed: false, skipped: false })}
-                                                >
-                                                    Deshacer
-                                                </button>
-                                            )}
+                                                    )
+                                                ) : (
+                                                    <button
+                                                        style={styles.undoIconBtn}
+                                                        onClick={() => updateSet(ex.id, sIdx, { completed: false, skipped: false })}
+                                                    >
+                                                        <RotateCcw size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
 
                                 {/* Complete Exercise Button */}
                                 {ex.sets.every(s => s.completed || s.skipped) && (
@@ -760,9 +1060,30 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         <button
                                             style={styles.completeExerciseBtn}
                                             onClick={() => {
-                                                if (confirm('¿Finalizar ejercicio? Desaparecerá de la lista.')) {
-                                                    markExerciseAsCompleted(ex.id);
-                                                }
+                                                toast((t) => (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Finalizar ejercicio?</span>
+                                                        <span style={{ fontSize: '12px', color: '#aaa', marginTop: '-8px' }}>Desaparecerá de la lista activa.</span>
+                                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                            <button
+                                                                onClick={() => toast.dismiss(t.id)}
+                                                                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                                                            >
+                                                                Cancelar
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    markExerciseAsCompleted(ex.id);
+                                                                    toast.dismiss(t.id);
+                                                                    toast.success('Ejercicio finalizado');
+                                                                }}
+                                                                style={{ background: Colors.primary, border: 'none', color: '#000', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                                                            >
+                                                                Finalizar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ), { duration: 5000 });
                                             }}
                                         >
                                             <Check size={20} />
@@ -774,7 +1095,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         </motion.div>
                     )}
                 </AnimatePresence>
-            </Card >
+            </Card>
         );
     }
 };
@@ -1187,6 +1508,7 @@ const styles: Record<string, React.CSSProperties> = {
         zIndex: 1000,
         display: 'flex',
         alignItems: 'flex-end',
+        justifyContent: 'center',
     },
     modalContent: {
         width: '100%',
@@ -1273,6 +1595,30 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '12px',
         color: Colors.textSecondary,
     },
+    newInput: {
+        width: '100%',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '8px',
+        padding: '8px 4px',
+        color: Colors.text,
+        fontSize: '14px',
+        textAlign: 'center',
+        outline: 'none',
+        fontWeight: 600,
+    },
+    undoIconBtn: {
+        width: '32px',
+        height: '32px',
+        borderRadius: '10px',
+        background: Colors.surfaceLight,
+        border: `1px solid ${Colors.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: Colors.textSecondary,
+        cursor: 'pointer',
+    },
     completeExerciseBtn: {
         width: '100%',
         padding: '16px',
@@ -1333,4 +1679,93 @@ const styles: Record<string, React.CSSProperties> = {
         resize: 'none' as const,
         fontFamily: 'inherit',
     },
+    guidedContainer: {
+        width: '90%',
+        maxWidth: '400px',
+        background: Colors.background,
+        borderRadius: '32px',
+        padding: '32px',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        gap: '24px',
+        boxShadow: `0 20px 40px rgba(0,0,0,0.5)`,
+        border: `1px solid ${Colors.border}`,
+        marginBottom: '40px'
+    },
+    guidedHeader: {
+        textAlign: 'center' as const,
+    },
+    guidedTitle: {
+        fontSize: '24px',
+        fontWeight: 900,
+        color: Colors.text,
+        marginBottom: '8px',
+        textAlign: 'center' as const,
+    },
+    guidedSubtitle: {
+        fontSize: '16px',
+        color: Colors.textSecondary,
+    },
+    guidedTimerContainer: {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: '20px',
+    },
+    guidedTimerCircle: {
+        width: '200px',
+        height: '200px',
+        borderRadius: '50%',
+        border: `8px solid`,
+        display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: Colors.surface,
+        boxShadow: `0 0 30px rgba(0,0,0,0.2)`,
+    },
+    guidedTimerValue: {
+        fontSize: '64px',
+        fontWeight: 900,
+        color: Colors.text,
+        fontFamily: 'monospace',
+        lineHeight: 1,
+    },
+    guidedTimerLabel: {
+        fontSize: '14px',
+        fontWeight: 800,
+        letterSpacing: '2px',
+        color: Colors.textSecondary,
+        marginTop: '8px',
+    },
+    guidedActions: {
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '12px',
+    },
+    guidedActionBtn: {
+        width: '100%',
+        padding: '20px',
+        borderRadius: '20px',
+        border: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        fontSize: '18px',
+        fontWeight: 800,
+        color: '#000',
+        cursor: 'pointer',
+    },
+    guidedCancelBtn: {
+        width: '100%',
+        padding: '16px',
+        background: 'transparent',
+        border: 'none',
+        color: Colors.textSecondary,
+        fontSize: '14px',
+        cursor: 'pointer',
+    }
 };
