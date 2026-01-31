@@ -2,17 +2,16 @@
 // GymBro PWA - Home / Dashboard Page
 // =====================================================
 
-import { Card } from '@/components/Card';
 import { RoutineUpload } from '@/components/RoutineUpload';
-import { useUserStore } from '@/stores/userStore';
+import { useUserStore, EjercicioRutina } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Moon, Play, Plus, FileText, ChevronRight, Activity, Zap } from 'lucide-react'; // kept Activity/Zap for Premium icons if used there
+import { Play, Plus, FileText, Zap } from 'lucide-react'; // kept Activity/Zap for Premium icons if used there
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
-import { GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
 import { SyncStatus } from '@/components/SyncStatus';
 import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
+import { MoodStats } from '@/components/MoodStats';
 
 export const HomePage: React.FC = () => {
     const navigate = useNavigate();
@@ -20,17 +19,26 @@ export const HomePage: React.FC = () => {
     const { perfil, getEntrenamientoHoy, activeSession, startSession } = useUserStore();
     const entrenamientoHoy = getEntrenamientoHoy();
 
-    const hoyEjercicios = useMemo(() => {
-        if (!perfil.rutina) return [];
-        return perfil.rutina.ejercicios.filter(ex =>
-            !ex.dia || ex.dia.toLowerCase().includes(entrenamientoHoy.dia?.toLowerCase() || '')
-        );
-    }, [perfil.rutina, entrenamientoHoy.dia]);
+    // Mood Tracking State
+    const [showMoodModal, setShowMoodModal] = useState(false);
+    const [tempSessionData, setTempSessionData] = useState<{ day: string, exercises: EjercicioRutina[], name: string } | null>(null);
 
-    const handleStartWorkout = () => {
-        if (!perfil.rutina) return;
-        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre);
+    const handleInitiateSession = (day: string, exercises: any[], name: string) => {
+        setTempSessionData({ day, exercises, name });
+        setShowMoodModal(true);
     };
+
+    const confirmStartSession = (mood: number) => {
+        if (tempSessionData) {
+            startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, mood);
+            setShowMoodModal(false);
+            setTempSessionData(null);
+        }
+    };
+
+
+
+
 
     const nombreUsuario = perfil.usuario.nombre || 'Daniel';
     const fechaHoyRaw = new Date().toLocaleDateString('es-ES', {
@@ -74,6 +82,9 @@ export const HomePage: React.FC = () => {
             {/* Weekly Progress Bar */}
             <WeeklyProgressBar />
 
+            {/* Mood Analytics */}
+            <MoodStats />
+
             {/* Main Workout Cards List */}
             {!perfil.rutina ? (
                 <div
@@ -103,7 +114,7 @@ export const HomePage: React.FC = () => {
                         return (
                             <div
                                 key={trainingDay.dia}
-                                onClick={() => startSession(trainingDay.dia, dayExercises, perfil.rutina?.nombre || 'Rutina')}
+                                onClick={() => handleInitiateSession(trainingDay.dia, dayExercises, perfil.rutina?.nombre || 'Rutina')}
                                 style={{
                                     ...styles.workoutCard,
                                     background: isToday ? Colors.gradientPrimary : Colors.surface,
@@ -116,9 +127,6 @@ export const HomePage: React.FC = () => {
                                             {trainingDay.dia.toUpperCase()}
                                         </span>
                                     </div>
-                                    <span style={{ ...styles.cardTime, background: isToday ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.05)', color: isToday ? '#000' : Colors.textSecondary }}>
-                                        {trainingDay.hora}
-                                    </span>
                                 </div>
 
                                 <h2 style={{ ...styles.cardTitle, color: isToday ? '#000' : Colors.text, fontSize: '24px' }}>
@@ -148,6 +156,42 @@ export const HomePage: React.FC = () => {
                     onComplete={() => setShowRoutineModal(false)}
                     onCancel={() => setShowRoutineModal(false)}
                 />
+            )}
+
+            {/* Mood / Energy Pre-Workout Modal */}
+            {showMoodModal && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modalContent}>
+                        <h2 style={styles.modalTitle}>¿Cómo te sientes hoy?</h2>
+                        <p style={styles.modalSubtitle}>Nivel de energía antes de entrenar</p>
+
+                        <div style={styles.moodGrid}>
+                            {[
+                                { val: 1, label: 'Agotado', emoji: '🧟‍♂️' },
+                                { val: 2, label: 'Bajo', emoji: '😴' },
+                                { val: 3, label: 'Normal', emoji: '😐' },
+                                { val: 4, label: 'Bien', emoji: '🙂' },
+                                { val: 5, label: 'A tope', emoji: '🔥' }
+                            ].map((mood) => (
+                                <button
+                                    key={mood.val}
+                                    style={styles.moodBtn}
+                                    onClick={() => confirmStartSession(mood.val)}
+                                >
+                                    <span style={{ fontSize: '32px' }}>{mood.emoji}</span>
+                                    <span style={styles.moodLabel}>{mood.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            style={styles.cancelLink}
+                            onClick={() => setShowMoodModal(false)}
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
             )}
 
 
@@ -244,6 +288,78 @@ const styles: Record<string, React.CSSProperties> = {
     },
     promptContent: {
         flex: 1,
+    },
+
+    modalOverlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.8)',
+        backdropFilter: 'blur(5px)',
+        zIndex: 2000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+    },
+    modalContent: {
+        background: Colors.surface,
+        borderRadius: '24px',
+        padding: '32px 24px',
+        width: '100%',
+        maxWidth: '350px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        border: `1px solid ${Colors.border}`,
+        boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+    },
+    modalTitle: {
+        fontSize: '24px',
+        fontWeight: 800,
+        color: Colors.text,
+        marginBottom: '8px',
+        textAlign: 'center',
+    },
+    modalSubtitle: {
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        marginBottom: '24px',
+        textAlign: 'center',
+    },
+    moodGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, 1fr)',
+        gap: '8px',
+        width: '100%',
+        marginBottom: '24px',
+    },
+    moodBtn: {
+        background: 'transparent',
+        border: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        padding: '8px 0',
+        borderRadius: '12px',
+        transition: 'background 0.2s',
+    },
+    moodLabel: {
+        fontSize: '10px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+    },
+    cancelLink: {
+        background: 'transparent',
+        border: 'none',
+        color: Colors.textSecondary,
+        fontSize: '14px',
+        textDecoration: 'underline',
+        cursor: 'pointer',
     },
     promptTitle: {
         fontSize: '16px',

@@ -4,8 +4,8 @@
 
 import Colors from '@/styles/colors';
 import {
-    Dumbbell, Home, Info, MessageCircle, Share2, TrendingUp, User,
-    FileText, ChevronRight, ChevronLeft, Layout, Zap, Activity, Users, Library
+    Dumbbell, Home, Info, Share2, TrendingUp, User,
+    FileText, ChevronRight, ChevronLeft, Layout, Zap, Users, Library
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -20,6 +20,8 @@ const navItems = [
     { path: '/progress', icon: TrendingUp, label: 'Mi Progreso' },
     { path: '/profile', icon: User, label: 'Perfil' },
 ];
+
+import { Agentation } from 'agentation';
 
 export const DesktopLayout: React.FC = () => {
     const location = useLocation();
@@ -117,6 +119,8 @@ export const DesktopLayout: React.FC = () => {
                     </div>
                 </aside>
             )}
+
+            {import.meta.env.DEV && <Agentation />}
         </div>
     );
 };
@@ -212,10 +216,7 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '24px',
         background: '#0D0D0E',
         borderLeft: `1px solid ${Colors.border}`,
-        '@media (max-width: 1200px)': {
-            display: 'none',
-        },
-    } as any,
+    },
     card: {
         background: 'rgba(255, 255, 255, 0.03)',
         borderRadius: '24px',

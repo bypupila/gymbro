@@ -26,6 +26,8 @@ export interface EjercicioBase {
     variantes?: string[];
     esCompuesto: boolean;
     descripcion?: string;
+    videoUrl?: string;
+    imagen?: string;
 }
 
 // =====================================================

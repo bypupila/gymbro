@@ -6,7 +6,7 @@ import { authService } from '@/services/authService';
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 
-    const { userId, setUserId, setDatosPersonales, setHorario, setRutina, setDatosPareja } = useUserStore();
+    const { setUserId } = useUserStore();
 
     useEffect(() => {
         // Firebase Auth Listener

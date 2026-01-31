@@ -4,7 +4,7 @@
 
 import React from 'react';
 import Colors from '@/styles/colors';
-import { ChevronLeft, BarChart, ShieldCheck, Zap } from 'lucide-react';
+import { ChevronLeft, BarChart, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
 

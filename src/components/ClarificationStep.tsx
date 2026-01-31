@@ -45,7 +45,7 @@ export const ClarificationStep: React.FC<ClarificationStepProps> = ({
                         {item.detectedValue && (
                             <div style={styles.detectedBox}>
                                 <span style={styles.detectedLabel}>Detectamos algo como:</span>
-                                <span style={styles.detectedValue}>"{item.detectedValue}"</span>
+                                <span style={styles.detectedValue}>&quot;{item.detectedValue}&quot;</span>
                             </div>
                         )}
 

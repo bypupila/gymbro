@@ -19,9 +19,7 @@ import {
     ChevronDown,
     ChevronUp,
     Calendar,
-    Plus,
-    TrendingUp,
-    Hash
+    Plus
 } from 'lucide-react';
 
 interface RoutineReviewStepProps {
@@ -537,7 +535,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
                             <select
                                 style={styles.editInputSmall}
                                 value={tempExercise.categoria || 'maquina'}
-                                onChange={(e) => setTempExercise({ ...tempExercise, categoria: e.target.value as any })}
+                                onChange={(e) => setTempExercise({ ...tempExercise, categoria: e.target.value as 'calentamiento' | 'maquina' })}
                             >
                                 <option value="calentamiento">🔥 Calentamiento</option>
                                 <option value="maquina">💪 Rutina</option>
@@ -548,7 +546,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
                             <select
                                 style={styles.editInputSmall}
                                 value={tempExercise.enfocadoA || 'ambos'}
-                                onChange={(e) => setTempExercise({ ...tempExercise, enfocadoA: e.target.value as any })}
+                                onChange={(e) => setTempExercise({ ...tempExercise, enfocadoA: e.target.value as 'hombre' | 'mujer' | 'ambos' })}
                             >
                                 <option value="ambos">Ambos</option>
                                 <option value="hombre">Hombre</option>

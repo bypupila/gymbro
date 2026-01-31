@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
-import { Card } from './Card';
 import Colors from '@/styles/colors';
-import { X, Battery, BatteryCharging, Smile, Frown, Meh } from 'lucide-react';
+import { X } from 'lucide-react';
 import { MoodLog } from '@/stores/userStore';
 
 interface MoodCheckinProps {

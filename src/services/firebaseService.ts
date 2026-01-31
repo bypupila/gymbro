@@ -1,6 +1,6 @@
 import {
     doc, setDoc, getDoc, collection, addDoc, query,
-    orderBy, limit, getDocs, onSnapshot, writeBatch
+    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity } from '../stores/userStore';
@@ -229,7 +229,7 @@ export const firebaseService = {
     },
 
     async deleteExtraActivity(userId: string, activityId: string): Promise<void> {
-        const { deleteDoc } = await import('firebase/firestore');
+        
         const activityRef = doc(db, 'users', userId, 'extraActivities', activityId);
         await deleteDoc(activityRef);
     },
@@ -372,7 +372,7 @@ export const firebaseService = {
     },
 
     async deleteExercise(exerciseId: string): Promise<void> {
-        const { deleteDoc } = await import('firebase/firestore');
+        
         await deleteDoc(doc(db, 'exercises', exerciseId));
     },
 

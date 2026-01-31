@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useUserStore, ExerciseTracking, EjercicioRutina, ExtraActivity, MoodLog } from '@/stores/userStore';
+import { useUserStore, ExerciseTracking, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
     Check,
@@ -10,17 +9,16 @@ import {
     Plus,
     Save,
     X,
-    TrendingUp,
-    AlertCircle,
     ChevronDown,
     ChevronUp,
     SkipForward,
     Play,
     Pause,
-    Activity,
     ChevronRight,
-    Loader,
-    RotateCcw
+    RotateCcw,
+    Trash2,
+    Shuffle,
+    Search
 } from 'lucide-react';
 import { Card } from './Card';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '@/data/exerciseDatabase';
@@ -39,13 +37,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         perfil,
         activeSession,
         updateSet,
-        skipSet,
         finishSession,
         cancelSession,
         replaceExerciseInSession,
         addExerciseToSession,
         markExerciseAsCompleted,
-        addExtraActivity
+        addExtraActivity,
+        skipExercise
     } = useUserStore();
 
     const [duration, setDuration] = useState(0);
@@ -79,7 +77,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [extraActivityDuration, setExtraActivityDuration] = useState<string>('');
     const [extraActivityDistance, setExtraActivityDistance] = useState<string>('');
     const [extraActivityIntensity, setExtraActivityIntensity] = useState<'baja' | 'media' | 'alta'>('media');
-    const [extraActivityUrl, setExtraActivityUrl] = useState('');
+
     const [isAddingCustom, setIsAddingCustom] = useState(false);
     const [customActivityName, setCustomActivityName] = useState('');
 
@@ -91,7 +89,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         extraData?: ExtraActivity;
     } | null>(null);
 
-    const navigate = useNavigate();
+    // Variant Selection State
+    const [variantModalOpen, setVariantModalOpen] = useState(false);
+    const [selectedVariantExerciseId, setSelectedVariantExerciseId] = useState<string | null>(null);
+    const [variantSearchQuery, setVariantSearchQuery] = useState('');
+    const [variantSelectedCategory, setVariantSelectedCategory] = useState<string | null>(null);
+
+
 
     useEffect(() => {
         const timer = setInterval(() => setDuration(d => d + 1), 1000);
@@ -110,23 +114,72 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         );
     };
 
-    // Helper to check if exercise is time-based
-    const isTimeBased = (reps: string): boolean => {
-        return /\d+\s*(s|seg|segundos?)/i.test(reps);
+    // Parse time value from reps string (e.g., "30s" -> 30, "1m" -> 60, "1:30" -> 90)
+    const parseTimeSeconds = (reps: string): number => {
+        if (!reps) return 0;
+        const normalized = reps.trim().toLowerCase();
+
+        // 1. Format MM:SS or HH:MM:SS
+        const hmsMatch = normalized.match(/(\d+):(\d+)(?::(\d+))?/);
+        if (hmsMatch) {
+            if (hmsMatch[3]) { // HH:MM:SS
+                return parseInt(hmsMatch[1]) * 3600 + parseInt(hmsMatch[2]) * 60 + parseInt(hmsMatch[3]);
+            }
+            return parseInt(hmsMatch[1]) * 60 + parseInt(hmsMatch[2]); // MM:SS
+        }
+
+        // 2. Check for minutes (min, minutos, m)
+        const minMatch = normalized.match(/(\d+)\s*(minutos?|min|m\b)/i);
+        if (minMatch) return parseInt(minMatch[1]) * 60;
+
+        // 3. Check for explicit seconds (seg, s, ', ")
+        const secMatch = normalized.match(/(\d+)\s*(segundos?|seg|s|'|")/i);
+        if (secMatch) return parseInt(secMatch[1]);
+
+        // 4. Raw number: Only if it DOES NOT contain "reps", "series", "vez", "x"
+        // And is either just a number or a number with whitespace
+        const isReps = normalized.includes('rep') || normalized.includes('ser') || normalized.includes('vez') || normalized.includes('x');
+        if (!isReps) {
+            const numMatch = normalized.match(/^(\d+)$/);
+            if (numMatch) return parseInt(numMatch[1]);
+        }
+
+        return 0;
     };
 
-    // Parse time value from reps string (e.g., "30s" -> 30)
-    const parseTimeSeconds = (reps: string): number => {
-        const match = reps.match(/(\d+)\s*(s|seg|segundos?)/i);
-        return match ? parseInt(match[1]) : 0;
+    // Helper to check if exercise is time-based
+    const isTimeBased = (reps: string): boolean => {
+        if (!reps) return false;
+        const normalized = reps.trim().toLowerCase();
+
+        // Explicit time formats
+        if (/\d+:\d+/.test(normalized)) return true;
+        if (/\d+\s*(min|seg|s|'|")/.test(normalized)) return true;
+
+        // Naked numbers are time-based ONLY if they don't have rep indicators
+        const hasRepIndicator = normalized.includes('rep') || normalized.includes('ser') || normalized.includes('vez') || normalized.includes('x');
+        if (!hasRepIndicator && /^\d+$/.test(normalized)) return true;
+
+        return false;
     };
 
     // Handle exercise authorization
     const handleStartExercise = (exerciseId: string, reps: string) => {
         const exercise = activeSession?.exercises.find(e => e.id === exerciseId);
+        if (!exercise) return;
+
+        // Priority for initial time: 1. Manual set duration, 2. Global target time
+        let initialSeconds = 0;
+        const firstSet = exercise.sets[0];
+
+        if (firstSet && typeof firstSet.duration === 'number' && firstSet.duration > 0) {
+            initialSeconds = firstSet.duration;
+        } else {
+            initialSeconds = parseTimeSeconds(reps);
+        }
 
         // Guided Mode for Warmup
-        if (exercise?.categoria === 'calentamiento') {
+        if (exercise.categoria === 'calentamiento') {
             setGuidedMode({
                 active: true,
                 exerciseId: exerciseId,
@@ -134,43 +187,92 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 phase: 'work'
             });
 
-            // Set initial timer
-            if (isTimeBased(reps)) {
-                setTimerSeconds(parseTimeSeconds(reps));
-            } else {
-                setTimerSeconds(0);
-            }
-            setIsTimerRunning(true);
+            setTimerSeconds(initialSeconds);
+            // Only start timer if it's actually time-based
+            setIsTimerRunning(isTimeBased(reps) || initialSeconds > 0);
             return;
         }
 
         setActiveExerciseId(exerciseId);
         setCurrentSetIndex(0);
+
+        // For main routine, start a stopwatch (count up from 0) to record time taken
+        setTimerSeconds(0);
+        setIsTimerRunning(true);
+
         toast.success(`Entrenamiento iniciado`);
+    };
 
-        if (isTimeBased(reps)) {
-            const seconds = parseTimeSeconds(reps);
-            setTimerSeconds(seconds);
-        }
+    const handleDiscardClick = (exerciseId: string) => {
+        toast((t) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Omitir ejercicio?</span>
+                <span style={{ fontSize: '12px', color: '#aaa', marginTop: '-8px' }}>No contará para el progreso de hoy.</span>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={() => {
+                            skipExercise(exerciseId);
+                            setIsTimerRunning(false);
+                            setTimerSeconds(0);
+                            toast.dismiss(t.id);
+                            toast.success('Ejercicio omitido');
 
-        // Don't toggle expand - exercise is already expanded
+                            // If in guided mode and skipping current exercise, advance
+                            if (guidedMode.active && guidedMode.exerciseId === exerciseId) {
+                                handleGuidedNext();
+                            }
+                        }}
+                        style={{ background: Colors.primary, border: 'none', color: '#000', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                    >
+                        Omitir
+                    </button>
+                </div>
+            </div>
+        ), { duration: 5000 });
+    };
+
+    const handleVariantClick = (exerciseId: string) => {
+        setSelectedVariantExerciseId(exerciseId);
+        setVariantSearchQuery(''); // Reset search
+        setVariantSelectedCategory(null); // Reset category filter (show all by default, sorted by relevance)
+        setVariantModalOpen(true);
     };
 
     // Handle set authorization (for time-based exercises)
-    const handleStartSet = (exerciseId: string, setIndex: number, reps: string) => {
+    const handleStartSet = (exerciseId: string, setIndex: number) => {
+        const exercise = activeSession?.exercises.find(e => e.id === exerciseId);
+        if (!exercise) return;
+
         setActiveExerciseId(exerciseId);
         setCurrentSetIndex(setIndex);
-        setIsTimerRunning(true);
-        toast.success(`Serie ${setIndex + 1} iniciada`);
 
-        if (isTimeBased(reps)) {
-            const seconds = parseTimeSeconds(reps);
-            setTimerSeconds(seconds);
+        // Init timer with priority: 1. Manual set duration, 2. Global target time
+        const currentSet = exercise.sets[setIndex];
+        let seconds = 0;
+
+        if (currentSet && typeof currentSet.duration === 'number' && currentSet.duration > 0) {
+            seconds = currentSet.duration;
+        } else {
+            seconds = parseTimeSeconds(exercise.targetReps);
+        }
+
+        setTimerSeconds(seconds);
+        // Restrict timer to warm-up category only
+        if (exercise.categoria === 'calentamiento') {
             setIsTimerRunning(true);
+            toast.success(`Serie ${setIndex + 1} iniciada`);
+        } else {
+            setIsTimerRunning(false);
         }
     };
 
-    // Timer effect
+    // Timer effect with Overtime support
     useEffect(() => {
         if (!isTimerRunning) return;
 
@@ -178,41 +280,40 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             setTimerSeconds(prev => {
                 const isRest = guidedMode.active && guidedMode.phase === 'rest';
 
-                // If Rest Phase (Guided Mode) - Always Count Down
+                // If Rest Phase (Guided Mode) - Count Down until user stops it or it hits 0?
+                // User wants timer to show overtime in red if it passes the time
                 if (isRest) {
-                    if (prev > 0) return prev - 1;
-                    if (prev <= 0) {
-                        setIsTimerRunning(false); // Rest done, wait for user
-                        return 0;
-                    }
-                    return prev;
+                    return prev - 1; // Allows negative values (overtime)
                 }
 
                 // If Work Phase (Guided or Active)
                 const exercise = activeSession?.exercises.find(e => e.id === activeExerciseId || e.id === guidedMode.exerciseId);
-                const targetReps = exercise?.targetReps || '';
-                const isTimedWork = isTimeBased(targetReps);
+
+                // If main routine (not warmup), always count up as a stopwatch
+                if (exercise && exercise.categoria !== 'calentamiento') {
+                    return prev + 1;
+                }
+
+                const currentSet = exercise?.sets[guidedMode.active ? guidedMode.setIndex : currentSetIndex];
+
+                // Determine if it should be a countdown:
+                // 1. Current set has a manual duration > 0
+                // 2. Global exercise target is time-based
+                const isTimedWork = (currentSet && typeof currentSet.duration === 'number' && currentSet.duration > 0) ||
+                    (exercise && isTimeBased(exercise.targetReps));
 
                 if (isTimedWork) {
-                    // Count Down
-                    if (prev > 0) return prev - 1;
-                    if (prev <= 0) {
-                        setIsTimerRunning(false);
-                        if (activeExerciseId && !guidedMode.active) {
-                            updateSet(activeExerciseId, currentSetIndex, { completed: true });
-                        }
-                        return 0;
-                    }
-                    return prev;
+                    // Time-based work: Count Down with Overtime
+                    return prev - 1;
                 } else {
-                    // Count Up (Elapsed Time)
+                    // Rep-based work: Count Up (Elapsed Time)
                     return prev + 1;
                 }
             });
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isTimerRunning, activeExerciseId, currentSetIndex, guidedMode.active, guidedMode.exerciseId, guidedMode.phase]);
+    }, [isTimerRunning, activeExerciseId, currentSetIndex, guidedMode.active, guidedMode.exerciseId, guidedMode.phase, guidedMode.setIndex, activeSession?.exercises]);
 
     const handleGuidedNext = () => {
         if (!guidedMode.active || !guidedMode.exerciseId) return;
@@ -224,33 +325,114 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             // Finish Set
             updateSet(guidedMode.exerciseId, guidedMode.setIndex, { completed: true });
 
-            // Should we go to rest?
-            const isLastSet = guidedMode.setIndex >= exercise.sets.length - 1;
-
+            // Go to Rest
             setGuidedMode(prev => ({ ...prev, phase: 'rest' }));
-            // Default rest 30s for warmup if not specified, or 0 if it's just a transition
-            setTimerSeconds(30);
+            // Default rest 30s or exercise config
+            setTimerSeconds(exercise.sets[0].rest || 30);
             setIsTimerRunning(true);
         } else {
-            // Finish Rest -> Next Work or Finish Exercise
-            const nextSetIndex = guidedMode.setIndex + 1;
-            if (nextSetIndex >= exercise.sets.length) {
-                // Exercise Complete
-                setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
-                setIsTimerRunning(false);
-                setTimerSeconds(0);
-                // Optional: Auto-mark exercise as completed or just close modal
-                // markExerciseAsCompleted(exercise.id);
-            } else {
-                // Next Set
-                setGuidedMode(prev => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
-                const nextSetReps = exercise.targetReps;
-                if (isTimeBased(nextSetReps)) {
-                    setTimerSeconds(parseTimeSeconds(nextSetReps));
-                } else {
-                    setTimerSeconds(0);
+            // Finish Rest -> Next Logic
+
+            // Check if it's Warmup (Circuit Mode)
+            if (exercise.categoria === 'calentamiento') {
+                const warmups = activeSession?.exercises.filter(ex => ex.categoria === 'calentamiento') || [];
+
+
+                // Try to find next warmup exercise with unfinished sets
+                // Circuit: Go to next exercise, then loop back
+
+
+                // Simple Round-Robin for Circuit:
+                // next exercise in list, same set index? OR check if current has more sets?
+                // Requirement: "Hace una serie de un ejercicio y luego salta al otro"
+
+                // Let's implement: Next Exercise, Same Set Number (if exists), otherwise Loop back
+                // Actually simpler: iterate through warmups, find first one that has an uncompleted set?
+                // Or sticky to the "Circuit" definition: Ex 1 Set 1 -> Ex 2 Set 1 -> Ex 1 Set 2...
+
+
+
+
+                // Check if potential next exercise has this set index available and uncompleted
+                // If we are at Set 0 of Ex 1, go to Set 0 of Ex 2.
+                // If Ex 2 only has 1 set and we are looking for Set 1 (2nd set), we might need to skip it?
+
+                // Let's keep it robust: Find the very next uncompleted set in the warmup group,
+                // prioritizing "next exercise" over "next set of same exercise".
+
+                // Strategy: flatten all warmup sets into a list: [{exId, setIdx}, ...] order by Set # then Ex #
+                const allWarmupSets: { exId: string, setIdx: number }[] = [];
+                const maxSets = Math.max(...warmups.map(w => w.sets.length));
+
+                for (let s = 0; s < maxSets; s++) {
+                    for (let w = 0; w < warmups.length; w++) {
+                        if (s < warmups[w].sets.length && !warmups[w].sets[s].completed) {
+                            allWarmupSets.push({ exId: warmups[w].id, setIdx: s });
+                        }
+                    }
                 }
-                setIsTimerRunning(true);
+
+                const nextStep = allWarmupSets.find(step => !(step.exId === exercise.id && step.setIdx === guidedMode.setIndex));
+
+                if (nextStep) {
+                    setGuidedMode({
+                        active: true,
+                        exerciseId: nextStep.exId,
+                        setIndex: nextStep.setIdx,
+                        phase: 'work'
+                    });
+                    const nextExObj = warmups.find(w => w.id === nextStep.exId);
+                    const nextSet = nextExObj?.sets[nextStep.setIdx];
+                    const nextSetReps = nextExObj?.targetReps || '';
+
+                    if (nextSet && typeof nextSet.duration === 'number' && nextSet.duration > 0) {
+                        setTimerSeconds(nextSet.duration);
+                        setIsTimerRunning(true);
+                    } else if (isTimeBased(nextSetReps)) {
+                        setTimerSeconds(parseTimeSeconds(nextSetReps));
+                        setIsTimerRunning(true);
+                    } else {
+                        setTimerSeconds(0);
+                        setIsTimerRunning(false); // Reps -> No stopwatch
+                    }
+                } else {
+                    // All warmups done
+                    setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
+                    setIsTimerRunning(false);
+                    setTimerSeconds(0);
+                    toast.success("¡Calentamiento terminado!");
+                }
+
+            } else {
+                // Normal Routine (Straight Sets)
+                const nextSetIndex = guidedMode.setIndex + 1;
+                if (nextSetIndex >= exercise.sets.length) {
+                    // Exercise Complete
+                    setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
+                    setIsTimerRunning(false);
+                    setTimerSeconds(0);
+                } else {
+                    // Next Set
+                    setGuidedMode(prev => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
+                    const nextSet = exercise.sets[nextSetIndex];
+                    let seconds = 0;
+
+                    if (nextSet && typeof nextSet.duration === 'number' && nextSet.duration > 0) {
+                        seconds = nextSet.duration;
+                        setTimerSeconds(seconds);
+                        setIsTimerRunning(true);
+                    } else {
+                        const nextSetReps = exercise.targetReps;
+                        const isTime = isTimeBased(nextSetReps);
+                        seconds = isTime ? parseTimeSeconds(nextSetReps) : 0;
+
+                        setTimerSeconds(seconds);
+                        setIsTimerRunning(isTime);
+                    }
+
+                    setTimerSeconds(seconds);
+                    setIsTimerRunning(true);
+                }
             }
         }
     };
@@ -271,15 +453,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     const progress = (completedSets / totalSets) * 100;
 
-    // Early return if no active session
-    if (!activeSession) return null;
-
     // Expand first exercise by default if none expanded
     useEffect(() => {
-        if (activeSession?.exercises.length > 0 && expandedExercises.length === 0) {
+        if (activeSession && activeSession.exercises.length > 0 && expandedExercises.length === 0) {
             setExpandedExercises([activeSession.exercises[0].id]);
         }
-    }, []);
+    }, [activeSession, expandedExercises.length]);
+
+    // Early return if no active session
+    if (!activeSession) return null;
 
     return (
         <div style={styles.fullOverlay}>
@@ -351,8 +533,8 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             </div>
                         </div>
                         {activeSession.exercises
-                            .filter(ex => ex.categoria === 'calentamiento' && !ex.isCompleted)
-                            .map((ex, exIdx) => renderExerciseCard(ex, exIdx, 'warmup'))}
+                            .filter(ex => ex.categoria === 'calentamiento' && !ex.isCompleted && !ex.isSkipped)
+                            .map((ex) => renderExerciseCard(ex))}
                     </>
                 )}
 
@@ -366,7 +548,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 </div>
                 {activeSession.exercises
                     .filter(ex => ex.categoria !== 'calentamiento' && !ex.isCompleted)
-                    .map((ex, exIdx) => renderExerciseCard(ex, exIdx, 'main'))}
+                    .map((ex) => renderExerciseCard(ex))}
 
                 {/* Add Exercise Button */}
                 <button
@@ -714,7 +896,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     id: `extra_${Date.now()}`,
                                                     fecha: new Date().toISOString(),
                                                     descripcion: extraActivityType,
-                                                    videoUrl: extraActivityUrl || undefined,
                                                     analisisIA: {
                                                         tipoDeporte: extraActivityType,
                                                         duracionMinutos: parseInt(extraActivityDuration),
@@ -754,7 +935,30 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             exit={{ opacity: 0, scale: 0.9 }}
                             style={styles.guidedContainer}
                         >
-                            <div style={styles.guidedHeader}>
+                            <div style={{ textAlign: 'center', marginBottom: '24px', position: 'relative' }}>
+                                {/* Header Actions for Guided Mode */}
+                                <div style={{
+                                    position: 'absolute',
+                                    right: 0,
+                                    top: -10,
+                                    display: 'flex',
+                                    gap: '8px',
+                                    zIndex: 10
+                                }}>
+                                    <button
+                                        onClick={() => guidedMode.exerciseId && handleVariantClick(guidedMode.exerciseId)}
+                                        style={styles.iconBtn}
+                                    >
+                                        <Shuffle size={20} color={Colors.textSecondary} />
+                                    </button>
+                                    <button
+                                        onClick={() => guidedMode.exerciseId && handleDiscardClick(guidedMode.exerciseId)}
+                                        style={styles.iconBtn}
+                                    >
+                                        <Trash2 size={20} color={Colors.textSecondary} />
+                                    </button>
+                                </div>
+
                                 {(() => {
                                     const ex = activeSession.exercises.find(e => e.id === guidedMode.exerciseId);
                                     return (
@@ -773,11 +977,48 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     ...styles.guidedTimerCircle,
                                     borderColor: guidedMode.phase === 'work' ? Colors.primary : Colors.success
                                 }}>
-                                    <span style={styles.guidedTimerValue}>{formatTime(timerSeconds)}</span>
+                                    <span style={{
+                                        ...styles.guidedTimerValue,
+                                        color: timerSeconds < 0 ? Colors.error : Colors.text
+                                    }}>
+                                        {timerSeconds < 0 ? `-${formatTime(Math.abs(timerSeconds))}` : formatTime(timerSeconds)}
+                                    </span>
                                     <span style={styles.guidedTimerLabel}>
                                         {guidedMode.phase === 'work' ? 'TRABAJO' : 'DESCANSO'}
                                     </span>
                                 </div>
+                            </div>
+
+                            {/* Timer Controls */}
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '20px' }}>
+                                <button
+                                    onClick={() => setIsTimerRunning(!isTimerRunning)}
+                                    style={styles.controlBtn}
+                                >
+                                    {isTimerRunning ? <Pause size={24} /> : <Play size={24} />}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        // Reset to initial time
+                                        const exercise = activeSession.exercises.find(e => e.id === guidedMode.exerciseId);
+                                        if (guidedMode.phase === 'work') {
+                                            const reps = exercise?.targetReps || '';
+                                            setTimerSeconds(isTimeBased(reps) ? parseTimeSeconds(reps) : 0);
+                                        } else {
+                                            setTimerSeconds(exercise?.sets[0]?.rest || 30);
+                                        }
+                                        setIsTimerRunning(true);
+                                    }}
+                                    style={styles.controlBtn}
+                                >
+                                    <RotateCcw size={24} />
+                                </button>
+                                <button
+                                    onClick={handleGuidedNext}
+                                    style={styles.controlBtn}
+                                >
+                                    <SkipForward size={24} />
+                                </button>
                             </div>
 
                             <div style={styles.guidedActions}>
@@ -846,16 +1087,161 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             await addExtraActivity(pendingCompletion.extraData);
                         }
 
-                        await finishSession(pendingCompletion.duration, moodData);
+                        await finishSession(pendingCompletion.duration, moodData.energy);
                         onFinish();
                     }}
                     onCancel={() => setShowMoodCheckin(false)}
                 />
             )}
+
+            {/* Variant Selection Modal */}
+            {variantModalOpen && renderVariantModal()}
         </div>
     );
 
-    function renderExerciseCard(ex: ExerciseTracking, exIdx: number, section: 'warmup' | 'main') {
+    function renderVariantModal() {
+        if (!selectedVariantExerciseId) return null;
+        const currentExercise = activeSession?.exercises.find(e => e.id === selectedVariantExerciseId);
+        if (!currentExercise) return null;
+
+        // Determine initial category to optional expand or filter
+        const dbExercise = EJERCICIOS_DATABASE.find(e => e.nombre === currentExercise.nombre);
+        const currentMuscleGroup = dbExercise?.grupoMuscular;
+
+        // Filter exercises
+        const filteredExercises = EJERCICIOS_DATABASE.filter(ex => {
+            const matchesSearch = ex.nombre.toLowerCase().includes(variantSearchQuery.toLowerCase());
+            const matchesCategory = variantSelectedCategory ? ex.grupoMuscular === variantSelectedCategory : true;
+            // Exclude current exercise from options
+            return matchesSearch && matchesCategory && ex.nombre !== currentExercise.nombre;
+        });
+
+        // Group by category
+        const groupedExercises: Record<string, EjercicioBase[]> = {};
+        filteredExercises.forEach(ex => {
+            const group = ex.grupoMuscular;
+            if (!groupedExercises[group]) groupedExercises[group] = [];
+            groupedExercises[group].push(ex);
+        });
+
+        // Sort categories: Current muscle group first, then others
+        const sortedCategories = Object.keys(groupedExercises).sort((a, b) => {
+            if (a === currentMuscleGroup) return -1;
+            if (b === currentMuscleGroup) return 1;
+            return a.localeCompare(b);
+        });
+
+        return (
+            <div style={styles.modalOverlay}>
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    style={{ ...styles.modalContent, height: '80vh', display: 'flex', flexDirection: 'column' }}
+                >
+                    <div style={styles.modalHeader}>
+                        <h3 style={styles.modalTitle}>Reemplazar Ejercicio</h3>
+                        <button onClick={() => setVariantModalOpen(false)} style={styles.iconBtn}>
+                            <X size={24} color={Colors.text} />
+                        </button>
+                    </div>
+
+                    <div style={{ padding: '0 20px 10px' }}>
+                        <div style={styles.variantSearchContainer}>
+                            <Search size={18} color={Colors.textTertiary} />
+                            <input
+                                style={styles.variantSearchInput}
+                                placeholder="Buscar ejercicio..."
+                                value={variantSearchQuery}
+                                onChange={(e) => setVariantSearchQuery(e.target.value)}
+                                autoFocus
+                            />
+                            {variantSearchQuery && (
+                                <button onClick={() => setVariantSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                    <X size={16} color={Colors.textTertiary} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Category Tabs (Optional - simpler to just show list headers for now as requested "like database")
+                        But we can add a horizontal scroll of chips if user wants to filter. 
+                        Let's stick to the list with headers as it mimics the "organization of the database".
+                    */}
+
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px' }}>
+                        <p style={{ color: Colors.textSecondary, marginBottom: '16px', fontSize: '13px' }}>
+                            Reemplazando: <strong>{currentExercise.nombre}</strong>
+                        </p>
+
+                        {sortedCategories.length > 0 ? (
+                            sortedCategories.map(catKey => {
+                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: '💪', color: Colors.text };
+                                return (
+                                    <div key={catKey} style={{ marginBottom: '20px' }}>
+                                        <div style={{
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            padding: '8px 0', borderBottom: `2px solid ${categoryInfo.color}20`,
+                                            marginBottom: '8px'
+                                        }}>
+                                            <span style={{ fontSize: '18px' }}>{categoryInfo.emoji}</span>
+                                            <span style={{ fontSize: '14px', fontWeight: 800, color: categoryInfo.color, textTransform: 'uppercase' }}>
+                                                {categoryInfo.nombre}
+                                            </span>
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {groupedExercises[catKey].map(ex => (
+                                                <button
+                                                    key={ex.id}
+                                                    onClick={() => {
+                                                        replaceExerciseInSession(selectedVariantExerciseId, {
+                                                            id: ex.id,
+                                                            nombre: ex.nombre,
+                                                            series: currentExercise.targetSeries,
+                                                            repeticiones: currentExercise.targetReps,
+                                                            descanso: 60,
+                                                            categoria: currentExercise.categoria || 'maquina'
+                                                        });
+                                                        setVariantModalOpen(false);
+                                                        setVariantSearchQuery(''); // Reset search
+                                                        toast.success('Ejercicio reemplazado');
+                                                    }}
+                                                    style={{
+                                                        ...styles.previewItem,
+                                                        border: 'none',
+                                                        cursor: 'pointer',
+                                                        textAlign: 'left',
+                                                        justifyContent: 'space-between',
+                                                        padding: '12px 16px',
+                                                        background: Colors.surface
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        <span style={styles.previewItemName}>{ex.nombre}</span>
+                                                        <span style={{ fontSize: '11px', color: Colors.textTertiary }}>
+                                                            {ex.equipamiento || 'Sin equipo'}
+                                                        </span>
+                                                    </div>
+                                                    <ChevronRight size={16} color={Colors.textTertiary} />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div style={{ textAlign: 'center', padding: '40px 20px', color: Colors.textSecondary }}>
+                                <Dumbbell size={32} color={Colors.border} style={{ marginBottom: '12px', opacity: 0.5 }} />
+                                <p>No se encontraron ejercicios.</p>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
+
+    function renderExerciseCard(ex: ExerciseTracking) {
         const globalIdx = activeSession?.exercises.findIndex(e => e.id === ex.id) ?? 0;
         return (
             <Card key={ex.id} style={{
@@ -887,9 +1273,28 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 </span>
                             )}
                         </h3>
-                        <p style={styles.exerciseMeta}>{ex.targetSeries} series x {ex.targetReps}</p>
+                        <p style={styles.exerciseMeta}>{ex.targetSeries} series</p>
                     </div>
                     <div style={styles.exerciseActions}>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleVariantClick(ex.id);
+                            }}
+                            style={styles.actionIconBtn}
+                        >
+                            <Shuffle size={18} color={Colors.textSecondary} />
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDiscardClick(ex.id);
+                            }}
+                            style={styles.actionIconBtn}
+                        >
+                            <Trash2 size={18} color={Colors.textSecondary} />
+                        </button>
+                        <div style={{ width: '1px', height: '16px', background: Colors.border, margin: '0 4px' }} />
                         {expandedExercises.includes(ex.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                     </div>
                 </div>
@@ -933,12 +1338,27 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             onClick={() => handleStartExercise(ex.id, ex.targetReps)}
                                         >
                                             <Play size={24} color={Colors.background} />
-                                            <span>Comenzar Ejercicio</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                <span style={{ fontSize: '16px', fontWeight: 800 }}>Comenzar Ejercicio</span>
+                                            </div>
                                         </button>
                                     </div>
-                                ) : isTimeBased(ex.targetReps) && isTimerRunning ? (
+                                ) : isTimeBased(ex.targetReps) && isTimerRunning && activeExerciseId === ex.id ? (
                                     <div style={styles.timerDisplay}>
                                         <Clock size={32} color={Colors.primary} />
+                                        <div style={styles.timerText}>
+                                            {timerSeconds < 0 ? `-${formatTime(Math.abs(timerSeconds))}` : formatTime(timerSeconds)}
+                                        </div>
+                                        <button
+                                            style={styles.pauseBtn}
+                                            onClick={() => setIsTimerRunning(false)}
+                                        >
+                                            <Pause size={20} />
+                                        </button>
+                                    </div>
+                                ) : isTimerRunning ? (
+                                    <div style={styles.timerDisplay}>
+                                        <Clock size={32} color={Colors.textSecondary} />
                                         <div style={styles.timerText}>{formatTime(timerSeconds)}</div>
                                         <button
                                             style={styles.pauseBtn}
@@ -990,6 +1410,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
                                                 style={styles.newInput}
                                                 disabled={set.completed || set.skipped}
+                                                onFocus={() => setActiveExerciseId(ex.id)}
                                             />
 
                                             <input
@@ -999,6 +1420,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
                                                 style={styles.newInput}
                                                 disabled={set.completed || set.skipped}
+                                                onFocus={() => setActiveExerciseId(ex.id)}
                                             />
 
                                             <input
@@ -1008,6 +1430,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 onChange={(e) => updateSet(ex.id, sIdx, { duration: parseInt(e.target.value) || 0 })}
                                                 style={styles.newInput}
                                                 disabled={set.completed || set.skipped}
+                                                onFocus={() => setActiveExerciseId(ex.id)}
                                             />
 
                                             <input
@@ -1017,25 +1440,41 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 onChange={(e) => updateSet(ex.id, sIdx, { rest: parseInt(e.target.value) || 0 })}
                                                 style={styles.newInput}
                                                 disabled={set.completed || set.skipped}
+                                                onFocus={() => setActiveExerciseId(ex.id)}
                                             />
 
                                             <div style={{ display: 'flex', justifyContent: 'center' }}>
                                                 {!set.completed && !set.skipped ? (
-                                                    isTimeBased(ex.targetReps) ? (
-                                                        <button
-                                                            style={styles.checkBtn}
-                                                            onClick={() => handleStartSet(ex.id, sIdx, ex.targetReps)}
-                                                            disabled={activeExerciseId !== ex.id}
-                                                        >
-                                                            <Play size={16} />
-                                                        </button>
+                                                    (isTimeBased(ex.targetReps) && ex.categoria === 'calentamiento') ? (
+                                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                                            <button
+                                                                style={{ ...styles.checkBtn, background: Colors.surface, border: `1px solid ${Colors.border}`, color: Colors.textSecondary }}
+                                                                onClick={() => updateSet(ex.id, sIdx, { skipped: true })}
+                                                            >
+                                                                <SkipForward size={14} />
+                                                            </button>
+                                                            <button
+                                                                style={styles.checkBtn}
+                                                                onClick={() => handleStartSet(ex.id, sIdx)}
+                                                            >
+                                                                <Play size={16} />
+                                                            </button>
+                                                        </div>
                                                     ) : (
-                                                        <button
-                                                            style={styles.checkBtn}
-                                                            onClick={() => updateSet(ex.id, sIdx, { completed: true })}
-                                                        >
-                                                            <Check size={18} />
-                                                        </button>
+                                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                                            <button
+                                                                style={{ ...styles.checkBtn, background: Colors.surface, border: `1px solid ${Colors.border}`, color: Colors.textSecondary }}
+                                                                onClick={() => updateSet(ex.id, sIdx, { skipped: true })}
+                                                            >
+                                                                <SkipForward size={14} />
+                                                            </button>
+                                                            <button
+                                                                style={styles.checkBtn}
+                                                                onClick={() => updateSet(ex.id, sIdx, { completed: true })}
+                                                            >
+                                                                <Check size={18} />
+                                                            </button>
+                                                        </div>
                                                     )
                                                 ) : (
                                                     <button
@@ -1074,6 +1513,8 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                             <button
                                                                 onClick={() => {
                                                                     markExerciseAsCompleted(ex.id);
+                                                                    setIsTimerRunning(false);
+                                                                    setTimerSeconds(0);
                                                                     toast.dismiss(t.id);
                                                                     toast.success('Ejercicio finalizado');
                                                                 }}
@@ -1132,6 +1573,16 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '8px',
         cursor: 'pointer',
     },
+    actionIconBtn: {
+        background: 'transparent',
+        border: 'none',
+        padding: '8px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '8px',
+    },
     timerBadge: {
         background: `${Colors.primary}15`,
         color: Colors.primary,
@@ -1163,6 +1614,14 @@ const styles: Record<string, React.CSSProperties> = {
         height: '100%',
         background: Colors.primary,
         transition: 'width 0.3s ease',
+    },
+    activeContent: {
+        flex: 1,
+        padding: '20px',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px',
     },
     previewContent: {
         flex: 1,
@@ -1250,11 +1709,7 @@ const styles: Record<string, React.CSSProperties> = {
         cursor: 'pointer',
         boxShadow: `0 10px 30px ${Colors.primary}30`,
     },
-    activeContent: {
-        flex: 1,
-        padding: '20px',
-        overflowY: 'auto',
-    },
+
     exerciseCard: {
         marginBottom: '16px',
         border: '1px solid',
@@ -1746,18 +2201,33 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '12px',
     },
     guidedActionBtn: {
-        width: '100%',
-        padding: '20px',
-        borderRadius: '20px',
+        background: Colors.primary,
+        color: '#000',
         border: 'none',
+        padding: '16px 32px',
+        borderRadius: '50px',
+        fontSize: '18px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+        width: '100%',
+        justifyContent: 'center'
+    },
+    controlBtn: {
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '50%',
+        width: '50px',
+        height: '50px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '12px',
-        fontSize: '18px',
-        fontWeight: 800,
-        color: '#000',
         cursor: 'pointer',
+        color: Colors.text,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
     },
     guidedCancelBtn: {
         width: '100%',
@@ -1767,5 +2237,22 @@ const styles: Record<string, React.CSSProperties> = {
         color: Colors.textSecondary,
         fontSize: '14px',
         cursor: 'pointer',
+    },
+    variantSearchContainer: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '12px 16px',
+        background: Colors.surface,
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+    },
+    variantSearchInput: {
+        background: 'transparent',
+        border: 'none',
+        flex: 1,
+        fontSize: '16px',
+        color: Colors.text,
+        outline: 'none',
     }
 };

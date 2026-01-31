@@ -2,7 +2,7 @@
 import React from 'react';
 import { useUserStore } from '../stores/userStore';
 import { Colors } from '../styles/colors';
-import { Cloud, CloudOff, Loader2, CheckCircle2 } from 'lucide-react';
+import { CloudOff, Loader2, CheckCircle2 } from 'lucide-react';
 
 export const SyncStatus: React.FC = () => {
     const { isSyncing, lastSyncError, userId } = useUserStore();

@@ -36,9 +36,10 @@ export const calculateGlobalStats = (perfil: PerfilCompleto): GlobalStats => {
     const totalMinutes = unifiedHistory.reduce((acc, item) => {
         if (item.type === 'gym') {
             return acc + ((item.data as EntrenamientoRealizado).duracionMinutos || 0);
-        } else {
+        } else if (item.type === 'extra') {
             return acc + ((item.data as ExtraActivity).analisisIA?.duracionMinutos || 0);
         }
+        return acc; // manual has no minutes data
     }, 0);
 
     const totalCalories = unifiedHistory.reduce((acc, item) => {
@@ -47,9 +48,10 @@ export const calculateGlobalStats = (perfil: PerfilCompleto): GlobalStats => {
             const weight = perfil.usuario.peso || 70;
             const gymCals = Math.round(4.5 * weight * ((data.duracionMinutos || 0) / 60));
             return acc + gymCals;
-        } else {
+        } else if (item.type === 'extra') {
             return acc + ((item.data as ExtraActivity).analisisIA?.calorias || 0);
         }
+        return acc; // manual has no calories data
     }, 0);
 
     // 3. Streak Calculation

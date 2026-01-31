@@ -90,8 +90,9 @@ export interface EntrenamientoRealizado {
     duracionMinutos: number;
     nombre: string;
     ejercicios: EjercicioRealizado[];
-    preWorkoutMood?: MoodLog;
-    postWorkoutMood?: MoodLog;
+    // Mood/Energy Tracking
+    moodPre?: number;  // 1-5
+    moodPost?: number; // 1-5
 }
 
 export interface AnalysisResult {
@@ -128,7 +129,7 @@ export interface PerfilCompleto {
     partnerId?: string; // New field for Cloud ID
     alias?: string; // Add this
     role?: 'admin' | 'user'; // Rol del usuario
-    weeklyTracking?: Record<string, boolean>; // Tracking de días entrenados { '2026-01-29': true }
+    weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de días entrenados { '2026-01-29': 'completed' }
     actividadesExtras: ExtraActivity[]; // Extra activities logged
     catalogoExtras: string[]; // Unique activity types discovered
 }
@@ -174,6 +175,7 @@ export interface ExerciseTracking {
     categoria?: 'calentamiento' | 'maquina'; // For separating warmup from main exercises
     isCompleted?: boolean;
     isOptional?: boolean;
+    isSkipped?: boolean;
 }
 
 export interface ActiveSession {
@@ -181,7 +183,7 @@ export interface ActiveSession {
     dayName: string;
     exercises: ExerciseTracking[];
     routineName: string;
-    preWorkoutMood?: MoodLog;
+    preWorkoutMood?: number;
 }
 
 interface UserStore {
@@ -201,13 +203,13 @@ interface UserStore {
     agregarEntrenamiento: (entrenamiento: EntrenamientoRealizado) => void;
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
-    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: MoodLog) => void;
+    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: number) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>) => void;
     skipSet: (exerciseId: string, setIndex: number) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
     addExerciseToSession: (newExercise: EjercicioRutina) => void;
     markExerciseAsCompleted: (exerciseId: string) => void;
-    finishSession: (durationMinutos: number, postWorkoutMood?: MoodLog) => Promise<void>;
+    finishSession: (durationMinutos: number, postWorkoutMood?: number) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
     logout: () => void;
@@ -219,6 +221,8 @@ interface UserStore {
     removeExtraActivity: (activityId: string) => Promise<void>;
     removeExtraActivitiesOnDate: (dateStr: string) => Promise<void>;
     getExtraActivitiesCatalog: () => string[];
+    skipExercise: (exerciseId: string) => void;
+    setDayTracking: (dateStr: string, status: 'completed' | 'skipped' | null) => void;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -340,8 +344,8 @@ export const useUserStore = create<UserStore>()(
                             skipped: false,
                             weight: 0,
                             reps: parseInt(ex.repeticiones) || 10,
-                            duration: 0,
-                            rest: 0
+                            duration: ex.segundos || 0,
+                            rest: ex.descanso || 60
                         }))
                     }))
                 }
@@ -433,6 +437,18 @@ export const useUserStore = create<UserStore>()(
                 };
             }),
 
+            skipExercise: (exerciseId) => set((state) => {
+                if (!state.activeSession) return state;
+                return {
+                    activeSession: {
+                        ...state.activeSession,
+                        exercises: state.activeSession.exercises.map(ex =>
+                            ex.id === exerciseId ? { ...ex, isSkipped: true } : ex
+                        )
+                    }
+                };
+            }),
+
             finishSession: async (durationMinutos, postWorkoutMood) => {
                 const state = get();
                 if (!state.activeSession) return;
@@ -442,12 +458,12 @@ export const useUserStore = create<UserStore>()(
                     fecha: new Date().toISOString(),
                     duracionMinutos: durationMinutos,
                     nombre: `${state.activeSession.dayName} - ${state.activeSession.routineName}`,
-                    preWorkoutMood: state.activeSession.preWorkoutMood,
-                    postWorkoutMood: postWorkoutMood,
+                    moodPre: state.activeSession.preWorkoutMood,
+                    moodPost: postWorkoutMood,
                     ejercicios: state.activeSession.exercises.map(ex => ({
                         nombre: ex.nombre,
                         sets: ex.sets
-                            .filter(s => s.completed)
+                            .filter(s => s.completed || (s.weight > 0 || s.reps > 0)) // Auto-include sets with data
                             .map((s, i) => ({
                                 numero: i + 1,
                                 reps: s.reps,
@@ -468,13 +484,49 @@ export const useUserStore = create<UserStore>()(
                     }
                 }
 
-                set((state) => ({
-                    perfil: {
-                        ...state.perfil,
-                        historial: [realizado, ...state.perfil.historial]
-                    },
-                    activeSession: null
-                }));
+                set((state) => {
+                    const newTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    const dateKey = realizado.fecha.split('T')[0];
+                    newTracking[dateKey] = 'completed';
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            historial: [realizado, ...state.perfil.historial],
+                            weeklyTracking: newTracking
+                        },
+                        activeSession: null
+                    };
+                });
+
+                // Explicitly save the updated profile to Firebase to ensure data is not lost
+                const { userId, perfil } = get();
+                if (userId) {
+                    try {
+                        const { firebaseService } = await import('../services/firebaseService');
+                        await firebaseService.saveProfile(userId, perfil);
+                        console.log("Workout saved and profile synced to cloud.");
+                    } catch (e) {
+                        console.error("Failed to sync profile after workout completion", e);
+                    }
+                }
+            },
+
+            setDayTracking: (dateStr, status) => {
+                set((state) => {
+                    const newTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    if (status === null) {
+                        delete newTracking[dateStr];
+                    } else {
+                        newTracking[dateStr] = status;
+                    }
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            weeklyTracking: newTracking
+                        }
+                    };
+                });
             },
 
             cancelSession: () => set({ activeSession: null }),
@@ -544,7 +596,7 @@ export const useUserStore = create<UserStore>()(
                     const newTracking = { ...(state.perfil.weeklyTracking || {}) };
                     if (activity.fecha) {
                         const dateKey = activity.fecha.split('T')[0];
-                        newTracking[dateKey] = true;
+                        newTracking[dateKey] = 'completed';
                     }
 
                     return {

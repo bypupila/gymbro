@@ -37,7 +37,7 @@ export const TrainPage: React.FC = () => {
 
     const handleMoodComplete = (moodData: MoodLog) => {
         if (!perfil.rutina) return;
-        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre, moodData);
+        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre, moodData.mood);
         setShowMoodCheckin(false);
     };
 
@@ -88,8 +88,8 @@ export const TrainPage: React.FC = () => {
                     </h2>
                     <p style={styles.mainDesc}>
                         {perfil.rutina
-                            ? `${perfil.rutina.ejercicios.length} ejercicios • ~60 min`
-                            : (entrenamientoHoy.entrena ? 'Crear Rutina Primero' : 'Recuperación • 15 min')}
+                            ? `${perfil.rutina.ejercicios.length} ejercicios`
+                            : (entrenamientoHoy.entrena ? 'Crear Rutina Primero' : 'Recuperación')}
                     </p>
                 </div>
                 <div style={styles.playBtn}>
@@ -130,7 +130,7 @@ export const TrainPage: React.FC = () => {
                             <div style={styles.historyInfo}>
                                 <h4 style={styles.historyTitle}>{log.nombre}</h4>
                                 <p style={styles.historyMeta}>
-                                    {new Date(log.fecha).toLocaleDateString()} • {log.duracionMinutos} min
+                                    {new Date(log.fecha).toLocaleDateString()}
                                 </p>
                             </div>
                             <div style={styles.historyArrow}>

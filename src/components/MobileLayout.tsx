@@ -2,11 +2,11 @@
 // GymBro PWA - App Layout
 // =====================================================
 
-import { Dumbbell, Info, Share2, Smartphone } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
-import Colors from '../styles/colors';
 import BottomNav from './BottomNav';
+
+import { Agentation } from 'agentation';
 
 export const MobileLayout: React.FC = () => {
     return (
@@ -15,6 +15,7 @@ export const MobileLayout: React.FC = () => {
                 <Outlet />
             </main>
             <BottomNav />
+            {import.meta.env.DEV && <Agentation />}
         </div>
     );
 };

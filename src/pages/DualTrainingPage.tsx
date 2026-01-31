@@ -10,6 +10,8 @@ import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import { toast } from 'react-hot-toast';
 
+import { firebaseService } from '@/services/firebaseService';
+
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
     const { perfil, setPartnerId, setDatosPareja } = useUserStore();
@@ -26,8 +28,7 @@ export const DualTrainingPage: React.FC = () => {
         setConnectError('');
 
         try {
-            // Dynamic import to avoid cycles if any, though likely safe
-            const { firebaseService } = await import('@/services/firebaseService');
+            
             const user = await firebaseService.findUserByAlias(aliasInput.trim());
 
             if (user) {
@@ -40,8 +41,10 @@ export const DualTrainingPage: React.FC = () => {
             } else {
                 setConnectError('Alias no encontrado');
             }
-        } catch (e) {
-            setConnectError('Error al conectar');
+        } catch (error: unknown) {
+            console.error(error);
+            const errorMessage = error instanceof Error ? error.message : "Error al conectar";
+            setConnectError(errorMessage);
         } finally {
             setIsConnecting(false);
         }

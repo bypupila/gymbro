@@ -1,16 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Colors from '@/styles/colors';
-import { Search, Filter, Play, Pencil, Database, Save, X, Loader2 } from 'lucide-react';
+import { Search, Play, Pencil, Database, Save, X, Loader2 } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
 import { firebaseService } from '@/services/firebaseService';
 import { toast } from 'react-hot-toast';
-import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
+import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, GrupoMuscularEjercicio, EjercicioBase } from '@/data/exerciseDatabase';
 import { getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const CatalogPage: React.FC = () => {
-    const navigate = useNavigate();
+
     const { perfil } = useUserStore();
     const isAdmin = perfil.alias === 'bypupila' || perfil.role === 'admin';
 
@@ -19,17 +18,42 @@ export const CatalogPage: React.FC = () => {
     const [selectedGroup, setSelectedGroup] = useState<GrupoMuscularEjercicio | 'todos'>('todos');
 
     // Editor State
-    const [editingExercise, setEditingExercise] = useState<any | null>(null);
+    const [editingExercise, setEditingExercise] = useState<EjercicioBase | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [useFirebaseData, setUseFirebaseData] = useState(false);
 
-    // Load exercises from Firebase
+    // Load exercises from Firebase and MERGE with local
     React.useEffect(() => {
         const loadData = async () => {
             try {
                 const cloudExercises = await firebaseService.getAllExercises();
                 if (cloudExercises && cloudExercises.length > 0) {
-                    setExercises(cloudExercises);
+
+                    // Create a Map of Cloud Exercises for fast lookup
+                    // Match by ID preferred, fallback to Name
+                    const cloudMap = new Map();
+                    cloudExercises.forEach(ex => {
+                        cloudMap.set(ex.id, ex);
+                        // Also set by name for legacy matching
+                        if (ex.nombre) cloudMap.set(ex.nombre, ex);
+                    });
+
+                    // Start with Local Exercises, overriding with Cloud version if exists
+                    const merged = EJERCICIOS_DATABASE.map(local => {
+                        const cloudVersion = cloudMap.get(local.id) || cloudMap.get(local.nombre);
+                        return cloudVersion ? { ...local, ...cloudVersion } : local;
+                    });
+
+                    // Append strictly NEW exercises from Cloud (custom created ones)
+                    // Filter out ones we already matched
+                    const localIds = new Set(EJERCICIOS_DATABASE.map(e => e.id));
+                    const localNames = new Set(EJERCICIOS_DATABASE.map(e => e.nombre));
+
+                    const newFromCloud = cloudExercises.filter(ex =>
+                        !localIds.has(ex.id) && !localNames.has(ex.nombre)
+                    );
+
+                    setExercises([...merged, ...newFromCloud]);
                     setUseFirebaseData(true);
                 }
             } catch (error) {
@@ -101,7 +125,7 @@ export const CatalogPage: React.FC = () => {
 
     // Filter Logic
     const filteredExercises = useMemo(() => {
-        return exercises.filter((ej: any) => {
+        return exercises.filter((ej: EjercicioBase) => {
             const matchesSearch = ej.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 ej.equipamiento?.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -111,13 +135,7 @@ export const CatalogPage: React.FC = () => {
         });
     }, [searchQuery, selectedGroup, exercises]);
 
-    // Handle Video Click
-    const handleExerciseClick = (name: string) => {
-        const videoUrl = getExerciseVideo(name);
-        if (videoUrl) {
-            window.open(videoUrl, '_blank');
-        }
-    };
+
 
     return (
         <div style={styles.container}>
@@ -176,7 +194,7 @@ export const CatalogPage: React.FC = () => {
             {/* Grid Content */}
             <div style={styles.grid}>
                 <AnimatePresence mode='popLayout'>
-                    {filteredExercises.map((ej: any) => {
+                    {filteredExercises.map((ej: EjercicioBase) => {
                         const groupData = GRUPOS_MUSCULARES[ej.grupoMuscular as GrupoMuscularEjercicio] || GRUPOS_MUSCULARES['pectoral'];
                         // Use stored image or fallback
                         const img = ej.imagen || getExerciseImage(ej.nombre, ej.grupoMuscular);
@@ -270,7 +288,7 @@ export const CatalogPage: React.FC = () => {
                                 <select
                                     style={styles.input}
                                     value={editingExercise.grupoMuscular}
-                                    onChange={e => setEditingExercise({ ...editingExercise, grupoMuscular: e.target.value })}
+                                    onChange={e => setEditingExercise({ ...editingExercise, grupoMuscular: e.target.value as GrupoMuscularEjercicio })}
                                 >
                                     {Object.keys(GRUPOS_MUSCULARES).map(k => (
                                         <option key={k} value={k}>{GRUPOS_MUSCULARES[k as GrupoMuscularEjercicio].nombre}</option>

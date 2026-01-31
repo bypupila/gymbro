@@ -44,7 +44,7 @@ export const CloudSyncManager: React.FC = () => {
         };
 
         loadInitialData();
-    }, [userId]);
+    }, [userId, setIsSyncing]);
 
     // Real-time Cloud Listener
     useEffect(() => {
@@ -80,9 +80,10 @@ export const CloudSyncManager: React.FC = () => {
                 await firebaseService.saveProfile(userId, perfil);
                 lastSavedData.current = currentDataStr;
                 setLastSyncError(null);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('Auto-sync failed:', err);
-                setLastSyncError(err.message || 'Error guardando en la nube');
+                const errorMessage = err instanceof Error ? err.message : 'Error guardando en la nube';
+                setLastSyncError(errorMessage);
             } finally {
                 setIsSyncing(false);
             }
@@ -91,7 +92,7 @@ export const CloudSyncManager: React.FC = () => {
         return () => {
             if (syncTimeout.current) clearTimeout(syncTimeout.current);
         };
-    }, [perfil, userId]);
+    }, [perfil, userId, setIsSyncing, setLastSyncError]);
 
     return null; // Silent manager
 };

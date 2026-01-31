@@ -3,7 +3,7 @@
 // =====================================================
 
 import Colors from '@/styles/colors';
-import { Dumbbell, Home, MessageCircle, TrendingUp, User, Zap } from 'lucide-react';
+import { Dumbbell, Home, TrendingUp, User, Zap } from 'lucide-react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 

@@ -146,24 +146,7 @@ export const CoachPage: React.FC = () => {
     );
 };
 
-// Simulated responses
-function getSimulatedResponse(input: string, objetivo: string): string {
-    const lower = input.toLowerCase();
 
-    if (lower.includes('entreno') || lower.includes('hoy')) {
-        return `Basado en tu objetivo de ${objetivo.replace('_', ' ')}, hoy te recomiendo enfocarte en ejercicios compuestos. ¿Quieres que te genere una rutina personalizada?`;
-    }
-
-    if (lower.includes('nutrición') || lower.includes('comer')) {
-        return `Para ${objetivo.replace('_', ' ')}, te recomiendo mantener una ingesta proteica de 1.6-2g por kg de peso corporal. ¿Quieres consejos más específicos?`;
-    }
-
-    if (lower.includes('técnica') || lower.includes('forma')) {
-        return 'La técnica es fundamental. Te recomiendo grabar tus ejercicios y revisarlos. Los errores más comunes son: no mantener la espalda recta y no completar el rango de movimiento. 💪';
-    }
-
-    return 'Entendido. ¿Hay algo específico sobre tu entrenamiento o nutrición en lo que pueda ayudarte? Estoy aquí para guiarte hacia tus metas. 🎯';
-}
 
 const styles: Record<string, React.CSSProperties> = {
     container: {

@@ -9,6 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
 import { toast } from 'react-hot-toast';
 
+import { useUserStore } from '@/stores/userStore';
+
 export const MigratorPage: React.FC = () => {
     const navigate = useNavigate();
     const [isScanning, setIsScanning] = useState(false);
@@ -33,7 +35,6 @@ export const MigratorPage: React.FC = () => {
                 const result = await analyzeRoutineImages(base64);
 
                 if (result.exercises && result.exercises.length > 0) {
-                    const { useUserStore } = await import('@/stores/userStore');
                     const { setRutina, perfil } = useUserStore.getState();
 
                     setRutina({

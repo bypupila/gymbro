@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useUserStore } from '@/stores/userStore';
+import { useUserStore, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Check, X, Calendar, Dumbbell, Activity, Plus } from 'lucide-react';
+import { Check, X, Dumbbell, Activity, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
@@ -70,14 +70,15 @@ export const WeeklyProgressBar: React.FC = () => {
             // Show extra activity form instead of marking as complete
             setShowModal(false);
             setShowExtraActivityForm(true);
+        } else if (dayName === 'Saltar día') {
+            const { setDayTracking } = useUserStore.getState();
+            setDayTracking(selectedDate, 'skipped');
+            setShowModal(false);
+            setSelectedDate(null);
+            toast.success('Día marcado como saltado');
         } else {
-            const newTracking = { ...weeklyTracking };
-            newTracking[selectedDate] = true;
-
-            useUserStore.setState((state) => ({
-                perfil: { ...state.perfil, weeklyTracking: newTracking }
-            }));
-
+            const { setDayTracking } = useUserStore.getState();
+            setDayTracking(selectedDate, 'completed');
             setShowModal(false);
             setSelectedDate(null);
         }
@@ -114,7 +115,7 @@ export const WeeklyProgressBar: React.FC = () => {
             const estimatedCalories = Math.round(mets * weight * durationHrs);
 
             // Save the extra activity
-            const activityToSave: any = {
+            const activityToSave: ExtraActivity = {
                 id: `extra_${Date.now()}`,
                 fecha: selectedDate,
                 descripcion: selectedActivityType, // For backward compatibility/display
@@ -170,14 +171,22 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const getDaySchedule = (dayIndex: number) => {
-        const dayName = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][dayIndex];
-        return perfil.horario.dias.find(d => d.dia === dayName);
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const targetDay = dayNames[dayIndex];
+        return perfil.horario.dias.find(d =>
+            d.dia.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
+            targetDay.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        );
     };
 
     const stats = calculateGlobalStats(perfil);
     const activeDatesSet = new Set(stats.unifiedHistory.map(h => formatDate(h.date)));
 
-    const completedDays = weekDays.filter(d => activeDatesSet.has(formatDate(d))).length;
+    const completedDays = weekDays.filter(d => {
+        const dateStr = formatDate(d);
+        return activeDatesSet.has(dateStr) || weeklyTracking[dateStr];
+    }).length;
+
     const scheduledDays = weekDays.filter((_, i) => getDaySchedule((i + 1) % 7)?.entrena).length;
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
@@ -205,12 +214,14 @@ export const WeeklyProgressBar: React.FC = () => {
                 <div style={styles.daysContainer}>
                     {weekDays.map((date, index) => {
                         const dateStr = formatDate(date);
-                        const isCompleted = activeDatesSet.has(dateStr);
+                        const trackingStatus = weeklyTracking[dateStr];
+                        const isCompleted = activeDatesSet.has(dateStr) || trackingStatus === 'completed' || trackingStatus === true;
+                        const isSkipped = trackingStatus === 'skipped';
                         const schedule = getDaySchedule((index + 1) % 7); // Adjust for Monday start
                         const isScheduled = schedule?.entrena;
                         const today = isToday(date);
                         const past = isPast(date);
-                        const missedDay = past && isScheduled && !isCompleted;
+                        const missedDay = past && isScheduled && !isCompleted && !isSkipped;
 
                         return (
                             <button
@@ -219,38 +230,50 @@ export const WeeklyProgressBar: React.FC = () => {
                                 style={{
                                     ...styles.dayButton,
                                     background: isCompleted
-                                        ? Colors.success
-                                        : missedDay
-                                            ? `${Colors.error}40`
+                                        ? `linear-gradient(135deg, ${Colors.success}, ${Colors.success}DD)`
+                                        : isSkipped || missedDay
+                                            ? `linear-gradient(135deg, ${Colors.error}33, ${Colors.error}15)`
                                             : today
-                                                ? Colors.primary
+                                                ? `linear-gradient(135deg, ${Colors.primary}, ${Colors.primary}DD)`
                                                 : isScheduled
                                                     ? Colors.surface
                                                     : 'transparent',
-                                    border: `2px solid ${isCompleted
+                                    border: `1px solid ${isCompleted
                                         ? Colors.success
-                                        : missedDay
+                                        : isSkipped || missedDay
                                             ? Colors.error
                                             : today
                                                 ? Colors.primary
                                                 : isScheduled
                                                     ? Colors.border
-                                                    : Colors.border
+                                                    : 'transparent'
                                         }`,
-                                    opacity: isScheduled || isCompleted || missedDay ? 1 : 0.5,
+                                    boxShadow: today ? `0 0 15px ${Colors.primary}40` : 'none',
+                                    opacity: isScheduled || isCompleted || isSkipped || missedDay ? 1 : 0.4,
                                 }}
                             >
                                 <div style={{
                                     ...styles.dayName,
-                                    color: (isCompleted || today) ? '#000' : (missedDay ? Colors.error : Colors.text)
+                                    color: (isCompleted || today) ? '#000' : (isSkipped || missedDay ? Colors.error : Colors.textSecondary)
                                 }}>
                                     {dayNames[index]}
                                 </div>
                                 <div style={{
                                     ...styles.dayDate,
-                                    color: (isCompleted || today) ? '#000' : (missedDay ? Colors.error : Colors.text)
+                                    color: (isCompleted || today) ? '#000' : (isSkipped || missedDay ? Colors.error : Colors.text)
                                 }}>
                                     {date.getDate()}
+                                </div>
+
+                                {/* Status Indicator Icon */}
+                                <div style={styles.statusIconContainer}>
+                                    {isCompleted ? (
+                                        <Check size={10} color="#000" strokeWidth={3} />
+                                    ) : isSkipped || missedDay ? (
+                                        <X size={10} color={Colors.error} strokeWidth={3} />
+                                    ) : isScheduled ? (
+                                        <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: today ? '#000' : Colors.textTertiary }} />
+                                    ) : null}
                                 </div>
                             </button>
                         );
@@ -307,6 +330,20 @@ export const WeeklyProgressBar: React.FC = () => {
                                     <div style={styles.routineInfo}>
                                         <span style={styles.routineDay}>Actividad Extra</span>
                                         <span style={styles.routineMuscle}>Cardio, deporte, etc.</span>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => handleRoutineSelection('Saltar día')}
+                                    style={{
+                                        ...styles.routineOption,
+                                        borderColor: Colors.error,
+                                        background: `${Colors.error}15`
+                                    }}
+                                >
+                                    <X size={18} color={Colors.error} />
+                                    <div style={styles.routineInfo}>
+                                        <span style={styles.routineDay}>Saltar día</span>
+                                        <span style={styles.routineMuscle}>No pude entrenar hoy</span>
                                     </div>
                                 </button>
                             </div>
@@ -381,7 +418,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
                                                 {extraActivity.analisisIA?.notas && extraActivity.analisisIA.notas !== 'Registro manual' && (
                                                     <p style={styles.activityNotes}>
-                                                        "{extraActivity.analisisIA.notas}"
+                                                        &quot;{extraActivity.analisisIA.notas}&quot;
                                                     </p>
                                                 )}
                                             </div>
@@ -390,14 +427,47 @@ export const WeeklyProgressBar: React.FC = () => {
 
                                     if (workout) {
                                         return (
-                                            <div style={styles.routineSummary}>
-                                                <Dumbbell size={24} color={Colors.success} />
-                                                <div style={{ flex: 1 }}>
-                                                    <span style={styles.routineNameText}>{workout.nombre}</span>
-                                                    <p style={styles.routineStatsText}>
-                                                        {workout.ejercicios.length} ejercicios • {workout.duracionMinutos} min
-                                                    </p>
+                                            <div style={styles.routineDetailContainer}>
+                                                <div style={styles.routineSummary}>
+                                                    <Dumbbell size={24} color={Colors.success} />
+                                                    <div style={{ flex: 1 }}>
+                                                        <span style={styles.routineNameText}>{workout.nombre}</span>
+                                                        <p style={styles.routineStatsText}>
+                                                            {workout.ejercicios.length} ejercicios • {workout.duracionMinutos} min
+                                                        </p>
+                                                    </div>
                                                 </div>
+
+                                                <div style={styles.exerciseList}>
+                                                    {workout.ejercicios.map((ex, exIdx) => (
+                                                        <div key={exIdx} style={styles.exerciseItem}>
+                                                            <div style={styles.exerciseHeader}>
+                                                                <span style={styles.exerciseName}>{ex.nombre}</span>
+                                                                <span style={styles.exerciseSetsCount}>{ex.sets.length} series</span>
+                                                            </div>
+                                                            <div style={styles.setsGrid}>
+                                                                {ex.sets.map((set, setIdx) => (
+                                                                    <div key={setIdx} style={styles.setMinicard}>
+                                                                        <span style={styles.setInfo}>
+                                                                            {set.reps} <small>reps</small>
+                                                                        </span>
+                                                                        <span style={styles.setWeight}>
+                                                                            {set.peso} <small>kg</small>
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {workout.moodPost && (
+                                                    <div style={styles.moodBadge}>
+                                                        <span>Estado post-entreno:</span>
+                                                        <span style={styles.moodValue}>
+                                                            {workout.moodPost === 1 ? '&#128555;' : workout.moodPost === 2 ? '&#128533;' : workout.moodPost === 3 ? '&#128528;' : workout.moodPost === 4 ? '&#128578;' : '&#128293;'}
+                                                        </span>                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     }
@@ -628,18 +698,28 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '4px',
-        transition: 'all 0.2s',
+        justifyContent: 'center',
+        gap: '2px',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        minHeight: '70px',
+    },
+    statusIconContainer: {
+        marginTop: '4px',
+        height: '14px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     dayName: {
-        fontSize: '11px',
+        fontSize: '10px',
         fontWeight: 700,
         color: Colors.text,
         textTransform: 'uppercase',
+        letterSpacing: '0.5px',
     },
     dayDate: {
-        fontSize: '16px',
-        fontWeight: 800,
+        fontSize: '18px',
+        fontWeight: 900,
         color: Colors.text,
     },
     modalOverlay: {
@@ -884,5 +964,80 @@ const styles: Record<string, React.CSSProperties> = {
         textAlign: 'center',
         color: Colors.textSecondary,
         padding: '20px',
+    },
+    routineDetailContainer: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+    },
+    exerciseList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        maxHeight: '40vh',
+        overflowY: 'auto',
+        paddingRight: '4px',
+    },
+    exerciseItem: {
+        background: `${Colors.surfaceLight}40`,
+        borderRadius: '12px',
+        padding: '12px',
+        border: `1px solid ${Colors.border}40`,
+    },
+    exerciseHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '8px',
+    },
+    exerciseName: {
+        fontSize: '14px',
+        fontWeight: 800,
+        color: Colors.text,
+    },
+    exerciseSetsCount: {
+        fontSize: '11px',
+        color: Colors.textTertiary,
+        background: Colors.surface,
+        padding: '2px 8px',
+        borderRadius: '8px',
+    },
+    setsGrid: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '6px',
+    },
+    setMinicard: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        background: Colors.surface,
+        padding: '4px 8px',
+        borderRadius: '8px',
+        border: `1px solid ${Colors.border}30`,
+        minWidth: '45px',
+    },
+    setInfo: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.text,
+    },
+    setWeight: {
+        fontSize: '10px',
+        color: Colors.primary,
+        fontWeight: 600,
+    },
+    moodBadge: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '12px 16px',
+        background: `${Colors.primary}10`,
+        borderRadius: '12px',
+        fontSize: '13px',
+        color: Colors.textSecondary,
+    },
+    moodValue: {
+        fontSize: '20px',
     },
 };

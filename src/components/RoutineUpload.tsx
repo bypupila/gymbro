@@ -31,7 +31,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
     const fileInputRefOpt = useRef<HTMLInputElement>(null);
     const { setRutina, perfil } = useUserStore();
     const [manualExercises, setManualExercises] = useState<EjercicioRutina[]>([]);
-    const [manualActiveDays, setManualActiveDays] = useState<string[]>([]);
+    
     const [showDaySelector, setShowDaySelector] = useState(false);
     const [showExerciseSelector, setShowExerciseSelector] = useState(false);
     const [selectorTargetDay, setSelectorTargetDay] = useState<string>('');
@@ -78,9 +78,10 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             // } else {
             //    setStep('review');
             // }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.message || "No se pudo analizar la rutina. Por favor intenta de nuevo.");
+            const errorMessage = err instanceof Error ? err.message : "No se pudo analizar la rutina. Por favor intenta de nuevo.";
+            setError(errorMessage);
             setStep('upload');
         } finally {
             setIsAnalyzing(false);
@@ -114,9 +115,10 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             setLastAnalysis(result);
             setExtractedExercises(result.exercises);
             setStep('review');
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.message || "No se pudo generar la rutina. Intenta de nuevo.");
+            const errorMessage = err instanceof Error ? err.message : "No se pudo generar la rutina. Intenta de nuevo.";
+            setError(errorMessage);
             setStep('create_options');
         } finally {
             setIsAnalyzing(false);
@@ -134,7 +136,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             if (answer && clari.exerciseIndex !== undefined && clari.field) {
                 const exercise = updatedExercises[clari.exerciseIndex];
                 if (exercise) {
-                    (exercise as any)[clari.field] = answer;
+                    exercise[clari.field as keyof EjercicioRutina] = answer;
                 }
             }
         });
@@ -150,7 +152,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
         }, 2000);
     };
 
-    const handleManualAddExercise = (base: any) => {
+    const handleManualAddExercise = (base: EjercicioBase) => {
         const nuevo: EjercicioRutina = {
             id: crypto.randomUUID(),
             nombre: base.nombre,
@@ -234,7 +236,6 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                     <Sparkles size={18} /> Crear con IA (Recomendado)
                 </Button>
                 <Button onClick={() => {
-                    const activeDays = perfil.horario?.dias.filter(d => d.entrena) || [];
                     setManualExercises([]);
                     setStep('manual_build');
                 }} variant="secondary" fullWidth>
@@ -269,7 +270,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                     <select
                         style={styles.input}
                         value={tempProfile.objetivo}
-                        onChange={(e) => setTempProfile({ ...tempProfile, objetivo: e.target.value as any })}
+                        onChange={(e) => setTempProfile({ ...tempProfile, objetivo: e.target.value as 'ganar_musculo' | 'perder_grasa' | 'fuerza' | 'mantener' })}
                     >
                         <option value="ganar_musculo">Ganar Músculo</option>
                         <option value="perder_grasa">Perder Grasa</option>
@@ -294,9 +295,8 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                             <label style={styles.label}>Objetivo Pareja</label>
                             <select
                                 style={styles.input}
-                                value={tempProfile.partnerObjetivo}
-                                onChange={(e) => setTempProfile({ ...tempProfile, partnerObjetivo: e.target.value as any })}
-                            >
+                                                        value={tempProfile.partnerObjetivo}
+                                                        onChange={(e) => setTempProfile({ ...tempProfile, partnerObjetivo: e.target.value as 'ganar_musculo' | 'perder_grasa' | 'fuerza' | 'mantener' })}                            >
                                 <option value="ganar_musculo">Ganar Músculo</option>
                                 <option value="perder_grasa">Perder Grasa</option>
                                 <option value="fuerza">Fuerza</option>

@@ -4,7 +4,8 @@ import {
     sendPasswordResetEmail,
     signOut as firebaseSignOut,
     onAuthStateChanged,
-    User
+    User,
+    updateEmail
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 
@@ -42,7 +43,7 @@ export const authService = {
 
     async updateEmail(newEmail: string) {
         if (!auth.currentUser) throw new Error('NO_USER');
-        const { updateEmail } = await import('firebase/auth');
+        
         await updateEmail(auth.currentUser, newEmail);
     }
 };

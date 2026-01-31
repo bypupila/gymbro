@@ -3,7 +3,7 @@
 // =====================================================
 
 import { Card } from '@/components/Card';
-import { useUserStore } from '@/stores/userStore';
+import { useUserStore, EntrenamientoRealizado, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy, Activity, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
@@ -91,20 +91,17 @@ export const ProgressPage: React.FC = () => {
     }, [history]);
 
     const moodStats = useMemo(() => {
-        const sessionsWithMood = history.filter(h => h.preWorkoutMood || h.postWorkoutMood);
+        // Clean and filter sessions with energy data (moodPre/moodPost)
+        const sessionsWithMood = history.filter(h => h.moodPre !== undefined && h.moodPost !== undefined);
         if (sessionsWithMood.length === 0) return null;
 
-        const avgPreMood = sessionsWithMood.reduce((acc, h) => acc + (h.preWorkoutMood?.mood || 0), 0) / sessionsWithMood.length;
-        const avgPostMood = sessionsWithMood.reduce((acc, h) => acc + (h.postWorkoutMood?.mood || 0), 0) / sessionsWithMood.length;
-        const avgPreEnergy = sessionsWithMood.reduce((acc, h) => acc + (h.preWorkoutMood?.energy || 0), 0) / sessionsWithMood.length;
-        const avgPostEnergy = sessionsWithMood.reduce((acc, h) => acc + (h.postWorkoutMood?.energy || 0), 0) / sessionsWithMood.length;
-        const improvement = avgPostMood - avgPreMood;
+        const avgPre = sessionsWithMood.reduce((acc, h) => acc + (h.moodPre || 0), 0) / sessionsWithMood.length;
+        const avgPost = sessionsWithMood.reduce((acc, h) => acc + (h.moodPost || 0), 0) / sessionsWithMood.length;
+        const improvement = avgPost - avgPre;
 
         return {
-            preMood: avgPreMood.toFixed(1),
-            postMood: avgPostMood.toFixed(1),
-            preEnergy: avgPreEnergy.toFixed(1),
-            postEnergy: avgPostEnergy.toFixed(1),
+            preEnergy: avgPre.toFixed(1),
+            postEnergy: avgPost.toFixed(1),
             improvement: improvement.toFixed(1),
             totalsessions: sessionsWithMood.length
         };
@@ -209,120 +206,122 @@ export const ProgressPage: React.FC = () => {
                     <h3 style={styles.sectionTitle}>🏃 Actividades Extras</h3>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
-                        {(showAllExtras ? perfil.actividadesExtras : perfil.actividadesExtras.slice(0, 3)).map((extra) => (
-                            <Card key={extra.id} style={{
-                                padding: '16px',
-                                border: `1px solid ${Colors.border}40`,
-                                position: 'relative',
-                                overflow: 'hidden'
-                            }}>
-                                {/* Header Row */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                        <div style={{
-                                            width: '44px', height: '44px', borderRadius: '12px',
-                                            background: `${Colors.primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                        }}>
-                                            <Activity size={22} color={Colors.primary} />
+                        {(showAllExtras ? perfil.actividadesExtras : perfil.actividadesExtras.slice(0, 3))
+                            .filter(extra => extra && extra.analisisIA) // Ensure extra and analysis exist
+                            .map((extra) => (
+                                <Card key={extra.id} style={{
+                                    padding: '16px',
+                                    border: `1px solid ${Colors.border}40`,
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}>
+                                    {/* Header Row */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                            <div style={{
+                                                width: '44px', height: '44px', borderRadius: '12px',
+                                                background: `${Colors.primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                            }}>
+                                                <Activity size={22} color={Colors.primary} />
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
+                                                    {extra.analisisIA?.tipoDeporte || 'Actividad Varia'}
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
+                                                    {new Date(extra.fecha).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
-                                                {extra.analisisIA?.tipoDeporte || 'Actividad Varia'}
+
+                                        {extra.analisisIA?.intensidad && (
+                                            <div style={{
+                                                padding: '4px 8px', borderRadius: '8px',
+                                                background: extra.analisisIA.intensidad === 'alta' ? `${Colors.error}20` : extra.analisisIA.intensidad === 'media' ? `${Colors.warning}20` : `${Colors.success}20`,
+                                                border: `1px solid ${extra.analisisIA.intensidad === 'alta' ? Colors.error : extra.analisisIA.intensidad === 'media' ? Colors.warning : Colors.success}`,
+                                            }}>
+                                                <span style={{
+                                                    fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
+                                                    color: extra.analisisIA.intensidad === 'alta' ? Colors.error : extra.analisisIA.intensidad === 'media' ? Colors.warning : Colors.success
+                                                }}>
+                                                    {extra.analisisIA.intensidad}
+                                                </span>
                                             </div>
-                                            <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
-                                                {new Date(extra.fecha).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
-                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Stats Row */}
+                                    <div style={{
+                                        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px',
+                                        background: Colors.background, padding: '12px', borderRadius: '12px', marginBottom: '12px'
+                                    }}>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.duracionMinutos || 0}<small>m</small></div>
+                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACIÓN</div>
+                                        </div>
+                                        <div style={{ textAlign: 'center', borderLeft: `1px solid ${Colors.border}`, borderRight: `1px solid ${Colors.border}` }}>
+                                            <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.calorias || 0}</div>
+                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>KCAL</div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.distanciaKm || '--'}<small>km</small></div>
+                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DISTANCIA</div>
                                         </div>
                                     </div>
 
-                                    {extra.analisisIA?.intensidad && (
-                                        <div style={{
-                                            padding: '4px 8px', borderRadius: '8px',
-                                            background: extra.analisisIA.intensidad === 'alta' ? `${Colors.error}20` : extra.analisisIA.intensidad === 'media' ? `${Colors.warning}20` : `${Colors.success}20`,
-                                            border: `1px solid ${extra.analisisIA.intensidad === 'alta' ? Colors.error : extra.analisisIA.intensidad === 'media' ? Colors.warning : Colors.success}`,
-                                        }}>
-                                            <span style={{
-                                                fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
-                                                color: extra.analisisIA.intensidad === 'alta' ? Colors.error : extra.analisisIA.intensidad === 'media' ? Colors.warning : Colors.success
-                                            }}>
-                                                {extra.analisisIA.intensidad}
-                                            </span>
+                                    {/* Notes/Description */}
+                                    {extra.analisisIA?.notas && (
+                                        <div style={{ fontSize: '13px', color: Colors.textSecondary, fontStyle: 'italic', marginBottom: '8px', padding: '0 4px' }}>
+                                            "{extra.analisisIA.notas}"
                                         </div>
                                     )}
-                                </div>
 
-                                {/* Stats Row */}
-                                <div style={{
-                                    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px',
-                                    background: Colors.background, padding: '12px', borderRadius: '12px', marginBottom: '12px'
-                                }}>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.duracionMinutos || 0}<small>m</small></div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACIÓN</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center', borderLeft: `1px solid ${Colors.border}`, borderRight: `1px solid ${Colors.border}` }}>
-                                        <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.calorias || 0}</div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>KCAL</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.distanciaKm || '--'}<small>km</small></div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DISTANCIA</div>
-                                    </div>
-                                </div>
-
-                                {/* Notes/Description */}
-                                {extra.analisisIA?.notas && (
-                                    <div style={{ fontSize: '13px', color: Colors.textSecondary, fontStyle: 'italic', marginBottom: '8px', padding: '0 4px' }}>
-                                        "{extra.analisisIA.notas}"
-                                    </div>
-                                )}
-
-                                {/* Delete Action */}
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                                    <button
-                                        onClick={() => {
-                                            toast((t) => (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                    <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta actividad?</span>
-                                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                                        <button
-                                                            onClick={() => toast.dismiss(t.id)}
-                                                            style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
-                                                        >
-                                                            Cancelar
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                removeExtraActivity(extra.id);
-                                                                toast.dismiss(t.id);
-                                                                toast.success('Actividad eliminada');
-                                                            }}
-                                                            style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
-                                                        >
-                                                            Eliminar
-                                                        </button>
+                                    {/* Delete Action */}
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                                        <button
+                                            onClick={() => {
+                                                toast((t) => (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta actividad?</span>
+                                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                            <button
+                                                                onClick={() => toast.dismiss(t.id)}
+                                                                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                                                            >
+                                                                Cancelar
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    removeExtraActivity(extra.id);
+                                                                    toast.dismiss(t.id);
+                                                                    toast.success('Actividad eliminada');
+                                                                }}
+                                                                style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                                                            >
+                                                                Eliminar
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ), { duration: 5000 });
-                                        }}
-                                        style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            color: Colors.error,
-                                            fontSize: '12px',
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            cursor: 'pointer',
-                                            opacity: 0.8
-                                        }}
-                                    >
-                                        <Trash2 size={14} /> Eliminar Actividad
-                                    </button>
-                                </div>
-                            </Card>
-                        ))}
+                                                ), { duration: 5000 });
+                                            }}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                color: Colors.error,
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                cursor: 'pointer',
+                                                opacity: 0.8
+                                            }}
+                                        >
+                                            <Trash2 size={14} /> Eliminar Actividad
+                                        </button>
+                                    </div>
+                                </Card>
+                            ))}
 
                         {perfil.actividadesExtras.length > 3 && (
                             <button
@@ -353,58 +352,56 @@ export const ProgressPage: React.FC = () => {
                 </>
             )}
 
-            {/* Mood & Energy Insights */}
+            {/* Energy Insights */}
             {moodStats && (
                 <>
                     <h3 style={styles.sectionTitle}>🧠 Bienestar y Energía</h3>
-                    <Card style={{ padding: '20px', marginBottom: '32px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                            <div>
-                                <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '12px', textAlign: 'center' }}>
-                                    Ánimo (1-5)
+                    <Card style={{ padding: '24px', marginBottom: '32px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+                            <div style={{ width: '100%' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '16px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                                    Energía Promedio (1-5)
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px' }}>
                                     <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.text }}>{moodStats.preMood}</div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>PRE</div>
+                                        <div style={{ fontSize: '32px', fontWeight: 900, color: Colors.text }}>{moodStats.preEnergy}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700, marginTop: '4px' }}>PRE-ENTRENO</div>
                                     </div>
-                                    <TrendingUp size={20} color={parseFloat(moodStats.improvement) >= 0 ? Colors.success : Colors.error} style={{ transform: parseFloat(moodStats.improvement) >= 0 ? 'rotate(0deg)' : 'rotate(90deg)' }} />
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.primary }}>{moodStats.postMood}</div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>POST</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                        <TrendingUp size={24} color={parseFloat(moodStats.improvement) >= 0 ? Colors.success : Colors.error} />
+                                        <span style={{ fontSize: '10px', fontWeight: 800, color: parseFloat(moodStats.improvement) >= 0 ? Colors.success : Colors.error }}>
+                                            {parseFloat(moodStats.improvement) >= 0 ? '+' : ''}{moodStats.improvement}
+                                        </span>
                                     </div>
-                                </div>
-                            </div>
-                            <div>
-                                <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '12px', textAlign: 'center' }}>
-                                    Energía (1-5)
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
                                     <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.text }}>{moodStats.preEnergy}</div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>PRE</div>
-                                    </div>
-                                    <Zap size={20} color={Colors.warning} />
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '24px', fontWeight: 900, color: Colors.primary }}>{moodStats.postEnergy}</div>
-                                        <div style={{ fontSize: '10px', color: Colors.textTertiary }}>POST</div>
+                                        <div style={{ fontSize: '32px', fontWeight: 900, color: Colors.primary }}>{moodStats.postEnergy}</div>
+                                        <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700, marginTop: '4px' }}>POST-ENTRENO</div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div style={{
-                            marginTop: '20px',
-                            padding: '12px',
-                            background: `${Colors.primary}10`,
-                            borderRadius: '12px',
-                            textAlign: 'center',
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: Colors.text
-                        }}>
-                            {parseFloat(moodStats.improvement) > 0
-                                ? `✨ Tu ánimo mejora un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% después de entrenar.`
-                                : `💪 Mantienes tu enfoque durante todo el entrenamiento.`}
+
+                            <div style={{
+                                width: '100%',
+                                padding: '16px',
+                                background: `${Colors.primary}10`,
+                                borderRadius: '16px',
+                                border: `1px solid ${Colors.primary}20`,
+                                textAlign: 'center',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: Colors.text,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px'
+                            }}>
+                                <Zap size={18} color={Colors.warning} fill={Colors.warning} />
+                                <span>
+                                    {parseFloat(moodStats.improvement) > 0
+                                        ? `¡Genial! Tu energía sube un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% tras entrenar.`
+                                        : `¡Buen trabajo! Mantienes tu energía a tope durante el entrenamiento.`}
+                                </span>
+                            </div>
                         </div>
                     </Card>
                 </>
@@ -512,6 +509,53 @@ export const ProgressPage: React.FC = () => {
                     </div>
                 </div>
                 <div style={styles.yearlyIcon}>🏆</div>
+            </div>
+
+            {/* Unified Activity History */}
+            <h3 style={styles.sectionTitle}>📅 Historial de Actividad</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
+                {unifiedHistory.length > 0 ? (
+                    unifiedHistory.slice(0, 5).map((item, idx) => (
+                        <Card key={`${item.type}-${idx}`} style={{ padding: '16px', border: `1px solid ${Colors.border}40` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                    <div style={{
+                                        width: '40px', height: '40px', borderRadius: '10px',
+                                        background: item.type === 'gym' ? `${Colors.primary}15` : item.type === 'extra' ? `${Colors.accent}15` : `${Colors.surfaceLight}`,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        {item.type === 'gym' ? <Dumbbell size={20} color={Colors.primary} /> :
+                                            item.type === 'extra' ? <Activity size={20} color={Colors.accent} /> :
+                                                <Calendar size={20} color={Colors.textTertiary} />}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
+                                            {item.type === 'gym' ? (item.data as EntrenamientoRealizado).nombre :
+                                                item.type === 'extra' ? (item.data as ExtraActivity).analisisIA?.tipoDeporte : 'Día Registrado'}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
+                                            {item.date.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                            {item.type === 'gym' && ` • ${(item.data as EntrenamientoRealizado).duracionMinutos} min`}
+                                            {item.type === 'extra' && ` • ${(item.data as ExtraActivity).analisisIA?.duracionMinutos} min`}
+                                        </div>
+                                    </div>
+                                </div>
+                                {item.type === 'gym' && (
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: '14px', fontWeight: 800, color: Colors.primary }}>
+                                            {(item.data as EntrenamientoRealizado).ejercicios.length} <small>ejercicios</small>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </Card>
+                    ))
+                ) : (
+                    <div style={styles.emptyState}>
+                        <Activity size={40} color={Colors.textTertiary} />
+                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aún no hay actividad registrada</p>
+                    </div>
+                )}
             </div>
 
             {/* Progress Photos */}

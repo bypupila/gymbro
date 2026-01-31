@@ -1628,11 +1628,11 @@ export const RoutineDetailPage: React.FC = () => {
                     </div>
                 )}
 
-                <div style={styles.durationRow}>
-                    <Clock size={16} color={Colors.textSecondary} />
-                    <span style={styles.durationText}>Duración: {rutina.duracionSemanas} semanas</span>
-                    {rutina.analizadaPorIA && <span style={styles.aiTag}>🤖 IA</span>}
-                </div>
+                {rutina.analizadaPorIA && (
+                    <div style={{ ...styles.durationRow, marginTop: '8px' }}>
+                        <span style={styles.aiTag}>🤖 IA</span>
+                    </div>
+                )}
             </Card>
 
             <div style={styles.summaryRow}>
