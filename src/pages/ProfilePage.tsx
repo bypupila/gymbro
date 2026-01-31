@@ -6,8 +6,8 @@ import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
-    Bell, Calendar, Heart, RefreshCw, Settings, Shield, Users,
-    Cloud, Download, Upload, CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, Image as ImageIcon, UserCircle
+    Bell, Calendar, Heart, RefreshCw, Shield, Users,
+    CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, Image as ImageIcon
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,13 @@ import { firebaseService } from '@/services/firebaseService';
 import { authService } from '@/services/authService';
 import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
+import { NivelExperiencia, ObjetivoFitness } from '@/stores/userStore';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface FirebaseAuthError {
+    code: string;
+    message: string;
+}
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
@@ -33,7 +40,6 @@ export const ProfilePage: React.FC = () => {
     const [showPartnerModal, setShowPartnerModal] = useState(false);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
     const [partnerIdInput, setPartnerIdInput] = useState('');
-    const [avatarSeed, setAvatarSeed] = useState(userInfo.avatar || userInfo.nombre || 'GymBro');
     const [tempAvatar, setTempAvatar] = useState(userInfo.avatar || '');
 
     const handleSavePartner = () => {
@@ -80,7 +86,8 @@ export const ProfilePage: React.FC = () => {
         window.location.reload();
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        await authService.signOut();
         logout();
         navigate('/login');
     };
@@ -116,7 +123,7 @@ export const ProfilePage: React.FC = () => {
                 if (isGymbroAccount) {
                     try {
                         await authService.updateEmail(`${cleanAlias}@gymbro.app`);
-                    } catch (authError: any) {
+                    } catch (authError: FirebaseAuthError) {
                         console.error("Auth Email Update Error:", authError);
                         if (authError.code === 'auth/requires-recent-login') {
                             setAliasError('Por seguridad, debes cerrar sesión y volver a entrar para cambiar tu alias de login.');
@@ -139,7 +146,7 @@ export const ProfilePage: React.FC = () => {
             // 2. Guardar datos personales
             setDatosPersonales(editData);
             setIsEditing(false);
-        } catch (error: any) {
+        } catch (error: FirebaseAuthError) {
             console.error("Error saving profile:", error);
             setAliasError(error.message === 'ALIAS_TAKEN'
                 ? 'Este alias ya está registrado.'
@@ -327,7 +334,7 @@ export const ProfilePage: React.FC = () => {
                                 <select
                                     style={styles.editSelect}
                                     value={editData.nivel}
-                                    onChange={(e) => setEditData({ ...editData, nivel: e.target.value as any })}
+                                    onChange={(e) => setEditData({ ...editData, nivel: e.target.value as NivelExperiencia })}
                                 >
                                     <option value="principiante">Principiante</option>
                                     <option value="intermedio">Intermedio</option>
@@ -340,8 +347,7 @@ export const ProfilePage: React.FC = () => {
                             <select
                                 style={styles.editSelect}
                                 value={editData.objetivo}
-                                onChange={(e) => setEditData({ ...editData, objetivo: e.target.value as any })}
-                            >
+                                                                    onChange={(e) => setEditData({ ...editData, objetivo: e.target.value as ObjetivoFitness })}                            >
                                 <option value="ganar_musculo">Ganar Músculo</option>
                                 <option value="perder_grasa">Perder Grasa</option>
                                 <option value="mantener">Mantenerme</option>
@@ -593,7 +599,7 @@ export const ProfilePage: React.FC = () => {
                                     <input type="file" accept="image/*" hidden onChange={handleFileUpload} />
                                 </label>
 
-                                <p style={styles.optionLabel}>O Elegir Avatar</p>
+                <p style={styles.optionLabel}>O Elegir Avatar</p>
                                 <div style={styles.avatarGrid}>
                                     {['Felix', 'Aneka', 'Zoe', 'Marc', 'Leo', 'Sky', 'River', 'Ash'].map(seed => (
                                         <div

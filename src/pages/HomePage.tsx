@@ -5,8 +5,8 @@
 import { RoutineUpload } from '@/components/RoutineUpload';
 import { useUserStore, EjercicioRutina } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Play, Plus, FileText, Zap } from 'lucide-react'; // kept Activity/Zap for Premium icons if used there
-import React, { useMemo, useState } from 'react';
+import { Play, Plus, FileText, Zap, Battery, BatteryLow, BatteryMedium, BatteryFull, Flame } from 'lucide-react'; // kept Activity/Zap for Premium icons if used there
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
 import { SyncStatus } from '@/components/SyncStatus';
@@ -23,7 +23,7 @@ export const HomePage: React.FC = () => {
     const [showMoodModal, setShowMoodModal] = useState(false);
     const [tempSessionData, setTempSessionData] = useState<{ day: string, exercises: EjercicioRutina[], name: string } | null>(null);
 
-    const handleInitiateSession = (day: string, exercises: any[], name: string) => {
+    const handleInitiateSession = (day: string, exercises: EjercicioRutina[], name: string) => {
         setTempSessionData({ day, exercises, name });
         setShowMoodModal(true);
     };
@@ -167,18 +167,20 @@ export const HomePage: React.FC = () => {
 
                         <div style={styles.moodGrid}>
                             {[
-                                { val: 1, label: 'Agotado', emoji: '🧟‍♂️' },
-                                { val: 2, label: 'Bajo', emoji: '😴' },
-                                { val: 3, label: 'Normal', emoji: '😐' },
-                                { val: 4, label: 'Bien', emoji: '🙂' },
-                                { val: 5, label: 'A tope', emoji: '🔥' }
+                                { val: 1, label: 'Agotado', icon: <Battery size={32} color={Colors.error} /> },
+                                { val: 2, label: 'Bajo', icon: <BatteryLow size={32} color={Colors.warning} /> },
+                                { val: 3, label: 'Normal', icon: <BatteryMedium size={32} color={Colors.textSecondary} /> },
+                                { val: 4, label: 'Bien', icon: <BatteryFull size={32} color={Colors.success} /> },
+                                { val: 5, label: 'A tope', icon: <Flame size={32} color={Colors.primary} fill={Colors.primary} /> }
                             ].map((mood) => (
                                 <button
                                     key={mood.val}
                                     style={styles.moodBtn}
                                     onClick={() => confirmStartSession(mood.val)}
                                 >
-                                    <span style={{ fontSize: '32px' }}>{mood.emoji}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '40px' }}>
+                                        {mood.icon}
+                                    </div>
                                     <span style={styles.moodLabel}>{mood.label}</span>
                                 </button>
                             ))}

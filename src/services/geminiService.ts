@@ -1,5 +1,28 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { EjercicioRutina, AnalysisResult, DatosPersonales, Clarification } from "../stores/userStore";
+import { EjercicioRutina, AnalysisResult, DatosPersonales, Clarification, HorarioSemanal, DiaEntrenamiento } from "../stores/userStore";
+
+interface GeminiExerciseRaw {
+    id?: string;
+    nombre_original?: string;
+    nombre_estandarizado?: string;
+    nombre?: string;
+    series?: number | string;
+    repeticiones?: string;
+    descanso?: number;
+    categoria?: 'calentamiento' | 'maquina' | string;
+    dia?: string;
+    grupo_muscular?: string;
+    observaciones?: string;
+}
+
+interface GeminiClarificationRaw {
+    id?: string;
+    question: string;
+    detected_value?: string;
+    options?: string[];
+    exercise_index?: number;
+    field?: keyof EjercicioRutina;
+}
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 const IS_DEV = import.meta.env.DEV;
@@ -120,7 +143,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
         try {
             const parsed = JSON.parse(text);
 
-            const exercises: EjercicioRutina[] = (parsed.exercises || []).map((ex: any) => ({
+            const exercises: EjercicioRutina[] = (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
                 id: ex.id || crypto.randomUUID(),
                 nombre: ex.nombre_estandarizado || ex.nombre_original || ex.nombre || "Ejercicio",
                 series: typeof ex.series === 'number' ? ex.series : parseInt(ex.series) || 3,
@@ -134,7 +157,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
                 enfocadoA: 'ambos'
             }));
 
-            const unclearItems: Clarification[] = (parsed.unclear_items || []).map((item: any) => ({
+            const unclearItems: Clarification[] = (parsed.unclear_items || []).map((item: GeminiClarificationRaw) => ({
                 id: item.id || crypto.randomUUID(),
                 question: item.question,
                 detectedValue: item.detected_value,
@@ -159,7 +182,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
                 const parsed = JSON.parse(jsonMatch[0]);
                 // ... logic replicated or simplified ...
                 return {
-                    exercises: (parsed.exercises || []).map((ex: any) => ({
+                    exercises: (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
                         id: ex.id || crypto.randomUUID(),
                         nombre: ex.nombre_estandarizado || ex.nombre_original || ex.nombre || "Ejercicio",
                         series: typeof ex.series === 'number' ? ex.series : parseInt(ex.series) || 3,
@@ -177,7 +200,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
         }
 
         throw new Error("No pudimos extraer datos de la imagen.");
-    } catch (error: any) {
+    } catch (error: Error) {
         console.error("Gemini Error:", error);
         throw new Error(error.message || "Error al conectar con el servicio de IA.");
     }
@@ -186,7 +209,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
 export const generateRoutineFromProfile = async (
     member1: DatosPersonales,
     member2: DatosPersonales | null = null,
-    horario: any = null
+    horario: HorarioSemanal | null = null
 ): Promise<AnalysisResult> => {
     try {
         const isCouple = !!member2;
@@ -212,7 +235,7 @@ export const generateRoutineFromProfile = async (
             ${isCouple ? `PERFIL MIEMBRO 2 (${member2?.nombre}): ${member2?.nivel}, ${member2?.objetivo}, ${member2?.peso}kg.` : ''}
 
             REGLAS:
-            1. HORARIO: Usa ESTRICTAMENTE estos días y grupos: ${JSON.stringify(horario?.dias?.filter((d: any) => d.entrena).map((d: any) => `${d.dia}: ${d.grupoMuscular}`))}.
+            1. HORARIO: Usa ESTRICTAMENTE estos días y grupos: ${JSON.stringify(horario?.dias?.filter((d: DiaEntrenamiento) => d.entrena).map((d: DiaEntrenamiento) => `${d.dia}: ${d.grupoMuscular}`))}.
             2. CATEGORÍAS: Cada día DEBE empezar con 2-3 ejercicios de "calentamiento" (activación específica, movilidad) y luego 5-7 ejercicios de "maquina" (rutina principal).
             3. ORDEN LÓGICO: Dentro de la rutina principal, coloca primero los ejercicios multiarticulares pesados y al final los de aislamiento. Controla el volumen para evitar sobrecarga.
             4. Si es pareja, ejercicios compartidos ("ambos") + 2 específicos para cada uno ("hombre"/"mujer") intercalados lógicamente.
@@ -248,7 +271,7 @@ export const generateRoutineFromProfile = async (
 
         try {
             const parsed = JSON.parse(text);
-            const exercises = (parsed.exercises || []).map((ex: any) => ({
+            const exercises = (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
                 ...ex,
                 id: ex.id && ex.id.length > 5 ? ex.id : crypto.randomUUID(),
                 categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',
@@ -262,17 +285,17 @@ export const generateRoutineFromProfile = async (
                 confidence: 'high',
                 routineName: parsed.routine_name
             };
-        } catch (e) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_error) {
             // Fallback for regex mapping
             const jsonMatch = text.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
                 return {
-                    exercises: (parsed.exercises || []).map((ex: any) => ({
+                    exercises: (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
                         ...ex,
-                        id: ex.id && ex.id.length > 5 ? ex.id : crypto.randomUUID(),
-                        categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as any,
-                        enfocadoA: ex.enfocadoA || 'ambos',
+                                            id: ex.id && ex.id.length > 5 ? ex.id : crypto.randomUUID(),
+                                            categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',                        enfocadoA: ex.enfocadoA || 'ambos',
                         grupoMuscular: ex.grupo_muscular
                     })),
                     unclearItems: [],
@@ -282,7 +305,7 @@ export const generateRoutineFromProfile = async (
             }
             throw new Error("Error en estructura generada.");
         }
-    } catch (error: any) {
+    } catch (error: Error) {
         console.error("Gemini Generation Error:", error);
         throw new Error("Error al generar la rutina.");
     }
@@ -354,13 +377,13 @@ export const reorganizeRoutine = async (
         }
 
         return {
-            exercises: (parsed.exercises || []).map((ex: any) => ({
+            exercises: (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
                 id: crypto.randomUUID(),
                 nombre: ex.nombre,
                 series: ex.series || 3,
                 repeticiones: String(ex.repeticiones || "12"),
                 descanso: ex.descanso || 60,
-                categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as any,
+                categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',
                 dia: ex.dia || "General",
                 grupoMuscular: ex.grupo_muscular
             })),

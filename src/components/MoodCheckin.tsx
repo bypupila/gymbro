@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import Colors from '@/styles/colors';
-import { X } from 'lucide-react';
+import { X, Frown, Meh, Smile, Laugh, Star, LucideProps } from 'lucide-react';
 import { MoodLog } from '@/stores/userStore';
 
 interface MoodCheckinProps {
@@ -15,7 +15,13 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
     const [energy, setEnergy] = useState<number>(3);
     const [note, setNote] = useState<string>('');
 
-    const MOOD_EMOJIS = ['😫', '😕', '😐', '🙂', '🤩'];
+    const MOOD_ICONS = [
+        (props: LucideProps) => <Frown {...props} />,
+        (props: LucideProps) => <Meh {...props} />,
+        (props: LucideProps) => <Smile {...props} />,
+        (props: LucideProps) => <Laugh {...props} />,
+        (props: LucideProps) => <Star {...props} />
+    ];
     const MOOD_LABELS = ['Terrible', 'Mal', 'Normal', 'Bien', 'Excelente'];
 
     // Energy levels: 1=Low, 5=High
@@ -96,12 +102,14 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
             transition: 'all 0.2s',
         },
         emoji: {
-            fontSize: '32px',
-            filter: 'grayscale(100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: Colors.textTertiary,
             transition: 'all 0.2s',
         },
         activeEmoji: {
-            filter: 'grayscale(0%)',
+            color: Colors.primary,
             transform: 'scale(1.2)',
         },
         label: {
@@ -178,7 +186,7 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
                 <div style={styles.section}>
                     <h3 style={styles.sectionTitle}>Estado de Ánimo</h3>
                     <div style={styles.row}>
-                        {MOOD_EMOJIS.map((emoji, idx) => {
+                        {MOOD_ICONS.map((Icon, idx) => {
                             const val = idx + 1;
                             const isActive = mood === val;
                             return (
@@ -190,10 +198,12 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
                                     }}
                                     onClick={() => setMood(val)}
                                 >
-                                    <span style={{
+                                    <div style={{
                                         ...styles.emoji,
                                         ...(isActive ? styles.activeEmoji : {})
-                                    }}>{emoji}</span>
+                                    }}>
+                                        <Icon size={32} fill={isActive ? `${Colors.primary}40` : 'none'} />
+                                    </div>
                                     <span style={{
                                         ...styles.label,
                                         ...(isActive ? styles.activeLabel : {})

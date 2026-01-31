@@ -13,7 +13,7 @@ import { calculateGlobalStats } from '@/utils/statsUtils';
 export const ProgressPage: React.FC = () => {
     const { perfil, removeExtraActivity } = useUserStore();
     const hasPartner = !!perfil.pareja;
-    const history = perfil.historial || [];
+    const history = useMemo(() => perfil.historial || [], [perfil.historial]);
     const [showAllExtras, setShowAllExtras] = useState(false);
 
     // Global Stats Calculation
@@ -272,9 +272,8 @@ export const ProgressPage: React.FC = () => {
                                     {/* Notes/Description */}
                                     {extra.analisisIA?.notas && (
                                         <div style={{ fontSize: '13px', color: Colors.textSecondary, fontStyle: 'italic', marginBottom: '8px', padding: '0 4px' }}>
-                                            "{extra.analisisIA.notas}"
-                                        </div>
-                                    )}
+                                            &quot;{extra.analisisIA.notas}&quot;
+                                        </div>                                    )}
 
                                     {/* Delete Action */}
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>

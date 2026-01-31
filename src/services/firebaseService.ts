@@ -3,7 +3,7 @@ import {
     orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity } from '../stores/userStore';
+import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, EjercicioRutina } from '../stores/userStore';
 
 export const firebaseService = {
     // ========== PROFILE MANAGEMENT ==========
@@ -358,12 +358,12 @@ export const firebaseService = {
 
     // ========== CATALOG MANAGEMENT (ADMIN) ==========
 
-    async getAllExercises(): Promise<any[]> {
+    async getAllExercises(): Promise<EjercicioRutina[]> {
         const querySnapshot = await getDocs(collection(db, 'exercises'));
         return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    async saveExercise(exerciseId: string, data: any): Promise<void> {
+    async saveExercise(exerciseId: string, data: Partial<EjercicioRutina>): Promise<void> {
         const ref = doc(db, 'exercises', exerciseId);
         await setDoc(ref, {
             ...data,
@@ -376,7 +376,7 @@ export const firebaseService = {
         await deleteDoc(doc(db, 'exercises', exerciseId));
     },
 
-    async initializeCatalog(initialData: any[]): Promise<void> {
+    async initializeCatalog(initialData: EjercicioRutina[]): Promise<void> {
         // Subir en lotes de 500 (límite de Firestore batch)
         const chunks = [];
         for (let i = 0; i < initialData.length; i += 400) {

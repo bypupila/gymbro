@@ -325,7 +325,7 @@ export const useUserStore = create<UserStore>()(
                 return { entrena: false, grupoMuscular: 'Descanso' as GrupoMuscular, hora: '', dia: diaNombre };
             },
 
-            startSession: (dayName, exercises, routineName, preWorkoutMood) => set((state) => ({
+            startSession: (dayName, exercises, routineName, preWorkoutMood) => set(() => ({
                 activeSession: {
                     startTime: new Date().toISOString(),
                     dayName,
@@ -339,7 +339,7 @@ export const useUserStore = create<UserStore>()(
                         categoria: ex.categoria, // Include category for warmup/main separation
                         isOptional: ex.isOptional,
                         isCompleted: false,
-                        sets: Array.from({ length: ex.series }, (_, i) => ({
+                        sets: Array.from({ length: ex.series }, () => ({
                             completed: false,
                             skipped: false,
                             weight: 0,
@@ -475,13 +475,24 @@ export const useUserStore = create<UserStore>()(
                 // Sync with Partner if exists
                 if (state.perfil.partnerId) {
                     console.log("Syncing workout to partner:", state.perfil.partnerId);
-                    // Import dynamically to avoid circular dependencies
-                    try {
-                        const { firebaseService } = await import('../services/firebaseService');
-                        await firebaseService.addWorkoutToPartner(state.perfil.partnerId, realizado);
-                    } catch (e) {
-                        console.error("Failed to sync to partner", e);
+                }
+
+                // Import dynamically to avoid circular dependencies
+                try {
+                    const { firebaseService } = await import('../services/firebaseService');
+
+                    // CRITICAL: Save to the main user's workoutHistory collection
+                    if (state.userId) {
+                        await firebaseService.addWorkout(state.userId, realizado);
+                        console.log("Workout saved to workoutHistory collection.");
                     }
+
+                    // Sync to partner if applicable
+                    if (state.perfil.partnerId) {
+                        await firebaseService.addWorkoutToPartner(state.perfil.partnerId, realizado);
+                    }
+                } catch (e) {
+                    console.error("Failed to sync workout to cloud", e);
                 }
 
                 set((state) => {

@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import Colors from '@/styles/colors';
-import { ChevronLeft, Scan, Camera, FileText, Zap, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Scan, Camera, Zap, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
 import { toast } from 'react-hot-toast';

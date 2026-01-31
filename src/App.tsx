@@ -57,61 +57,65 @@ const OnboardingRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
     return <>{children}</>;
 };
 
+import { AuthProvider } from './components/AuthProvider';
+
 function App() {
     return (
         <BrowserRouter>
-            <Toaster position="top-center" toastOptions={{
-                duration: 3000,
-                style: {
-                    background: '#1a1a1a',
-                    color: '#fff',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.1)'
-                }
-            }} />
-            <CloudSyncManager />
-            <Suspense fallback={<Loader />}>
-                <Routes>
-                    {/* Onboarding Routes - Full screen experience */}
-                    <Route path="/onboarding" element={
-                        <OnboardingRoute><OnboardingWelcome /></OnboardingRoute>
-                    } />
-                    <Route path="/onboarding/datos" element={
-                        <OnboardingRoute><OnboardingDatos /></OnboardingRoute>
-                    } />
-                    <Route path="/onboarding/horarios" element={
-                        <OnboardingRoute><OnboardingHorarios /></OnboardingRoute>
-                    } />
-                    <Route path="/onboarding/completado" element={<OnboardingCompletado />} />
+            <AuthProvider>
+                <Toaster position="top-center" toastOptions={{
+                    duration: 3000,
+                    style: {
+                        background: '#1a1a1a',
+                        color: '#fff',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                    }
+                }} />
+                <CloudSyncManager />
+                <Suspense fallback={<Loader />}>
+                    <Routes>
+                        {/* Onboarding Routes - Full screen experience */}
+                        <Route path="/onboarding" element={
+                            <OnboardingRoute><OnboardingWelcome /></OnboardingRoute>
+                        } />
+                        <Route path="/onboarding/datos" element={
+                            <OnboardingRoute><OnboardingDatos /></OnboardingRoute>
+                        } />
+                        <Route path="/onboarding/horarios" element={
+                            <OnboardingRoute><OnboardingHorarios /></OnboardingRoute>
+                        } />
+                        <Route path="/onboarding/completado" element={<OnboardingCompletado />} />
 
-                    {/* Login Route */}
-                    <Route path="/login" element={<LoginPage />} />
+                        {/* Login Route */}
+                        <Route path="/login" element={<LoginPage />} />
 
-                    {/* Main App Routes - Responsive Layout (Desktop Sidebar / Mobile Bottom Nav) */}
-                    <Route path="/" element={
-                        <ProtectedRoute>
-                            <MainLayout />
-                        </ProtectedRoute>
-                    }>
-                        <Route index element={<HomePage />} />
-                        <Route path="train" element={<TrainPage />} />
-                        <Route path="progress" element={<ProgressPage />} />
-                        <Route path="profile" element={<ProfilePage />} />
-                        <Route path="profile/schedule" element={<SchedulePage />} />
-                        <Route path="routine" element={<RoutineDetailPage />} />
-                        <Route path="catalog" element={<CatalogPage />} />
+                        {/* Main App Routes - Responsive Layout (Desktop Sidebar / Mobile Bottom Nav) */}
+                        <Route path="/" element={
+                            <ProtectedRoute>
+                                <MainLayout />
+                            </ProtectedRoute>
+                        }>
+                            <Route index element={<HomePage />} />
+                            <Route path="train" element={<TrainPage />} />
+                            <Route path="progress" element={<ProgressPage />} />
+                            <Route path="profile" element={<ProfilePage />} />
+                            <Route path="profile/schedule" element={<SchedulePage />} />
+                            <Route path="routine" element={<RoutineDetailPage />} />
+                            <Route path="catalog" element={<CatalogPage />} />
 
-                        {/* New "Pencil" Windows */}
-                        <Route path="coach" element={<CoachPage />} />
-                        <Route path="body-status" element={<BodyStatusPage />} />
-                        <Route path="dual-training" element={<DualTrainingPage />} />
-                        <Route path="migrator" element={<MigratorPage />} />
-                    </Route>
+                            {/* New "Pencil" Windows */}
+                            <Route path="coach" element={<CoachPage />} />
+                            <Route path="body-status" element={<BodyStatusPage />} />
+                            <Route path="dual-training" element={<DualTrainingPage />} />
+                            <Route path="migrator" element={<MigratorPage />} />
+                        </Route>
 
-                    {/* Catch all - redirect to home or onboarding */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-            </Suspense>
+                        {/* Catch all - redirect to home or onboarding */}
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </Suspense>
+            </AuthProvider>
         </BrowserRouter>
     );
 }

@@ -6,6 +6,12 @@ import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
 import { Colors } from '@/styles/colors';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface FirebaseAuthError {
+    code: string;
+    message: string;
+}
+
 export const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const { setUserId } = useUserStore();
@@ -58,7 +64,7 @@ export const LoginPage: React.FC = () => {
                 setUserId(user.uid);
                 navigate('/', { replace: true });
             }
-        } catch (error: any) {
+        } catch (error: FirebaseAuthError) {
             console.error("Login Error:", error);
             if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
                 if (error.code === 'auth/invalid-credential') {
@@ -124,7 +130,7 @@ export const LoginPage: React.FC = () => {
                 setUserId(user.uid);
                 navigate('/', { replace: true });
             }
-        } catch (error: any) {
+        } catch (error: FirebaseAuthError) {
             console.error("Register Error:", error);
             if (error.code === 'auth/email-already-in-use') {
                 setStatusMsg('Este alias ya está registrado. Intenta iniciar sesión.');
@@ -160,7 +166,7 @@ export const LoginPage: React.FC = () => {
             setStatusMsg('Listo. Revisa tu correo para restablecer la contraseña.');
             setIsResettingPassword(false);
             setResetValue('');
-        } catch (error: any) {
+        } catch (error: FirebaseAuthError) {
             // No damos pistas de si existe o no la cuenta (mejor práctica)
             console.warn('Password reset error:', error);
             setStatusMsg('Si existe una cuenta asociada, recibirás un email de recuperación.');
