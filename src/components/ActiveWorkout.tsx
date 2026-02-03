@@ -1243,8 +1243,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     function renderExerciseCard(ex: ExerciseTracking) {
         const globalIdx = activeSession?.exercises.findIndex(e => e.id === ex.id) ?? 0;
-        const { isDualSession, partnerExercises } = activeSession;
-        const partnerEx = isDualSession && partnerExercises ? partnerExercises.find(pEx => pEx.id === ex.id) : null;
+        const isDualSession = activeSession?.isDualSession;
+        const partnerExercises = activeSession?.partnerExercises;
+        const partnerEx = isDualSession && partnerExercises ? partnerExercises.find((pEx: ExerciseTracking) => pEx.id === ex.id) : null;
 
         return (
             <Card key={ex.id} style={{
@@ -1371,14 +1372,14 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         </button>
                                     </div>
                                 ) : null}
-                                
+
                                 {isDualSession && partnerEx ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         {/* Header for dual session */}
-                                        <div style={{...styles.dualSetHeader, gridTemplateColumns: '0.8fr 2.4fr 2.4fr 1fr'}}>
-                                            <span style={{...styles.setHeaderCell, textAlign: 'center'}}>#</span>
-                                            <span style={{...styles.setHeaderCell, textAlign: 'center'}}>{perfil.usuario.nombre.split(' ')[0]}</span>
-                                            <span style={{...styles.setHeaderCell, textAlign: 'center'}}>{perfil.pareja?.nombre.split(' ')[0]}</span>
+                                        <div style={{ ...styles.dualSetHeader, gridTemplateColumns: '0.8fr 2.4fr 2.4fr 1fr' }}>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>#</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>{perfil.usuario.nombre.split(' ')[0]}</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>{perfil.pareja?.nombre.split(' ')[0]}</span>
                                             <span></span>
                                         </div>
                                         {ex.sets.map((set, sIdx) => renderDualSetRow(ex, partnerEx, sIdx))}
@@ -1422,7 +1423,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         type="number"
                                                         placeholder="0"
                                                         value={set.weight || ''}
-                                                        onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target..value) || 0 })}
+                                                        onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
                                                         style={styles.newInput}
                                                         disabled={set.completed || set.skipped}
                                                         onFocus={() => setActiveExerciseId(ex.id)}
@@ -1554,90 +1555,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     )}
                 </AnimatePresence>
             </Card>
-        );
-    }
-    function renderDualSetRow(userEx: ExerciseTracking, partnerEx: ExerciseTracking, sIdx: number) {
-        const userSet = userEx.sets[sIdx];
-        const partnerSet = partnerEx.sets[sIdx];
-        const isCompleted = userSet.completed && partnerSet.completed;
-        const isSkipped = userSet.skipped && partnerSet.skipped;
-
-        return (
-            <div
-                key={sIdx}
-                style={{
-                    ...styles.dualSetRow,
-                    background: isCompleted ? `${Colors.success}10` : isSkipped ? Colors.surfaceLight : Colors.surface,
-                    border: `1px solid ${isCompleted ? `${Colors.success}30` : Colors.border}`,
-                    opacity: (isCompleted || isSkipped) ? 0.7 : 1
-                }}
-            >
-                <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
-
-                {/* User's inputs */}
-                <div style={styles.dualInputGroup}>
-                    <input
-                        type="number"
-                        placeholder="kg"
-                        value={userSet.weight || ''}
-                        onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, false)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
-                    />
-                    <input
-                        type="number"
-                        placeholder="reps"
-                        value={userSet.reps || ''}
-                        onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, false)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
-                    />
-                </div>
-
-                {/* Partner's inputs */}
-                <div style={styles.dualInputGroup}>
-                    <input
-                        type="number"
-                        placeholder="kg"
-                        value={partnerSet.weight || ''}
-                        onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, true)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
-                    />
-                    <input
-                        type="number"
-                        placeholder="reps"
-                        value={partnerSet.reps || ''}
-                        onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, true)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
-                    />
-                </div>
-
-                <div style={styles.dualSetActions}>
-                    {!isCompleted && !isSkipped ? (
-                        <button
-                            style={styles.checkBtn}
-                            onClick={() => {
-                                updateSet(userEx.id, sIdx, { completed: true }, false);
-                                updateSet(userEx.id, sIdx, { completed: true }, true);
-                            }}
-                        >
-                            <Check size={18} />
-                        </button>
-                    ) : (
-                        <button
-                            style={styles.undoIconBtn}
-                            onClick={() => {
-                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, false);
-                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, true);
-                            }}
-                        >
-                            <RotateCcw size={16} />
-                        </button>
-                    )}
-                </div>
-            </div>
         );
     }
     function renderDualSetRow(userEx: ExerciseTracking, partnerEx: ExerciseTracking, sIdx: number) {
