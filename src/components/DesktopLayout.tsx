@@ -15,7 +15,7 @@ const navItems = [
     { path: '/', icon: Home, label: 'Home' },
     { path: '/train', icon: Zap, label: 'Live Session' },
     { path: '/dual-training', icon: Users, label: 'Dual Training' },
-    { path: '/catalog', icon: Library, label: 'CatÃ¡logo' },
+    { path: '/catalog', icon: Library, label: 'Catálogo' },
     { path: '/routine', icon: FileText, label: 'Mi Rutina' },
     { path: '/progress', icon: TrendingUp, label: 'Mi Progreso' },
     { path: '/profile', icon: User, label: 'Perfil' },
@@ -110,12 +110,12 @@ export const DesktopLayout: React.FC = () => {
                         </button>
                     </div>
                     <div style={styles.card}>
-                        <h3 style={styles.cardTitle}>SincronizaciÃ³n IA</h3>
+                        <h3 style={styles.cardTitle}>Sincronización IA</h3>
                         <p style={styles.cardText}>Tu progreso se sincroniza en tiempo real con nuestra nube.</p>
                     </div>
                     <div style={styles.card}>
-                        <h3 style={styles.cardTitle}>PrÃ³ximo Hito</h3>
-                        <p style={styles.cardText}>EstÃ¡s a 3 sesiones de completar tu objetivo semanal.</p>
+                        <h3 style={styles.cardTitle}>Próximo Hito</h3>
+                        <p style={styles.cardText}>Estás a 3 sesiones de completar tu objetivo semanal.</p>
                     </div>
                 </aside>
             )}
@@ -298,3 +298,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default DesktopLayout;
+

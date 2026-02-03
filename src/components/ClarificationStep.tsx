@@ -28,9 +28,9 @@ export const ClarificationStep: React.FC<ClarificationStepProps> = ({
         <div style={styles.container}>
             <div style={styles.header}>
                 <HelpCircle size={32} color={Colors.primary} />
-                <h2 style={styles.title}>AyÃºdanos a entender</h2>
+                <h2 style={styles.title}>Ayúdanos a entender</h2>
                 <p style={styles.subtitle}>
-                    Hay algunas partes de tu rutina que no se leen con claridad. Â¿PodrÃ­as confirmarlas?
+                    Hay algunas partes de tu rutina que no se leen con claridad. ¿Podrías confirmarlas?
                 </p>
             </div>
 
@@ -70,7 +70,7 @@ export const ClarificationStep: React.FC<ClarificationStepProps> = ({
                             ) : (
                                 <input
                                     style={styles.input}
-                                    placeholder="Escribe la correcciÃ³n aquÃ­..."
+                                    placeholder="Escribe la corrección aquí..."
                                     value={localAnswers[item.id] || ''}
                                     onChange={(e) => handleLocalChange(item.id, e.target.value)}
                                 />
@@ -82,7 +82,7 @@ export const ClarificationStep: React.FC<ClarificationStepProps> = ({
 
             <div style={styles.footer}>
                 <Button onClick={onComplete} variant="primary" fullWidth>
-                    Continuar a revisiÃ³n <ChevronRight size={18} />
+                    Continuar a revisión <ChevronRight size={18} />
                 </Button>
                 <Button onClick={onBack} variant="ghost" fullWidth>
                     Intentar con otra foto
@@ -204,3 +204,4 @@ const styles: Record<string, React.CSSProperties> = {
         transition: 'all 0.2s ease',
     }
 };
+

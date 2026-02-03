@@ -19,16 +19,16 @@ export const CoachPage: React.FC = () => {
         {
             id: '1',
             role: 'assistant',
-            content: `Â¡Hola ${perfil.usuario.nombre || 'atleta'}! ðŸ‘‹ Soy tu Coach IA personal. Â¿En quÃ© puedo ayudarte hoy? Puedo darte consejos sobre tu rutina, nutriciÃ³n, o ayudarte a planificar tus entrenamientos.`,
+            content: `¡Hola ${perfil.usuario.nombre || 'atleta'}! ðŸ‘‹ Soy tu Coach IA personal. ¿En qué puedo ayudarte hoy? Puedo darte consejos sobre tu rutina, nutrición, o ayudarte a planificar tus entrenamientos.`,
         },
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
 
     const quickReplies = [
-        'Â¿QuÃ© entreno hoy?',
-        'Dame tips de nutriciÃ³n',
-        'Â¿CÃ³mo mejoro mi tÃ©cnica?',
+        '¿Qué entreno hoy?',
+        'Dame tips de nutrición',
+        '¿Cómo mejoro mi técnica?',
     ];
 
     const handleSend = async (text: string) => {
@@ -67,7 +67,7 @@ export const CoachPage: React.FC = () => {
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: "Hubo un error al contactar con mi cerebro digital. Â¿PodrÃ­as intentar de nuevo?",
+                content: "Hubo un error al contactar con mi cerebro digital. ¿Podrías intentar de nuevo?",
             };
             setMessages((prev) => [...prev, errorMessage]);
         } finally {
@@ -133,7 +133,7 @@ export const CoachPage: React.FC = () => {
             <div style={styles.inputContainer}>
                 <input
                     style={styles.input}
-                    placeholder="PregÃºntale a tu Coach..."
+                    placeholder="Pregúntale a tu Coach..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSend(input)}
@@ -272,3 +272,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default CoachPage;
+

@@ -61,11 +61,11 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
         <div style={styles.overlay}>
             <Card style={styles.modal}>
                 <div style={styles.header}>
-                    <h3 style={styles.title}>Â¡VinculaciÃ³n Exitosa!</h3>
+                    <h3 style={styles.title}>¡Vinculación Exitosa!</h3>
                     <button onClick={onClose} style={styles.closeButton}><X size={20} /></button>
                 </div>
                 <p style={styles.text}>
-                    Ahora estÃ¡s vinculado con <span style={styles.partnerName}>{partnerName}</span>. Â¿Quieres compartir una rutina?
+                    Ahora estás vinculado con <span style={styles.partnerName}>{partnerName}</span>. ¿Quieres compartir una rutina?
                 </p>
                 <div style={styles.buttonGroup}>
                     <button
@@ -164,3 +164,4 @@ const styles: Record<string, React.CSSProperties> = {
         cursor: 'pointer',
     },
 };
+

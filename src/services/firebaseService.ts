@@ -72,7 +72,7 @@ export const firebaseService = {
         };
     },
 
-    // Real-time listener para sync autom√°tico
+    // Real-time listener para sync autom·tico
     onProfileChange(userId: string, callback: (profile: PerfilCompleto | null) => void) {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         const userRef = doc(db, 'users', userId);
@@ -367,8 +367,8 @@ export const firebaseService = {
             };
 
             if (!targetProfile) {
-                // Crear perfil b√°sico si no existe (though this implies user doesn't exist which contradicts successful findUserByAlias if alias maps to existing user)
-                // Check plan: "Crear perfil b√°sico si no existe"
+                // Crear perfil b·sico si no existe (though this implies user doesn't exist which contradicts successful findUserByAlias if alias maps to existing user)
+                // Check plan: "Crear perfil b·sico si no existe"
                 const newProfile: PerfilCompleto = {
                     usuario: {
                         nombre: targetUser.alias,
@@ -397,7 +397,7 @@ export const firebaseService = {
                 await this.saveRoutine(targetId, routineCopy);
             }
 
-            return { success: true, message: 'Rutina compartida con √©xito' };
+            return { success: true, message: 'Rutina compartida con Èxito' };
         } catch (error) {
             console.error('Share Routine Error:', error);
             return { success: false, message: 'Error al compartir la rutina' };
@@ -450,7 +450,7 @@ export const firebaseService = {
     },
 
     async initializeCatalog(initialData: EjercicioBase[]): Promise<void> {
-        // Subir en lotes de 500 (l√≠mite de Firestore batch)
+        // Subir en lotes de 500 (lÌmite de Firestore batch)
         const chunks = [];
         for (let i = 0; i < initialData.length; i += 400) {
             chunks.push(initialData.slice(i, i + 400));
@@ -459,7 +459,7 @@ export const firebaseService = {
         for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((ex) => {
-                // Usar el nombre como ID para f√°cil lookup o generar uno nuevo
+                // Usar el nombre como ID para f·cil lookup o generar uno nuevo
                 // Preferible generar ID sanitizando el nombre o usar el ID existente si lo hay
                 const id = ex.id || ex.nombre.toLowerCase().replace(/[^a-z0-9]/g, '_');
                 const ref = doc(db, 'exercises', id);
@@ -469,3 +469,4 @@ export const firebaseService = {
         }
     }
 };
+

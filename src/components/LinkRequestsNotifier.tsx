@@ -17,7 +17,7 @@ export const LinkRequestsNotifier: React.FC = () => {
     const handleAccept = async (request: LinkRequest) => {
         try {
             await firebaseService.acceptLinkRequest(request);
-            toast.success(`Â¡Ahora estÃ¡s vinculado con ${request.requesterAlias}!`);
+            toast.success(`¡Ahora estás vinculado con ${request.requesterAlias}!`);
             // The listener will update the store, removing the accepted request
         } catch (error) {
             console.error('Error accepting request:', error);
@@ -38,7 +38,7 @@ export const LinkRequestsNotifier: React.FC = () => {
 
     return (
         <div style={styles.container}>
-            <h3 style={styles.title}>Solicitudes de VinculaciÃ³n</h3>
+            <h3 style={styles.title}>Solicitudes de Vinculación</h3>
             {linkRequests.map((req) => (
                 <Card key={req.id} style={styles.requestCard}>
                     <div style={styles.requesterInfo}>
@@ -113,3 +113,4 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.error,
     },
 };
+

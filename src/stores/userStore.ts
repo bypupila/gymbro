@@ -44,8 +44,8 @@ export interface EjercicioRutina {
     segundos?: number;
     descanso: number;
     categoria: 'calentamiento' | 'maquina';
-    dia?: string; // Ej: "D√≠a 1", "Lunes", etc.
-    enfocadoA?: 'hombre' | 'mujer' | 'ambos'; // Qui√©n debe realizarlo
+    dia?: string; // Ej: "DÌa 1", "Lunes", etc.
+    enfocadoA?: 'hombre' | 'mujer' | 'ambos'; // QuiÈn debe realizarlo
     nombreOriginal?: string;
     observaciones?: string;
     grupoMuscular?: string; // Ej: "pectoral", "espalda", etc.
@@ -58,7 +58,7 @@ export interface RutinaUsuario {
     duracionSemanas: number;
     ejercicios: EjercicioRutina[];
     fechaInicio: string;
-    fechaExpiracion?: string; // Cu√°ndo deber√≠a cambiarse
+    fechaExpiracion?: string; // Cu·ndo deberÌa cambiarse
     analizadaPorIA: boolean;
 }
 
@@ -91,6 +91,10 @@ export interface EntrenamientoRealizado {
     // Mood/Energy Tracking
     moodPre?: number;  // 1-5
     moodPost?: number; // 1-5
+    energyPre?: number; // 1-5
+    energyPost?: number; // 1-5
+    notePre?: string;
+    notePost?: string;
 }
 
 export interface AnalysisResult {
@@ -127,7 +131,7 @@ export interface PerfilCompleto {
     partnerId?: string; // New field for Cloud ID
     alias?: string; // Add this
     role?: 'admin' | 'user'; // Rol del usuario
-    weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de d√≠as entrenados { '2026-01-29': 'completed' }
+    weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de dÌas entrenados { '2026-01-29': 'completed' }
     actividadesExtras: ExtraActivity[]; // Extra activities logged
     catalogoExtras: string[]; // Unique activity types discovered
 }
@@ -146,10 +150,10 @@ const horarioInicial: HorarioSemanal = {
     dias: [
         { dia: 'Lunes', entrena: true, hora: '07:00', grupoMuscular: 'Pecho' },
         { dia: 'Martes', entrena: true, hora: '07:00', grupoMuscular: 'Espalda' },
-        { dia: 'Mi√©rcoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
+        { dia: 'MiÈrcoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
         { dia: 'Jueves', entrena: true, hora: '07:00', grupoMuscular: 'Hombros' },
         { dia: 'Viernes', entrena: true, hora: '07:00', grupoMuscular: 'Piernas' },
-        { dia: 'S√°bado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
+        { dia: 'S·bado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
         { dia: 'Domingo', entrena: false, hora: '09:00', grupoMuscular: 'Descanso' },
     ]
 };
@@ -182,6 +186,8 @@ export interface ActiveSession {
     exercises: ExerciseTracking[];
     routineName: string;
     preWorkoutMood?: number;
+    preWorkoutEnergy?: number;
+    preWorkoutNote?: string;
     isDualSession: boolean;
     partnerExercises: ExerciseTracking[] | null;
 }
@@ -205,13 +211,13 @@ interface UserStore {
     agregarEntrenamiento: (entrenamiento: EntrenamientoRealizado) => void;
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
-    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: number) => void;
+    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>, isPartner?: boolean) => void;
     skipSet: (exerciseId: string, setIndex: number, isPartner?: boolean) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
     addExerciseToSession: (newExercise: EjercicioRutina) => void;
     markExerciseAsCompleted: (exerciseId: string) => void;
-    finishSession: (durationMinutos: number, postWorkoutMood?: number) => Promise<void>;
+    finishSession: (durationMinutos: number, postWorkoutData?: { mood?: number; energy?: number; note?: string }) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
     logout: () => void;
@@ -309,7 +315,7 @@ export const useUserStore = create<UserStore>()(
             })),
 
             getEntrenamientoHoy: () => {
-                const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Mi√©rcoles', 'Jueves', 'Viernes', 'S√°bado'];
+                const diasSemana = ['Domingo', 'Lunes', 'Martes', 'MiÈrcoles', 'Jueves', 'Viernes', 'S·bado'];
                 const hoyIndex = new Date().getDay();
                 const diaNombre = diasSemana[hoyIndex];
 
@@ -329,7 +335,7 @@ export const useUserStore = create<UserStore>()(
                 return { entrena: false, grupoMuscular: 'Descanso' as GrupoMuscular, hora: '', dia: diaNombre };
             },
 
-            startSession: (dayName, exercises, routineName, preWorkoutMood) => {
+            startSession: (dayName, exercises, routineName, preWorkoutMood, preWorkoutEnergy, preWorkoutNote) => {
                 const { perfil } = get();
                 const isDual = !!perfil.partnerId;
 
@@ -360,6 +366,8 @@ export const useUserStore = create<UserStore>()(
                         dayName,
                         routineName,
                         preWorkoutMood,
+                        preWorkoutEnergy,
+                        preWorkoutNote,
                         exercises: userExercises,
                         isDualSession: isDual,
                         partnerExercises: partnerExercises,
@@ -424,8 +432,8 @@ export const useUserStore = create<UserStore>()(
                             skipped: false,
                             weight: 0,
                             reps: parseInt(newExercise.repeticiones) || 10,
-                            duration: 0,
-                            rest: 0
+                            duration: newExercise.segundos || 0,
+                            rest: newExercise.descanso || 60
                         }))
                     };
                 });
@@ -447,8 +455,8 @@ export const useUserStore = create<UserStore>()(
                         skipped: false,
                         weight: 0,
                         reps: parseInt(newExercise.repeticiones) || 10,
-                        duration: 0,
-                        rest: 0
+                        duration: newExercise.segundos || 0,
+                        rest: newExercise.descanso || 60
                     }))
                 };
                 return {
@@ -483,7 +491,7 @@ export const useUserStore = create<UserStore>()(
                 };
             }),
 
-            finishSession: async (durationMinutos, postWorkoutMood) => {
+            finishSession: async (durationMinutos, postWorkoutData) => {
                 const state = get();
                 if (!state.activeSession) return;
 
@@ -498,7 +506,11 @@ export const useUserStore = create<UserStore>()(
                     duracionMinutos: durationMinutos,
                     nombre: `${activeSession.dayName} - ${activeSession.routineName}`,
                     moodPre: activeSession.preWorkoutMood,
-                    moodPost: postWorkoutMood,
+                    moodPost: postWorkoutData?.mood,
+                    energyPre: activeSession.preWorkoutEnergy,
+                    energyPost: postWorkoutData?.energy,
+                    notePre: activeSession.preWorkoutNote,
+                    notePost: postWorkoutData?.note,
                     ejercicios: trackedExercises.map(ex => ({
                         nombre: ex.nombre,
                         sets: ex.sets
@@ -577,6 +589,18 @@ export const useUserStore = create<UserStore>()(
                         }
                     };
                 });
+
+                const { userId } = get();
+                if (userId) {
+                    void (async () => {
+                        try {
+                            const { firebaseService } = await import('../services/firebaseService');
+                            await firebaseService.saveProfile(userId, get().perfil);
+                        } catch (error) {
+                            console.error('Error syncing day tracking:', error);
+                        }
+                    })();
+                }
             },
 
             cancelSession: () => set({ activeSession: null }),
@@ -716,16 +740,19 @@ export const useUserStore = create<UserStore>()(
 
             removeExtraActivitiesOnDate: async (dateStr: string) => {
                 const { userId, perfil } = get();
-                const activitiesToDelete = perfil.actividadesExtras.filter(a => a.fecha === dateStr);
+                const activitiesToDelete = perfil.actividadesExtras.filter(a => a.fecha.split('T')[0] === dateStr);
 
                 if (activitiesToDelete.length === 0 && !perfil.weeklyTracking?.[dateStr]) return;
 
                 // 1. Optimistic Update
                 set((state) => {
                     const newTracking = { ...state.perfil.weeklyTracking };
-                    delete newTracking[dateStr];
+                    const hasWorkout = state.perfil.historial.some(h => h.fecha.split('T')[0] === dateStr);
+                    if (!hasWorkout) {
+                        delete newTracking[dateStr];
+                    }
 
-                    const newActivities = state.perfil.actividadesExtras.filter(a => a.fecha !== dateStr);
+                    const newActivities = state.perfil.actividadesExtras.filter(a => a.fecha.split('T')[0] !== dateStr);
 
                     return {
                         perfil: {
@@ -771,3 +798,4 @@ export const useUserStore = create<UserStore>()(
 
 
 export default useUserStore;
+

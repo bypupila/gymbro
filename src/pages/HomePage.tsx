@@ -30,7 +30,7 @@ export const HomePage: React.FC = () => {
 
     const confirmStartSession = (mood: number) => {
         if (tempSessionData) {
-            startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, mood);
+            startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, undefined, mood);
             setShowMoodModal(false);
             setTempSessionData(null);
         }
@@ -95,8 +95,8 @@ export const HomePage: React.FC = () => {
                         <FileText size={24} color={Colors.primary} />
                     </div>
                     <div style={styles.promptContent}>
-                        <h3 style={styles.promptTitle}>Â¿Tienes una rutina?</h3>
-                        <p style={styles.promptSub}>Sube una foto y Gemini la analizarÃ¡ por ti.</p>
+                        <h3 style={styles.promptTitle}>¿Tienes una rutina?</h3>
+                        <p style={styles.promptSub}>Sube una foto y Gemini la analizará por ti.</p>
                     </div>
                     <div style={styles.promptAction}>
                         <Plus size={20} color={Colors.text} />
@@ -162,8 +162,8 @@ export const HomePage: React.FC = () => {
             {showMoodModal && (
                 <div style={styles.modalOverlay}>
                     <div style={styles.modalContent}>
-                        <h2 style={styles.modalTitle}>Â¿CÃ³mo te sientes hoy?</h2>
-                        <p style={styles.modalSubtitle}>Nivel de energÃ­a antes de entrenar</p>
+                        <h2 style={styles.modalTitle}>¿Cómo te sientes hoy?</h2>
+                        <p style={styles.modalSubtitle}>Nivel de energía antes de entrenar</p>
 
                         <div style={styles.moodGrid}>
                             {[
@@ -648,3 +648,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default HomePage;
+

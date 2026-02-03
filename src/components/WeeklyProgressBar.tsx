@@ -42,7 +42,7 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const weekDays = getWeekDays();
-    const dayNames = ['Lun', 'Mar', 'MiÃ©', 'Jue', 'Vie', 'SÃ¡b', 'Dom'];
+    const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
     const handleDayClick = (dateStr: string) => {
         const isCompleted = weeklyTracking[dateStr];
@@ -70,12 +70,12 @@ export const WeeklyProgressBar: React.FC = () => {
             // Show extra activity form instead of marking as complete
             setShowModal(false);
             setShowExtraActivityForm(true);
-        } else if (dayName === 'Saltar dÃ­a') {
+        } else if (dayName === 'Saltar día') {
             const { setDayTracking } = useUserStore.getState();
             setDayTracking(selectedDate, 'skipped');
             setShowModal(false);
             setSelectedDate(null);
-            toast.success('DÃ­a marcado como saltado');
+            toast.success('Día marcado como saltado');
         } else {
             const { setDayTracking } = useUserStore.getState();
             setDayTracking(selectedDate, 'completed');
@@ -171,7 +171,7 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const getDaySchedule = (dayIndex: number) => {
-        const dayNames = ['Domingo', 'Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado'];
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
         const targetDay = dayNames[dayIndex];
         return perfil.horario.dias.find(d =>
             d.dia.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
@@ -184,14 +184,16 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const completedDays = weekDays.filter(d => {
         const dateStr = formatDate(d);
-        return activeDatesSet.has(dateStr) || weeklyTracking[dateStr];
+        const status = weeklyTracking[dateStr];
+        const isCompleted = status === 'completed' || status === true;
+        return activeDatesSet.has(dateStr) || isCompleted;
     }).length;
 
     const scheduledDays = weekDays.filter((_, i) => getDaySchedule((i + 1) % 7)?.entrena).length;
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
 
-    const defaultActivities = ['Running', 'Ciclismo', 'NataciÃ³n', 'FÃºtbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
+    const defaultActivities = ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
     const currentActivityCatalog = perfil.catalogoExtras?.length ? perfil.catalogoExtras : defaultActivities;
 
     return (
@@ -299,7 +301,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>Â¿QuÃ© rutina hiciste?</h3>
+                                <h3 style={styles.modalTitle}>¿Qué rutina hiciste?</h3>
                                 <button onClick={() => setShowModal(false)} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
@@ -333,7 +335,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                     </div>
                                 </button>
                                 <button
-                                    onClick={() => handleRoutineSelection('Saltar dÃ­a')}
+                                    onClick={() => handleRoutineSelection('Saltar día')}
                                     style={{
                                         ...styles.routineOption,
                                         borderColor: Colors.error,
@@ -342,7 +344,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                 >
                                     <X size={18} color={Colors.error} />
                                     <div style={styles.routineInfo}>
-                                        <span style={styles.routineDay}>Saltar dÃ­a</span>
+                                        <span style={styles.routineDay}>Saltar día</span>
                                         <span style={styles.routineMuscle}>No pude entrenar hoy</span>
                                     </div>
                                 </button>
@@ -370,7 +372,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>Resumen del dÃ­a</h3>
+                                <h3 style={styles.modalTitle}>Resumen del día</h3>
                                 <button onClick={() => setShowDetailsModal(false)} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
@@ -378,7 +380,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
                             <div style={styles.detailsContent}>
                                 {(() => {
-                                    const extraActivity = perfil.actividadesExtras?.find(a => a.fecha === selectedDate);
+                                    const extraActivity = perfil.actividadesExtras?.find(a => a.fecha.split('T')[0] === selectedDate);
                                     const workout = perfil.historial?.find(h => h.fecha.startsWith(selectedDate));
 
                                     if (extraActivity) {
@@ -399,7 +401,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                                                     ? `${(extraActivity.analisisIA.duracionMinutos / 60).toFixed(1)}h`
                                                                     : `${extraActivity.analisisIA.duracionMinutos}m`}
                                                             </span>
-                                                            <span style={styles.statLabel}>DuraciÃ³n</span>
+                                                            <span style={styles.statLabel}>Duración</span>
                                                         </div>
                                                     )}
                                                     {extraActivity.analisisIA?.distanciaKm && (
@@ -474,7 +476,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
                                     return (
                                         <div style={styles.noData}>
-                                            No hay datos especÃ­ficos registrados para este dÃ­a.
+                                            No hay datos específicos registrados para este día.
                                         </div>
                                     );
                                 })()}
@@ -483,7 +485,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                     onClick={() => handleUnmarkDay(selectedDate)}
                                     style={styles.unmarkBtn}
                                 >
-                                    <X size={16} /> Desmarcar dÃ­a
+                                    <X size={16} /> Desmarcar día
                                 </button>
                             </div>
                         </motion.div>
@@ -569,7 +571,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                 {/* Stats Inputs */}
                                 <div style={styles.statsInputGrid}>
                                     <div>
-                                        <label style={styles.label}>DuraciÃ³n (min)</label>
+                                        <label style={styles.label}>Duración (min)</label>
                                         <input
                                             type="number"
                                             value={duration}
@@ -1041,3 +1043,4 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '20px',
     },
 };
+

@@ -14,7 +14,7 @@ import { firebaseService } from '@/services/firebaseService';
 
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, setPartnerId, setDatosPareja } = useUserStore();
+    const { perfil, userId } = useUserStore();
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [aliasInput, setAliasInput] = React.useState('');
     const [connectError, setConnectError] = React.useState('');
@@ -24,23 +24,29 @@ export const DualTrainingPage: React.FC = () => {
 
     const handleConnect = async () => {
         if (!aliasInput.trim()) return;
+        if (!userId || !perfil.alias) {
+            setConnectError('Configura tu alias primero en tu perfil.');
+            return;
+        }
         setIsConnecting(true);
         setConnectError('');
 
         try {
-            
             const user = await firebaseService.findUserByAlias(aliasInput.trim());
 
-            if (user) {
-                setPartnerId(user.id);
-                setDatosPareja({
-                    nombre: user.name || user.alias || 'Partner',
-                    edad: 0, peso: 0, altura: 0, nivel: 'intermedio', objetivo: 'mantener', lesiones: ''
-                });
-                toast.success('Â¡Pareja Conectada!');
-            } else {
+            if (!user || user.id === user.alias) {
                 setConnectError('Alias no encontrado');
+                return;
             }
+
+            if (user.id === userId) {
+                setConnectError('No puedes vincularte contigo mismo.');
+                return;
+            }
+
+            await firebaseService.sendLinkRequest(userId, perfil.alias, user.id);
+            toast.success(`Solicitud enviada a ${user.name || user.alias}`);
+            setAliasInput('');
         } catch (error: unknown) {
             console.error(error);
             const errorMessage = error instanceof Error ? error.message : "Error al conectar";
@@ -80,7 +86,7 @@ export const DualTrainingPage: React.FC = () => {
                         <h2 style={styles.synergyTitle}>Sinergia de Pareja</h2>
                         <p style={styles.synergyDesc}>
                             {parejaconectada
-                                ? "Â¡Gran ritmo! HabÃ©is completado 4 sesiones juntos esta semana."
+                                ? "¡Gran ritmo! Habéis completado 4 sesiones juntos esta semana."
                                 : "Conecta a tu pareja para duplicar resultados y mantener la racha."
                             }
                         </p>
@@ -90,7 +96,7 @@ export const DualTrainingPage: React.FC = () => {
 
             {/* Connection Status */}
             <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Estado de ConexiÃ³n</h3>
+                <h3 style={styles.sectionTitle}>Estado de Conexión</h3>
                 <Card style={styles.connectionCard}>
                     <div style={styles.userRow}>
                         <div style={styles.avatarWrapper}>
@@ -102,8 +108,8 @@ export const DualTrainingPage: React.FC = () => {
                             <div style={{ ...styles.statusDot, background: Colors.primary }} />
                         </div>
                         <div style={styles.userInfo}>
-                            <span style={styles.userName}>{perfil.usuario.nombre || 'TÃº'}</span>
-                            <span style={styles.userStatus}>En lÃ­nea</span>
+                            <span style={styles.userName}>{perfil.usuario.nombre || 'Tú'}</span>
+                            <span style={styles.userStatus}>En línea</span>
                         </div>
                         <div style={styles.userIcon}>
                             <Zap size={18} color={Colors.primary} />
@@ -112,19 +118,19 @@ export const DualTrainingPage: React.FC = () => {
 
                     <div style={styles.divider} />
 
-                    {perfil.pareja ? (
+                    {(perfil.pareja || perfil.partnerId) ? (
                         <div style={styles.userRow}>
                             <div style={styles.avatarWrapper}>
                                 <img
-                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${perfil.pareja.nombre}`}
+                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${perfil.pareja?.nombre || 'GymBro'}`}
                                     style={styles.avatar}
                                     alt="Pareja"
                                 />
                                 <div style={{ ...styles.statusDot, background: Colors.textTertiary }} />
                             </div>
                             <div style={styles.userInfo}>
-                                <span style={styles.userName}>{perfil.pareja.nombre}</span>
-                                <span style={styles.userStatus}>Desconectado</span>
+                                <span style={styles.userName}>{perfil.pareja?.nombre || 'Pareja vinculada'}</span>
+                                <span style={styles.userStatus}>{perfil.pareja ? 'Desconectado' : 'Vinculado'}</span>
                             </div>
                         </div>
                     ) : (
@@ -173,7 +179,7 @@ export const DualTrainingPage: React.FC = () => {
                     </div>
                     <div style={styles.featureContent}>
                         <h4 style={styles.featureTitle}>Racha Compartida</h4>
-                        <p style={styles.featureDesc}>Si uno falla, la racha de ambos peligra. MotivaciÃ³n mutua.</p>
+                        <p style={styles.featureDesc}>Si uno falla, la racha de ambos peligra. Motivación mutua.</p>
                     </div>
                 </div>
                 <div style={styles.featureItem}>
@@ -181,7 +187,7 @@ export const DualTrainingPage: React.FC = () => {
                         <ShieldCheck size={20} color="#C026D3" />
                     </div>
                     <div style={styles.featureContent}>
-                        <h4 style={styles.featureTitle}>SincronizaciÃ³n de Descansos</h4>
+                        <h4 style={styles.featureTitle}>Sincronización de Descansos</h4>
                         <p style={styles.featureDesc}>Tiempos de descanso coordinados en tiempo real.</p>
                     </div>
                 </div>
@@ -196,7 +202,7 @@ export const DualTrainingPage: React.FC = () => {
                 disabled={!parejaconectada}
                 onClick={() => navigate('/train')}
             >
-                INICIAR SESIÃ“N DUAL
+                INICIAR SESIÓN DUAL
             </button>
         </div>
     );
@@ -437,3 +443,5 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default DualTrainingPage;
+
+

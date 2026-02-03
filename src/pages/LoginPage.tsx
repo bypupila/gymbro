@@ -68,21 +68,21 @@ export const LoginPage: React.FC = () => {
             console.error("Login Error:", error);
             if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
                 if (error.code === 'auth/invalid-credential') {
-                    // UX pedido: abrir automÃ¡ticamente "Registrarse" y mostrar aviso verde.
+                    // UX pedido: abrir automáticamente "Registrarse" y mostrar aviso verde.
                     // No mostramos el mensaje rojo si vamos a redirigir a registro.
                     setStatusMsg(null);
                     setMode('register');
                     setIsResettingPassword(false);
-                    setRegisterHint('No encontramos un usuario, crea tu usuario aquÃ­.');
+                    setRegisterHint('No encontramos un usuario, crea tu usuario aquí.');
                 } else {
                     // Igual que arriba: evitar mensaje rojo y guiar al usuario a registro.
                     setStatusMsg(null);
                     setMode('register');
                     setIsResettingPassword(false);
-                    setRegisterHint('No encontramos un usuario, crea tu usuario aquÃ­.');
+                    setRegisterHint('No encontramos un usuario, crea tu usuario aquí.');
                 }
             } else {
-                setStatusMsg('Error de conexiÃ³n: ' + error.message);
+                setStatusMsg('Error de conexión: ' + error.message);
             }
         } finally {
             setIsLoading(false);
@@ -119,21 +119,21 @@ export const LoginPage: React.FC = () => {
                 // Crear alias y perfil inicial
                 await firebaseService.createUserAlias(user.uid, displayAlias);
 
-                // Crear perfil vacÃ­o en firebaseService.createUserAlias? No, solo crea indices.
+                // Crear perfil vacío en firebaseService.createUserAlias? No, solo crea indices.
                 // saveProfile inicial se maneja en CloudSyncManager o aqui?
-                // Mejor dejar que CloudSyncManager note que no hay datos y cree uno default, O crearlo aqui explÃ­citamente.
+                // Mejor dejar que CloudSyncManager note que no hay datos y cree uno default, O crearlo aqui explícitamente.
                 // La app actual maneja "Initial Load" en AuthProvider/CloudSync.
-                // Si no hay perfil, crearÃ¡ uno default en userStore pero DEBE guardarlo.
+                // Si no hay perfil, creará uno default en userStore pero DEBE guardarlo.
                 // Vamos a dejar que el flujo normal ocurra, pero aseguramos el alias.
 
-                setStatusMsg('Â¡Cuenta creada!');
+                setStatusMsg('¡Cuenta creada!');
                 setUserId(user.uid);
                 navigate('/', { replace: true });
             }
         } catch (error: FirebaseAuthError) {
             console.error("Register Error:", error);
             if (error.code === 'auth/email-already-in-use') {
-                setStatusMsg('Este alias ya estÃ¡ registrado. Intenta iniciar sesiÃ³n.');
+                setStatusMsg('Este alias ya está registrado. Intenta iniciar sesión.');
                 setMode('login');
             } else {
                 setStatusMsg('Error al registrar: ' + error.message);
@@ -148,7 +148,7 @@ export const LoginPage: React.FC = () => {
 
         const raw = resetValue.trim().toLowerCase();
         if (!raw) {
-            setStatusMsg('Ingresa tu email o alias para recuperar la contraseÃ±a.');
+            setStatusMsg('Ingresa tu email o alias para recuperar la contraseña.');
             return;
         }
 
@@ -159,17 +159,17 @@ export const LoginPage: React.FC = () => {
                 : `${raw.replace(/[^a-z0-9]/g, '')}@gymbro.app`;
 
         setIsLoading(true);
-        setStatusMsg('Enviando email de recuperaciÃ³n...');
+        setStatusMsg('Enviando email de recuperación...');
 
         try {
             await authService.sendPasswordReset(email);
-            setStatusMsg('Listo. Revisa tu correo para restablecer la contraseÃ±a.');
+            setStatusMsg('Listo. Revisa tu correo para restablecer la contraseña.');
             setIsResettingPassword(false);
             setResetValue('');
         } catch (error: FirebaseAuthError) {
-            // No damos pistas de si existe o no la cuenta (mejor prÃ¡ctica)
+            // No damos pistas de si existe o no la cuenta (mejor práctica)
             console.warn('Password reset error:', error);
-            setStatusMsg('Si existe una cuenta asociada, recibirÃ¡s un email de recuperaciÃ³n.');
+            setStatusMsg('Si existe una cuenta asociada, recibirás un email de recuperación.');
         } finally {
             setIsLoading(false);
         }
@@ -256,7 +256,7 @@ export const LoginPage: React.FC = () => {
                 </div>
 
                 <div style={styles.inputWrapper}>
-                    <label style={styles.label}>ContraseÃ±a</label>
+                    <label style={styles.label}>Contraseña</label>
                     <div style={styles.inputContainer}>
                         <KeyRound size={24} color={Colors.textSecondary} style={styles.icon} />
                         <input
@@ -365,7 +365,7 @@ export const LoginPage: React.FC = () => {
                             style={styles.linkButton}
                             disabled={isLoading}
                         >
-                            Â¿Olvidaste tu contraseÃ±a?
+                            ¿Olvidaste tu contraseña?
                         </button>
 
                         {isResettingPassword && (
@@ -395,7 +395,7 @@ export const LoginPage: React.FC = () => {
                                     Enviar enlace
                                 </button>
                                 <p style={styles.resetHint}>
-                                    Si usas alias, el sistema enviarÃ¡ a <span style={{ fontWeight: 700 }}>{'{alias}@gymbro.app'}</span>.
+                                    Si usas alias, el sistema enviará a <span style={{ fontWeight: 700 }}>{'{alias}@gymbro.app'}</span>.
                                 </p>
                             </div>
                         )}
@@ -403,7 +403,7 @@ export const LoginPage: React.FC = () => {
                 )}
 
                 <p style={styles.note}>
-                    * Tu progreso se guardarÃ¡ en la nube de forma segura.
+                    * Tu progreso se guardará en la nube de forma segura.
                 </p>
             </div>
         </div>
@@ -498,3 +498,4 @@ const styles: Record<string, React.CSSProperties> = {
     },
     note: { marginTop: '24px', fontSize: '12px', color: Colors.textTertiary, textAlign: 'center' }
 };
+

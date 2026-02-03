@@ -154,7 +154,7 @@ export const ProfilePage: React.FC = () => {
         const currentAlias = (perfil.alias || '').toLowerCase();
 
         try {
-            // 1. Validar alias si cambi√≥
+            // 1. Validar alias si cambiÛ
             if (cleanAlias !== currentAlias) {
                 if (cleanAlias.length < 3) {
                     setAliasError('El alias debe tener al menos 3 caracteres.');
@@ -164,7 +164,7 @@ export const ProfilePage: React.FC = () => {
                 // 1. Validar disponibilidad
                 const available = await firebaseService.isAliasAvailable(cleanAlias, userId);
                 if (!available) {
-                    setAliasError('Este alias ya est√° registrado. Elige otro.');
+                    setAliasError('Este alias ya est· registrado. Elige otro.');
                     setIsSaving(false);
                     return;
                 }
@@ -179,7 +179,7 @@ export const ProfilePage: React.FC = () => {
                     } catch (authError: FirebaseAuthError) {
                         console.error("Auth Email Update Error:", authError);
                         if (authError.code === 'auth/requires-recent-login') {
-                            setAliasError('Por seguridad, debes cerrar sesi√≥n y volver a entrar para cambiar tu alias de login.');
+                            setAliasError('Por seguridad, debes cerrar sesiÛn y volver a entrar para cambiar tu alias de login.');
                             setIsSaving(false);
                             return;
                         }
@@ -202,7 +202,7 @@ export const ProfilePage: React.FC = () => {
         } catch (error: FirebaseAuthError) {
             console.error("Error saving profile:", error);
             setAliasError(error.message === 'ALIAS_TAKEN'
-                ? 'Este alias ya est√° registrado.'
+                ? 'Este alias ya est· registrado.'
                 : 'Error al conectar con la base de datos.');
         } finally {
             setIsSaving(false);
@@ -220,8 +220,8 @@ export const ProfilePage: React.FC = () => {
         { icon: Heart, label: 'Mis Rutinas Activas', color: '#3B82F6', action: () => navigate('/routine') },
         { icon: Calendar, label: 'Configurar Horario', color: '#8B5CF6', action: () => navigate('/profile/schedule') },
 
-        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('Pr√≥ximamente üöß', { icon: 'üîî' }) },
-        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('Pr√≥ximamente üöß', { icon: 'üõ°Ô∏è' }) },
+        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('PrÛximamente üöß', { icon: 'üîî' }) },
+        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('PrÛximamente üöß', { icon: 'üõ°Ô∏è' }) },
     ];
 
     return (
@@ -346,7 +346,7 @@ export const ProfilePage: React.FC = () => {
 
             {/* Personal Info Section */}
             <div style={styles.sectionHeader}>
-                <h3 style={styles.sectionTitle}>Informaci√≥n Personal</h3>
+                <h3 style={styles.sectionTitle}>InformaciÛn Personal</h3>
             </div>
 
             <Card style={styles.infoCard}>
@@ -401,7 +401,7 @@ export const ProfilePage: React.FC = () => {
                                 style={styles.editSelect}
                                 value={editData.objetivo}
                                                                     onChange={(e) => setEditData({ ...editData, objetivo: e.target.value as ObjetivoFitness })}                            >
-                                <option value="ganar_musculo">Ganar M√∫sculo</option>
+                                <option value="ganar_musculo">Ganar M˙sculo</option>
                                 <option value="perder_grasa">Perder Grasa</option>
                                 <option value="mantener">Mantenerme</option>
                                 <option value="fuerza">Ganar Fuerza</option>
@@ -437,7 +437,7 @@ export const ProfilePage: React.FC = () => {
                     <div style={styles.viewGrid}>
                         <div style={styles.viewItem}>
                             <span style={styles.viewLabel}>EDAD</span>
-                            <span style={styles.viewValue}>{userInfo.edad || '--'} a√±os</span>
+                            <span style={styles.viewValue}>{userInfo.edad || '--'} aÒos</span>
                         </div>
                         <div style={styles.viewItem}>
                             <span style={styles.viewLabel}>PESO</span>
@@ -512,7 +512,7 @@ export const ProfilePage: React.FC = () => {
                                             onClick={() => {
                                                 toast((t) => (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¬øEliminar esta rutina del historial?</span>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>øEliminar esta rutina del historial?</span>
                                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                             <button
                                                                 onClick={() => toast.dismiss(t.id)}
@@ -562,7 +562,7 @@ export const ProfilePage: React.FC = () => {
                     <div style={{ ...styles.menuIcon, background: Colors.textSecondary }}>
                         <LogOut size={20} color="#FFF" />
                     </div>
-                    <span style={styles.menuText}>Cerrar Sesi√≥n (Cambiar Usuario)</span>
+                    <span style={styles.menuText}>Cerrar SesiÛn (Cambiar Usuario)</span>
                 </button>
 
                 <button style={{ ...styles.menuItem, marginTop: '8px' }} onClick={handleReset}>
@@ -581,9 +581,9 @@ export const ProfilePage: React.FC = () => {
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
                             <div style={styles.modalIcon}>‚ö†Ô∏è</div>
-                            <h3 style={styles.modalTitle}>¬øReiniciar App?</h3>
+                            <h3 style={styles.modalTitle}>øReiniciar App?</h3>
                             <p style={styles.modalText}>
-                                Esto borrar√° todos tus datos: perfil, rutinas e historial. Esta acci√≥n no se puede deshacer.
+                                Esto borrar· todos tus datos: perfil, rutinas e historial. Esta acciÛn no se puede deshacer.
                             </p>
                             <div style={styles.modalActions}>
                                 <button style={styles.modalCancelBtn} onClick={() => setShowResetConfirm(false)}>
@@ -615,7 +615,7 @@ export const ProfilePage: React.FC = () => {
                             </button>
                         </div>
                         <p style={styles.modalText}>
-                            Introduce el alias de tu pareja para enviarle una solicitud de vinculaci√≥n.
+                            Introduce el alias de tu pareja para enviarle una solicitud de vinculaciÛn.
                         </p>
                         <div style={styles.partnerSearchContainer}>
                             <input
@@ -652,13 +652,13 @@ export const ProfilePage: React.FC = () => {
                         )}
 
                         {searchStatus === 'not_found' && (
-                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e int√©ntalo de nuevo.</p>
+                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e intÈntalo de nuevo.</p>
                         )}
                         {searchStatus === 'error' && (
-                            <p style={styles.searchStatusTextError}>Hubo un error. Int√©ntalo m√°s tarde.</p>
+                            <p style={styles.searchStatusTextError}>Hubo un error. IntÈntalo m·s tarde.</p>
                         )}
                         {searchStatus === 'request_sent' && (
-                            <p style={styles.searchStatusTextSuccess}>¬°Solicitud enviada! Esperando respuesta.</p>
+                            <p style={styles.searchStatusTextSuccess}>°Solicitud enviada! Esperando respuesta.</p>
                         )}
                     </div>
                 </div>
@@ -1347,3 +1347,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ProfilePage;
+

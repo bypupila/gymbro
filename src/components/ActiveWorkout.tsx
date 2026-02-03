@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useUserStore, ExerciseTracking, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
@@ -66,8 +66,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [addConfig, setAddConfig] = useState({
         series: 3,
         repeticiones: '10',
-        descanso: 60
+        descanso: 60,
+        unit: 'reps'
     });
+
+    // Local state for time units in sets
+    const [durationUnits, setDurationUnits] = useState<Record<string, 's' | 'm' | 'h'>>({});
 
     // Completion Modal State
     const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -198,9 +202,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
         // For main routine, start a stopwatch (count up from 0) to record time taken
         setTimerSeconds(0);
-        setIsTimerRunning(true);
+        setIsTimerRunning(false);
 
-        toast.success(`Entrenamiento iniciado`);
+        toast.success(`Entrenamiento iniciado`, { duration: 3000 });
     };
 
     const handleDiscardClick = (exerciseId: string) => {
@@ -221,7 +225,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             setIsTimerRunning(false);
                             setTimerSeconds(0);
                             toast.dismiss(t.id);
-                            toast.success('Ejercicio omitido');
+                            toast.success('Ejercicio omitido', { duration: 3000 });
 
                             // If in guided mode and skipping current exercise, advance
                             if (guidedMode.active && guidedMode.exerciseId === exerciseId) {
@@ -266,7 +270,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         // Restrict timer to warm-up category only
         if (exercise.categoria === 'calentamiento') {
             setIsTimerRunning(true);
-            toast.success(`Serie ${setIndex + 1} iniciada`);
+            toast.success(`Serie ${setIndex + 1} iniciada`, { duration: 3000 });
         } else {
             setIsTimerRunning(false);
         }
@@ -276,41 +280,40 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     useEffect(() => {
         if (!isTimerRunning) return;
 
+        let lastTick = Date.now();
         const interval = setInterval(() => {
-            setTimerSeconds(prev => {
-                const isRest = guidedMode.active && guidedMode.phase === 'rest';
+            const now = Date.now();
+            const deltaMs = now - lastTick;
 
-                // If Rest Phase (Guided Mode) - Count Down until user stops it or it hits 0?
-                // User wants timer to show overtime in red if it passes the time
-                if (isRest) {
-                    return prev - 1; // Allows negative values (overtime)
-                }
+            if (deltaMs >= 1000) {
+                const deltaSeconds = Math.floor(deltaMs / 1000);
+                lastTick = now - (deltaMs % 1000);
 
-                // If Work Phase (Guided or Active)
-                const exercise = activeSession?.exercises.find(e => e.id === activeExerciseId || e.id === guidedMode.exerciseId);
+                setTimerSeconds(prev => {
+                    const isRest = guidedMode.active && guidedMode.phase === 'rest';
 
-                // If main routine (not warmup), always count up as a stopwatch
-                if (exercise && exercise.categoria !== 'calentamiento') {
-                    return prev + 1;
-                }
+                    if (isRest) {
+                        return prev - deltaSeconds;
+                    }
 
-                const currentSet = exercise?.sets[guidedMode.active ? guidedMode.setIndex : currentSetIndex];
+                    const exercise = activeSession?.exercises.find(e => e.id === activeExerciseId || e.id === guidedMode.exerciseId);
 
-                // Determine if it should be a countdown:
-                // 1. Current set has a manual duration > 0
-                // 2. Global exercise target is time-based
-                const isTimedWork = (currentSet && typeof currentSet.duration === 'number' && currentSet.duration > 0) ||
-                    (exercise && isTimeBased(exercise.targetReps));
+                    if (exercise && exercise.categoria !== 'calentamiento') {
+                        return prev + deltaSeconds;
+                    }
 
-                if (isTimedWork) {
-                    // Time-based work: Count Down with Overtime
-                    return prev - 1;
-                } else {
-                    // Rep-based work: Count Up (Elapsed Time)
-                    return prev + 1;
-                }
-            });
-        }, 1000);
+                    const currentSet = exercise?.sets[guidedMode.active ? guidedMode.setIndex : currentSetIndex];
+                    const isTimedWork = (currentSet && typeof currentSet.duration === 'number' && currentSet.duration > 0) ||
+                        (exercise && isTimeBased(exercise.targetReps));
+
+                    if (isTimedWork) {
+                        return prev - deltaSeconds;
+                    } else {
+                        return prev + deltaSeconds;
+                    }
+                });
+            }
+        }, 100);
 
         return () => clearInterval(interval);
     }, [isTimerRunning, activeExerciseId, currentSetIndex, guidedMode.active, guidedMode.exerciseId, guidedMode.phase, guidedMode.setIndex, activeSession?.exercises]);
@@ -400,7 +403,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
                     setIsTimerRunning(false);
                     setTimerSeconds(0);
-                    toast.success("¡Calentamiento terminado!");
+                    toast.success("¡Calentamiento terminado!", { duration: 3000 });
                 }
 
             } else {
@@ -446,9 +449,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     const completedSets = useMemo(() => {
         if (!activeSession) return 0;
-        return activeSession.exercises.reduce((acc, ex) =>
-            acc + ex.sets.filter(s => s.completed || s.skipped).length, 0
-        );
+        return activeSession.exercises.reduce((acc, ex) => {
+            if (ex.isSkipped) return acc + ex.sets.length;
+            return acc + ex.sets.filter(s => s.completed || s.skipped).length;
+        }, 0);
     }, [activeSession]);
 
     const progress = (completedSets / totalSets) * 100;
@@ -526,7 +530,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 {activeSession.exercises.filter(ex => ex.categoria === 'calentamiento').length > 0 && (
                     <>
                         <div style={styles.sectionHeader}>
-                            <span style={styles.sectionEmoji}>🔥</span>
+                            <span style={styles.sectionEmoji}>ðŸ”¥</span>
                             <div style={styles.sectionTextContainer}>
                                 <h3 style={styles.sectionTitle}>CALENTAMIENTO</h3>
                                 <p style={styles.sectionSubtitle}>Prepara tu cuerpo antes de empezar</p>
@@ -540,7 +544,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                 {/* Main Routine Section */}
                 <div style={styles.sectionHeader}>
-                    <span style={styles.sectionEmoji}>💪</span>
+                    <span style={styles.sectionEmoji}>ðŸ’ª</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
                         <p style={styles.sectionSubtitle}>Dale al botón Play para comenzar cada ejercicio</p>
@@ -592,13 +596,26 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 />
                                             </div>
                                             <div>
-                                                <label style={styles.inputLabel}>Repeticiones (o Tiempo)</label>
-                                                <input
-                                                    type="text"
-                                                    value={addConfig.repeticiones}
-                                                    onChange={(e) => setAddConfig({ ...addConfig, repeticiones: e.target.value })}
-                                                    style={styles.searchInput}
-                                                />
+                                                <label style={styles.inputLabel}>Repeticiones / Tiempo</label>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <input
+                                                        type="text"
+                                                        value={addConfig.repeticiones}
+                                                        onChange={(e) => setAddConfig({ ...addConfig, repeticiones: e.target.value })}
+                                                        style={{ ...styles.searchInput, flex: 1 }}
+                                                        placeholder="0"
+                                                    />
+                                                    <select
+                                                        value={addConfig.unit}
+                                                        onChange={(e) => setAddConfig({ ...addConfig, unit: e.target.value })}
+                                                        style={{ ...styles.searchInput, width: '90px', padding: '0 8px' }}
+                                                    >
+                                                        <option value="reps">Reps</option>
+                                                        <option value="s">Seg</option>
+                                                        <option value="m">Min</option>
+                                                        <option value="h">Horas</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                             <div>
                                                 <label style={styles.inputLabel}>Descanso (seg)</label>
@@ -616,7 +633,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         id: selectedExerciseForAdd.id,
                                                         nombre: selectedExerciseForAdd.nombre,
                                                         series: addConfig.series,
-                                                        repeticiones: addConfig.repeticiones,
+                                                        repeticiones: addConfig.unit !== 'reps' ? `${addConfig.repeticiones}${addConfig.unit}` : addConfig.repeticiones,
                                                         descanso: addConfig.descanso,
                                                         categoria: 'maquina'
                                                     });
@@ -663,7 +680,8 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         setAddConfig({
                                                             series: 3,
                                                             repeticiones: '10',
-                                                            descanso: 60
+                                                            descanso: 60,
+                                                            unit: 'reps'
                                                         });
                                                     }}
                                                 >
@@ -728,7 +746,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 setShowMoodCheckin(true);
                                             }}
                                         >
-                                            <div style={styles.optionIcon}>📋</div>
+                                            <div style={styles.optionIcon}>ðŸ“‹</div>
                                             <div style={styles.optionText}>
                                                 <h4>Rutina Completa</h4>
                                                 <p>Guardar progreso y finalizar</p>
@@ -740,7 +758,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             style={styles.optionBtn}
                                             onClick={() => setCompletionType('extra')}
                                         >
-                                            <div style={styles.optionIcon}>🏃‍♂️</div>
+                                            <div style={styles.optionIcon}>ðŸƒâ€â™‚ï¸</div>
                                             <div style={styles.optionText}>
                                                 <h4>Actividad Extra</h4>
                                                 <p>Agregar cardio, estiramiento, deporte...</p>
@@ -1087,7 +1105,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             await addExtraActivity(pendingCompletion.extraData);
                         }
 
-                        await finishSession(pendingCompletion.duration, moodData.energy);
+                        await finishSession(pendingCompletion.duration, {
+                            mood: moodData.mood,
+                            energy: moodData.energy,
+                            note: moodData.note
+                        });
                         onFinish();
                     }}
                     onCancel={() => setShowMoodCheckin(false)}
@@ -1175,7 +1197,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                         {sortedCategories.length > 0 ? (
                             sortedCategories.map(catKey => {
-                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: '💪', color: Colors.text };
+                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: 'ðŸ’ª', color: Colors.text };
                                 return (
                                     <div key={catKey} style={{ marginBottom: '20px' }}>
                                         <div style={{
@@ -1246,11 +1268,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const isDualSession = activeSession?.isDualSession;
         const partnerExercises = activeSession?.partnerExercises;
         const partnerEx = isDualSession && partnerExercises ? partnerExercises.find((pEx: ExerciseTracking) => pEx.id === ex.id) : null;
+        const isResting = guidedMode.active && guidedMode.exerciseId === ex.id && guidedMode.phase === 'rest';
 
         return (
             <Card key={ex.id} style={{
                 ...styles.exerciseCard,
-                borderColor: expandedExercises.includes(ex.id) ? `${Colors.primary}40` : Colors.border
+                borderColor: expandedExercises.includes(ex.id) ? `${Colors.primary}40` : Colors.border,
+                backgroundColor: ex.isSkipped ? `${Colors.error}10` : Colors.surface,
             }}>
                 <div
                     style={styles.exerciseHeader}
@@ -1261,8 +1285,8 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             ...styles.exerciseName,
                             color: ex.sets.every(s => s.completed || s.skipped) ? Colors.textTertiary : Colors.text
                         }}>
-                            {globalIdx + 1}. {ex.nombre}
-                            {ex.sets.every(s => s.completed || s.skipped) && ' ✓'}
+                            {isResting ? 'Descanso' : `${globalIdx + 1}. ${ex.nombre}`}
+                            {ex.sets.every(s => s.completed || s.skipped) && ' âœ“'}
                             {ex.isOptional && (
                                 <span style={{
                                     fontSize: '10px',
@@ -1327,7 +1351,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             />
                                             {videoUrl && (
                                                 <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={styles.playOverlay}>
-                                                    ▶
+                                                    â–¶
                                                 </a>
                                             )}
                                         </div>
@@ -1426,7 +1450,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
                                                         style={styles.newInput}
                                                         disabled={set.completed || set.skipped}
-                                                        onFocus={() => setActiveExerciseId(ex.id)}
+                                                        onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
                                                     />
 
                                                     <input
@@ -1436,18 +1460,51 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
                                                         style={styles.newInput}
                                                         disabled={set.completed || set.skipped}
-                                                        onFocus={() => setActiveExerciseId(ex.id)}
+                                                        onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
                                                     />
 
-                                                    <input
-                                                        type="number"
-                                                        placeholder="-"
-                                                        value={set.duration || ''}
-                                                        onChange={(e) => updateSet(ex.id, sIdx, { duration: parseInt(e.target.value) || 0 })}
-                                                        style={styles.newInput}
-                                                        disabled={set.completed || set.skipped}
-                                                        onFocus={() => setActiveExerciseId(ex.id)}
-                                                    />
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                        <input
+                                                            type="number"
+                                                            placeholder="-"
+                                                            value={(() => {
+                                                                const val = set.duration || 0;
+                                                                const unit = durationUnits[`${ex.id}-${sIdx}`] || 's';
+                                                                if (unit === 'm') return parseFloat((val / 60).toFixed(2));
+                                                                if (unit === 'h') return parseFloat((val / 3600).toFixed(2));
+                                                                return val;
+                                                            })() || ''}
+                                                            onChange={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                const unit = durationUnits[`${ex.id}-${sIdx}`] || 's';
+                                                                let multiplier = 1;
+                                                                if (unit === 'm') multiplier = 60;
+                                                                if (unit === 'h') multiplier = 3600;
+                                                                updateSet(ex.id, sIdx, { duration: Math.round(val * multiplier) });
+                                                            }}
+                                                            style={{ ...styles.newInput, padding: '8px 2px', minWidth: 0 }}
+                                                            disabled={set.completed || set.skipped}
+                                                            onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                        />
+                                                        <select
+                                                            value={durationUnits[`${ex.id}-${sIdx}`] || 's'}
+                                                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${ex.id}-${sIdx}`]: e.target.value as any })}
+                                                            style={{
+                                                                background: 'transparent',
+                                                                border: 'none',
+                                                                color: Colors.textSecondary,
+                                                                fontSize: '10px',
+                                                                padding: 0,
+                                                                cursor: 'pointer',
+                                                                width: '30px'
+                                                            }}
+                                                            disabled={set.completed || set.skipped}
+                                                        >
+                                                            <option value="s">s</option>
+                                                            <option value="m">m</option>
+                                                            <option value="h">h</option>
+                                                        </select>
+                                                    </div>
 
                                                     <input
                                                         type="number"
@@ -2391,3 +2448,4 @@ const styles: Record<string, React.CSSProperties> = {
         outline: 'none',
     }
 };
+

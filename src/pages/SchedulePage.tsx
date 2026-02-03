@@ -40,7 +40,7 @@ export const SchedulePage: React.FC = () => {
             </div>
 
             <p style={styles.description}>
-                Marca los d√≠as que tienes disponibles para entrenar. Esto afectar√° las sugerencias del Coach IA y lo que ver√°s en el constructor de rutinas.
+                Marca los dÌas que tienes disponibles para entrenar. Esto afectar· las sugerencias del Coach IA y lo que ver·s en el constructor de rutinas.
             </p>
 
             <div style={styles.daysGrid}>
@@ -74,7 +74,7 @@ export const SchedulePage: React.FC = () => {
 
             <div style={styles.summary}>
                 <p style={styles.summaryText}>
-                    Disponibilidad: <strong>{dias.filter(d => d.entrena).length} d√≠as</strong> por semana
+                    Disponibilidad: <strong>{dias.filter(d => d.entrena).length} dÌas</strong> por semana
                 </p>
             </div>
 
@@ -171,3 +171,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default SchedulePage;
+

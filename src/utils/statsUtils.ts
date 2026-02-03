@@ -23,10 +23,12 @@ export const calculateGlobalStats = (perfil: PerfilCompleto): GlobalStats => {
         ...history.map(h => ({ type: 'gym' as const, date: new Date(h.fecha), data: h })),
         ...extras.map(e => ({ type: 'extra' as const, date: new Date(e.fecha), data: e })),
         ...Object.keys(tracking).filter(dateStr => {
-            // Only add if not already covered by gym or extra
+            // Only add if not already covered by gym or extra, and if status is completed/true
             const hasGym = history.some(h => h.fecha.startsWith(dateStr));
             const hasExtra = extras.some(e => e.fecha.startsWith(dateStr));
-            return tracking[dateStr] && !hasGym && !hasExtra;
+            const status = tracking[dateStr];
+            const isCompleted = status === 'completed' || status === true;
+            return isCompleted && !hasGym && !hasExtra;
         }).map(dateStr => ({ type: 'manual' as const, date: new Date(dateStr + 'T12:00:00'), data: null }))
     ].sort((a, b) => b.date.getTime() - a.date.getTime());
 

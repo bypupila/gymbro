@@ -1,6 +1,6 @@
 // =====================================================
 // GymBro PWA - Routine Review Step
-// Visualizaci√≥n y edici√≥n de los resultados de la IA - Soporte para D√≠as
+// VisualizaciÛn y ediciÛn de los resultados de la IA - Soporte para DÌas
 // =====================================================
 
 import React, { useState } from 'react';
@@ -184,7 +184,7 @@ export const RoutineReviewStep: React.FC<RoutineReviewStepProps> = ({
             <div style={styles.header}>
                 <h2 style={styles.title}>Revisar Rutina</h2>
                 <p style={styles.subtitle}>
-                    Verifica que la IA haya extra√≠do todo correctamente por d√≠a.
+                    Verifica que la IA haya extraÌdo todo correctamente por dÌa.
                 </p>
             </div>
 
@@ -201,7 +201,7 @@ export const RoutineReviewStep: React.FC<RoutineReviewStepProps> = ({
                 </div>
 
                 <div style={styles.inputGroup}>
-                    <label style={styles.label}>Duraci√≥n de la Rutina (Semanas)</label>
+                    <label style={styles.label}>DuraciÛn de la Rutina (Semanas)</label>
                     <select
                         style={styles.input}
                         value={durationWeeks}
@@ -229,7 +229,7 @@ export const RoutineReviewStep: React.FC<RoutineReviewStepProps> = ({
                         <span style={styles.statVal}>{exercises.length}</span>
                     </div>
                     <div style={styles.statBox}>
-                        <span style={styles.statLabel}>D√≠as</span>
+                        <span style={styles.statLabel}>DÌas</span>
                         <span style={styles.statVal}>{Object.keys(groupedExercises).length}</span>
                     </div>
                 </div>
@@ -244,7 +244,7 @@ export const RoutineReviewStep: React.FC<RoutineReviewStepProps> = ({
                                     style={styles.addSmallBtnHeader}
                                     onClick={() => openSelector(dia === "No Asignado" ? null : dia)}
                                 >
-                                    <Plus size={14} /> A√±adir a este d√≠a
+                                    <Plus size={14} /> AÒadir a este dÌa
                                 </button>
                             </div>
 
@@ -323,9 +323,9 @@ export const RoutineReviewStep: React.FC<RoutineReviewStepProps> = ({
 
                 <div style={styles.globalAddSection}>
                     <button style={styles.addGlobalBtn} onClick={() => openSelector(null)}>
-                        <Plus size={20} /> A√±adir Ejercicio que falta
+                        <Plus size={20} /> AÒadir Ejercicio que falta
                     </button>
-                    <p style={styles.addGlobalHint}>El ejercicio se a√±adir√° a la lista y podr√°s asignarle su d√≠a y categor√≠a.</p>
+                    <p style={styles.addGlobalHint}>El ejercicio se aÒadir· a la lista y podr·s asignarle su dÌa y categorÌa.</p>
                 </div>
 
                 {exercises.length === 0 && (
@@ -490,7 +490,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
 
                     <div style={styles.editRow}>
                         <div style={{ ...styles.editCol, flex: 2 }}>
-                            <label style={styles.editLabel}>D√≠as (Multiselecci√≥n)</label>
+                            <label style={styles.editLabel}>DÌas (MultiselecciÛn)</label>
                             <div style={styles.dayChipsRow}>
                                 {availableDays.map(day => {
                                     const isSelected = localSelectedDays.includes(day);
@@ -531,7 +531,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
 
                     <div style={styles.editRow}>
                         <div style={styles.editCol}>
-                            <label style={styles.editLabel}>Categor√≠a</label>
+                            <label style={styles.editLabel}>CategorÌa</label>
                             <select
                                 style={styles.editInputSmall}
                                 value={tempExercise.categoria || 'maquina'}
@@ -635,7 +635,7 @@ const styles: Record<string, React.CSSProperties> = {
         flex: 1,
         overflowY: 'auto',
         paddingRight: '8px',
-        // Estilizaci√≥n de scrollbar
+        // EstilizaciÛn de scrollbar
         scrollbarWidth: 'thin',
         scrollbarColor: `${Colors.border} transparent`,
     },
@@ -1035,3 +1035,4 @@ const styles: Record<string, React.CSSProperties> = {
         textTransform: 'uppercase',
     }
 };
+

@@ -16,7 +16,7 @@ const firebaseConfig = {
 };
 
 if (!firebaseConfig.apiKey) {
-    console.error('❌ FIREBASE ERROR: Falta VITE_FIREBASE_API_KEY. Asegúrate de configurar las variables de entorno en Vercel.');
+    console.error('❌ FIREBASE ERROR: Falta VITE_FIREBASE_API_KEY. Aseg�rate de configurar las variables de entorno en Vercel.');
 }
 
 export const firebaseApp = initializeApp(firebaseConfig);
@@ -27,3 +27,4 @@ export const db = initializeFirestore(firebaseApp, {
     }),
 });
 export const auth = getAuth(firebaseApp);
+

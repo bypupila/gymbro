@@ -30,14 +30,14 @@ class ErrorBoundary extends Component<Props, State> {
         if (this.state.hasError) {
             return (
                 <div style={{ padding: '20px', color: 'white', backgroundColor: '#333', height: '100vh' }}>
-                    <h1>Algo saliÃ³ mal.</h1>
+                    <h1>Algo salió mal.</h1>
                     <details style={{ whiteSpace: 'pre-wrap', marginTop: '10px' }}>
                         {this.state.error && this.state.error.toString()}
                         <br />
                         {this.state.errorInfo && this.state.errorInfo.componentStack}
                     </details>
                     <button onClick={() => window.location.reload()} style={{ marginTop: '20px', padding: '10px' }}>
-                        Recargar PÃ¡gina
+                        Recargar Página
                     </button>
                 </div>
             );
@@ -48,3 +48,4 @@ class ErrorBoundary extends Component<Props, State> {
 }
 
 export default ErrorBoundary;
+

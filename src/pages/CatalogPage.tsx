@@ -68,7 +68,7 @@ export const CatalogPage: React.FC = () => {
     const handleSyncCatalog = async () => {
         toast((t) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600 }}>¬øSubir el cat√°logo local a la base de datos? Esto sobreescribir√° datos existentes.</span>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>øSubir el cat·logo local a la base de datos? Esto sobreescribir· datos existentes.</span>
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                     <button
                         onClick={() => toast.dismiss(t.id)}
@@ -82,13 +82,13 @@ export const CatalogPage: React.FC = () => {
                             setIsSyncing(true);
                             try {
                                 await firebaseService.initializeCatalog(EJERCICIOS_DATABASE);
-                                toast.success('Cat√°logo sincronizado exitosamente.');
+                                toast.success('Cat·logo sincronizado exitosamente.');
                                 setUseFirebaseData(true);
                                 const cloudExercises = await firebaseService.getAllExercises();
                                 setExercises(cloudExercises);
                             } catch (error) {
                                 console.error(error);
-                                toast.error('Error al sincronizar cat√°logo.');
+                                toast.error('Error al sincronizar cat·logo.');
                             } finally {
                                 setIsSyncing(false);
                             }
@@ -142,7 +142,7 @@ export const CatalogPage: React.FC = () => {
             {/* Header */}
             <div style={styles.header}>
                 <div>
-                    <h1 style={styles.title}>Cat√°logo de Ejercicios</h1>
+                    <h1 style={styles.title}>Cat·logo de Ejercicios</h1>
                     <p style={styles.subtitle}>
                         {useFirebaseData ? '‚òÅÔ∏è Base de Datos en la Nube' : 'üíª Base de Datos Local'} ‚Ä¢ {exercises.length} ejercicios
                     </p>
@@ -319,7 +319,7 @@ export const CatalogPage: React.FC = () => {
                             <label style={styles.label}>Imagen URL (Opcional)</label>
                             <input
                                 style={styles.input}
-                                placeholder="Si dejas vac√≠o, se usa la por defecto"
+                                placeholder="Si dejas vacÌo, se usa la por defecto"
                                 value={editingExercise.imagen || ''}
                                 onChange={e => setEditingExercise({ ...editingExercise, imagen: e.target.value })}
                             />
@@ -609,3 +609,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default CatalogPage;
+

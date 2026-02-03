@@ -91,19 +91,21 @@ export const ProgressPage: React.FC = () => {
     }, [history]);
 
     const moodStats = useMemo(() => {
-        // Clean and filter sessions with energy data (moodPre/moodPost)
-        const sessionsWithMood = history.filter(h => h.moodPre !== undefined && h.moodPost !== undefined);
-        if (sessionsWithMood.length === 0) return null;
+        // Prefer energy fields; fallback to legacy mood fields if energy isn't present
+        const sessionsWithEnergy = history.filter(h =>
+            (h.energyPre ?? h.moodPre) !== undefined && (h.energyPost ?? h.moodPost) !== undefined
+        );
+        if (sessionsWithEnergy.length === 0) return null;
 
-        const avgPre = sessionsWithMood.reduce((acc, h) => acc + (h.moodPre || 0), 0) / sessionsWithMood.length;
-        const avgPost = sessionsWithMood.reduce((acc, h) => acc + (h.moodPost || 0), 0) / sessionsWithMood.length;
+        const avgPre = sessionsWithEnergy.reduce((acc, h) => acc + (h.energyPre ?? h.moodPre ?? 0), 0) / sessionsWithEnergy.length;
+        const avgPost = sessionsWithEnergy.reduce((acc, h) => acc + (h.energyPost ?? h.moodPost ?? 0), 0) / sessionsWithEnergy.length;
         const improvement = avgPost - avgPre;
 
         return {
             preEnergy: avgPre.toFixed(1),
             postEnergy: avgPost.toFixed(1),
             improvement: improvement.toFixed(1),
-            totalsessions: sessionsWithMood.length
+            totalsessions: sessionsWithEnergy.length
         };
     }, [history]);
 
@@ -122,8 +124,8 @@ export const ProgressPage: React.FC = () => {
     const detailedStats = [
         { icon: Clock, label: 'Minutos Totales', value: totalMinutes, unit: 'min', color: Colors.accent },
         { icon: Weight, label: 'Volumen Gym', value: Math.round(gymStats.totalVolume / 1000), unit: 'ton', color: Colors.primary },
-        { icon: BarChart3, label: 'Promedio SesiÃ³n', value: gymStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
-        { icon: Zap, label: 'CalorÃ­as (Est.)', value: totalCalories, unit: 'kcal', color: Colors.warning },
+        { icon: BarChart3, label: 'Promedio Sesión', value: gymStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
+        { icon: Zap, label: 'Calorías (Est.)', value: totalCalories, unit: 'kcal', color: Colors.warning },
     ];
 
     const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -166,7 +168,7 @@ export const ProgressPage: React.FC = () => {
                     </div>
                 </div>
                 <button
-                    onClick={() => toast('PrÃ³ximamente: AnÃ¡lisis visual con IA', { icon: 'ðŸ¤–' })}
+                    onClick={() => toast('Próximamente: Análisis visual con IA', { icon: 'ðŸ¤–' })}
                     style={styles.cameraBtn}
                 >
                     <Camera size={24} color={Colors.primary} />
@@ -185,7 +187,7 @@ export const ProgressPage: React.FC = () => {
             </div>
 
             {/* Detailed Training Stats */}
-            <h3 style={styles.sectionTitle}>ðŸ“Š EstadÃ­sticas Globales</h3>
+            <h3 style={styles.sectionTitle}>ðŸ“Š Estadísticas Globales</h3>
             <div style={styles.detailedStatsGrid}>
                 {detailedStats.map((stat, i) => (
                     <Card key={i} style={styles.detailedStatCard}>
@@ -257,7 +259,7 @@ export const ProgressPage: React.FC = () => {
                                     }}>
                                         <div style={{ textAlign: 'center' }}>
                                             <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.duracionMinutos || 0}<small>m</small></div>
-                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACIÃ“N</div>
+                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACIÓN</div>
                                         </div>
                                         <div style={{ textAlign: 'center', borderLeft: `1px solid ${Colors.border}`, borderRight: `1px solid ${Colors.border}` }}>
                                             <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.calorias || 0}</div>
@@ -281,7 +283,7 @@ export const ProgressPage: React.FC = () => {
                                             onClick={() => {
                                                 toast((t) => (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>Â¿Eliminar esta actividad?</span>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta actividad?</span>
                                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                             <button
                                                                 onClick={() => toast.dismiss(t.id)}
@@ -354,12 +356,12 @@ export const ProgressPage: React.FC = () => {
             {/* Energy Insights */}
             {moodStats && (
                 <>
-                    <h3 style={styles.sectionTitle}>ðŸ§  Bienestar y EnergÃ­a</h3>
+                    <h3 style={styles.sectionTitle}>ðŸ§  Bienestar y Energía</h3>
                     <Card style={{ padding: '24px', marginBottom: '32px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
                             <div style={{ width: '100%' }}>
                                 <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '16px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                                    EnergÃ­a Promedio (1-5)
+                                    Energía Promedio (1-5)
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px' }}>
                                     <div style={{ textAlign: 'center' }}>
@@ -397,8 +399,8 @@ export const ProgressPage: React.FC = () => {
                                 <Zap size={18} color={Colors.warning} fill={Colors.warning} />
                                 <span>
                                     {parseFloat(moodStats.improvement) > 0
-                                        ? `Â¡Genial! Tu energÃ­a sube un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% tras entrenar.`
-                                        : `Â¡Buen trabajo! Mantienes tu energÃ­a a tope durante el entrenamiento.`}
+                                        ? `¡Genial! Tu energía sube un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% tras entrenar.`
+                                        : `¡Buen trabajo! Mantienes tu energía a tope durante el entrenamiento.`}
                                 </span>
                             </div>
                         </div>
@@ -441,7 +443,7 @@ export const ProgressPage: React.FC = () => {
                 <Card style={styles.mostTrainedCard}>
                     <Trophy size={24} color={Colors.warning} />
                     <div style={styles.mostTrainedInfo}>
-                        <span style={styles.mostTrainedLabel}>Ejercicio MÃ¡s Realizado</span>
+                        <span style={styles.mostTrainedLabel}>Ejercicio Más Realizado</span>
                         <span style={styles.mostTrainedValue}>{gymStats.mostTrained}</span>
                     </div>
                 </Card>
@@ -500,7 +502,7 @@ export const ProgressPage: React.FC = () => {
             {/* Yearly Stat */}
             <div style={styles.yearlyBox}>
                 <div style={styles.yearlyContent}>
-                    <h4 style={styles.yearlyTitle}>Resumen del AÃ±o {currentYear}</h4>
+                    <h4 style={styles.yearlyTitle}>Resumen del Año {currentYear}</h4>
                     <p style={styles.yearlySub}>Has completado un total de:</p>
                     <div style={styles.yearlyMain}>
                         <span style={styles.yearlyValue}>{yearlyTotal}</span>
@@ -530,7 +532,7 @@ export const ProgressPage: React.FC = () => {
                                     <div>
                                         <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
                                             {item.type === 'gym' ? (item.data as EntrenamientoRealizado).nombre :
-                                                item.type === 'extra' ? (item.data as ExtraActivity).analisisIA?.tipoDeporte : 'DÃ­a Registrado'}
+                                                item.type === 'extra' ? (item.data as ExtraActivity).analisisIA?.tipoDeporte : 'Día Registrado'}
                                         </div>
                                         <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
                                             {item.date.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
@@ -552,7 +554,7 @@ export const ProgressPage: React.FC = () => {
                 ) : (
                     <div style={styles.emptyState}>
                         <Activity size={40} color={Colors.textTertiary} />
-                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>AÃºn no hay actividad registrada</p>
+                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aún no hay actividad registrada</p>
                     </div>
                 )}
             </div>
@@ -561,9 +563,9 @@ export const ProgressPage: React.FC = () => {
             <h3 style={styles.sectionTitle}>Fotos de Progreso</h3>
             <div style={styles.photosEmpty}>
                 <Camera size={48} color={Colors.textTertiary} />
-                <p style={styles.emptyText}>Sin fotos aÃºn</p>
+                <p style={styles.emptyText}>Sin fotos aún</p>
                 <p style={styles.emptySubtext}>
-                    Toma tu primera foto para trackear tu transformaciÃ³n
+                    Toma tu primera foto para trackear tu transformación
                 </p>
             </div>
         </div>
@@ -893,3 +895,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ProgressPage;
+

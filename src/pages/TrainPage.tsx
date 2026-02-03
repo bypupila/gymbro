@@ -37,7 +37,7 @@ export const TrainPage: React.FC = () => {
 
     const handleMoodComplete = (moodData: MoodLog) => {
         if (!perfil.rutina) return;
-        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre, moodData.mood);
+        startSession(entrenamientoHoy.dia || 'Hoy', hoyEjercicios, perfil.rutina.nombre, moodData.mood, moodData.energy, moodData.note);
         setShowMoodCheckin(false);
     };
 
@@ -51,7 +51,7 @@ export const TrainPage: React.FC = () => {
     }
 
     const quickActions = [
-        { icon: Zap, label: 'Entrenamiento RÃ¡pido', desc: '15 min HIIT', color: Colors.warning },
+        { icon: Zap, label: 'Entrenamiento Rápido', desc: '15 min HIIT', color: Colors.warning },
         { icon: Dumbbell, label: 'Rutina Completa', desc: '45-60 min', color: Colors.primary },
     ];
 
@@ -68,7 +68,7 @@ export const TrainPage: React.FC = () => {
             <p style={styles.subtitle}>
                 {entrenamientoHoy.entrena
                     ? `Hoy toca ${entrenamientoHoy.grupoMuscular}`
-                    : 'DÃ­a de descanso programado'}
+                    : 'Día de descanso programado'}
             </p>
 
             {/* Main CTA */}
@@ -89,7 +89,7 @@ export const TrainPage: React.FC = () => {
                     <p style={styles.mainDesc}>
                         {perfil.rutina
                             ? `${perfil.rutina.ejercicios.length} ejercicios`
-                            : (entrenamientoHoy.entrena ? 'Crear Rutina Primero' : 'RecuperaciÃ³n')}
+                            : (entrenamientoHoy.entrena ? 'Crear Rutina Primero' : 'Recuperación')}
                     </p>
                 </div>
                 <div style={styles.playBtn}>
@@ -98,12 +98,12 @@ export const TrainPage: React.FC = () => {
             </div>
 
             {/* Quick Actions */}
-            <h3 style={styles.sectionTitle}>Acciones RÃ¡pidas</h3>
+            <h3 style={styles.sectionTitle}>Acciones Rápidas</h3>
             <div style={styles.actionsGrid}>
                 {quickActions.map((action, i) => (
                     <Card
                         key={i}
-                        onClick={() => toast('PrÃ³ximamente', { icon: 'â³' })}
+                        onClick={() => toast('Próximamente', { icon: 'â³' })}
                         style={styles.actionCard}
                     >
                         <div style={{ ...styles.actionIcon, background: `${action.color}20` }}>
@@ -142,8 +142,8 @@ export const TrainPage: React.FC = () => {
             ) : (
                 <div style={styles.emptyState}>
                     <Dumbbell size={48} color={Colors.textTertiary} />
-                    <p style={styles.emptyText}>AÃºn no tienes entrenamientos</p>
-                    <p style={styles.emptySubtext}>Completa tu primera sesiÃ³n para ver tu historial</p>
+                    <p style={styles.emptyText}>Aún no tienes entrenamientos</p>
+                    <p style={styles.emptySubtext}>Completa tu primera sesión para ver tu historial</p>
                 </div>
             )}
         </div>
@@ -314,3 +314,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default TrainPage;
+

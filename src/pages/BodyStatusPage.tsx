@@ -52,9 +52,9 @@ export const BodyStatusPage: React.FC = () => {
                             <ShieldCheck size={24} color={Colors.primary} />
                         </div>
                         <div style={styles.aiInfo}>
-                            <h3 style={styles.aiTitle}>Adaptaci√≥n IA Detectada</h3>
+                            <h3 style={styles.aiTitle}>AdaptaciÛn IA Detectada</h3>
                             <p style={styles.aiText}>
-                                He reemplazado el <span style={{ color: Colors.primary, fontWeight: 700 }}>Peso Muerto</span> por alternativas m√°s seguras y a√±ad√≠ 5 min de movilidad lumbar.
+                                He reemplazado el <span style={{ color: Colors.primary, fontWeight: 700 }}>Peso Muerto</span> por alternativas m·s seguras y aÒadÌ 5 min de movilidad lumbar.
                             </p>
                         </div>
                     </div>
@@ -68,7 +68,7 @@ export const BodyStatusPage: React.FC = () => {
             <div style={styles.legend}>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.legendDot, background: Colors.error }} />
-                    <span style={styles.legendText}>Tensi√≥n Alta</span>
+                    <span style={styles.legendText}>TensiÛn Alta</span>
                 </div>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.legendDot, background: Colors.warning }} />
@@ -76,7 +76,7 @@ export const BodyStatusPage: React.FC = () => {
                 </div>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.legendDot, background: Colors.primary }} />
-                    <span style={styles.legendText}>√ìptimo</span>
+                    <span style={styles.legendText}>”ptimo</span>
                 </div>
             </div>
         </div>
@@ -269,3 +269,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default BodyStatusPage;
+

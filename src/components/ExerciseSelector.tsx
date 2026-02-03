@@ -1,6 +1,6 @@
 // =====================================================
 // GymBro PWA - Exercise Selector Component
-// Selector de ejercicios con bÃºsqueda y filtros por grupo muscular
+// Selector de ejercicios con búsqueda y filtros por grupo muscular
 // =====================================================
 
 import React, { useState, useMemo } from 'react';
@@ -370,3 +370,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ExerciseSelector;
+

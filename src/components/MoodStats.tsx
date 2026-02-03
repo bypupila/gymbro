@@ -8,16 +8,16 @@ export const MoodStats: React.FC = () => {
     const { perfil } = useUserStore();
     const history = perfil.historial || [];
 
-    // Filter sessions with mood data
+    // Filter sessions with energy data (fallback to legacy mood fields)
     const sessionsWithMood = history
-        .filter(h => h.moodPre !== undefined && h.moodPost !== undefined)
+        .filter(h => (h.energyPre ?? h.moodPre) !== undefined && (h.energyPost ?? h.moodPost) !== undefined)
         .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()) // Oldest to newest
         .slice(-7); // Last 7
 
     if (sessionsWithMood.length === 0) return null;
 
-    const avgPre = sessionsWithMood.reduce((acc, curr) => acc + (curr.moodPre || 0), 0) / sessionsWithMood.length;
-    const avgPost = sessionsWithMood.reduce((acc, curr) => acc + (curr.moodPost || 0), 0) / sessionsWithMood.length;
+    const avgPre = sessionsWithMood.reduce((acc, curr) => acc + (curr.energyPre ?? curr.moodPre ?? 0), 0) / sessionsWithMood.length;
+    const avgPost = sessionsWithMood.reduce((acc, curr) => acc + (curr.energyPost ?? curr.moodPost ?? 0), 0) / sessionsWithMood.length;
     const diff = avgPost - avgPre;
 
     return (
@@ -25,7 +25,7 @@ export const MoodStats: React.FC = () => {
             <div style={styles.header}>
                 <div>
                     <h3 style={styles.title}>Impacto del Entreno</h3>
-                    <p style={styles.subtitle}>Tu energÃ­a antes vs. despuÃ©s</p>
+                    <p style={styles.subtitle}>Tu energía antes vs. después</p>
                 </div>
                 <div style={{
                     ...styles.badge,
@@ -63,13 +63,13 @@ export const MoodStats: React.FC = () => {
                             <div style={styles.barPair}>
                                 <div style={{
                                     ...styles.bar,
-                                    height: `${(session.moodPre! / 5) * 100}%`,
+                                    height: `${(((session.energyPre ?? session.moodPre) || 0) / 5) * 100}%`,
                                     background: Colors.textSecondary,
                                     opacity: 0.5
                                 }} />
                                 <div style={{
                                     ...styles.bar,
-                                    height: `${(session.moodPost! / 5) * 100}%`,
+                                    height: `${(((session.energyPost ?? session.moodPost) || 0) / 5) * 100}%`,
                                     background: Colors.primary
                                 }} />
                             </div>
@@ -194,3 +194,4 @@ const styles: Record<string, React.CSSProperties> = {
         textTransform: 'uppercase',
     },
 };
+

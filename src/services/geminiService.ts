@@ -26,10 +26,10 @@ interface GeminiClarificationRaw {
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 const IS_DEV = import.meta.env.DEV;
-// Evitar exponer detalles sensibles en consola (especialmente en producciÃ³n).
+// Evitar exponer detalles sensibles en consola (especialmente en producción).
 if (IS_DEV) {
-    console.debug("Gemini: API key cargada:", API_KEY.length >= 10 ? "sÃ­" : "no");
-    if (API_KEY.length < 10) console.warn("Gemini: falta `VITE_GEMINI_API_KEY` o es invÃ¡lida.");
+    console.debug("Gemini: API key cargada:", API_KEY.length >= 10 ? "sí" : "no");
+    if (API_KEY.length < 10) console.warn("Gemini: falta `VITE_GEMINI_API_KEY` o es inválida.");
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
 
@@ -48,38 +48,38 @@ export const analyzeRoutineImages = async (
     userDescription?: string
 ): Promise<AnalysisResult> => {
     try {
-        const prompt = `ActÃºa como un experto en digitalizaciÃ³n de datos y entrenador personal.
+        const prompt = `Actúa como un experto en digitalización de datos y entrenador personal.
 
 Tu tarea es extraer EXCLUSIVAMENTE la rutina de ejercicios asignada al usuario a partir de la imagen proporcionada.
 
-INSTRUCCIÃ“N TÃ‰CNICA (PRECISIÃ“N ROBÃ“TICA):
-- ExtracciÃ³n de datos 100% precisa.
+INSTRUCCIÓN TÉCNICA (PRECISIÓN ROBÓTICA):
+- Extracción de datos 100% precisa.
 - NO seas creativo.
-- NO inventes ejercicios que no estÃ¡n en la foto.
-- CÃ­Ã±ete estrictamente a lo que ves.
+- NO inventes ejercicios que no están en la foto.
+- Cíñete estrictamente a lo que ves.
 
 CONTEXTO ADICIONAL DEL USUARIO (MUY IMPORTANTE):
 "${userDescription || 'No proporcionado'}"
 
-INSTRUCCIONES DE EXTRACCIÃ“N CRÃTICAS:
-1. SOLO extrae ejercicios marcados (con nÃºmeros a mano, checks o subrayados).
+INSTRUCCIONES DE EXTRACCIÓN CRÍTICAS:
+1. SOLO extrae ejercicios marcados (con números a mano, checks o subrayados).
 2. REPETICIONES COMPLEJAS: 
    - El campo "repeticiones" es un STRING. Capta la realidad:
    - Si es un rango, mantenlo: "12-15".
    - Si es por tiempo, mantenlo: "45 seg" o "30s".
    - Si es progesiva/piramidal (diferentes reps por serie), capta la secuencia: "15-12-10-8" o "12/10/8".
-3. SERIES: Extrae el nÃºmero total de series indicado.
-4. DÃAS: Identifica especÃ­ficamente los dÃ­as de la semana (Lunes, Martes, etc.). Si NO estÃ¡n escritos, GENERA una pregunta en "unclear_items" preguntando a quÃ© dÃ­as de la semana corresponde cada bloque o entrenamiento. No asumas "DÃ­a 1" por defecto si hay ambigÃ¼edad.
-5. INSPECCIÃ“N ESTRUCTURAL Y CONSULTA: Antes de extraer la lista completa, detecta "claves de autor":
-   - Â¿Hay sÃ­mbolos (*, â—, âˆš) que diferencien bloques?
-   - Â¿Hay cÃ³digos de colores o subrayados que separen por dÃ­as o categorÃ­as?
-   - Â¿Hay notas al margen sobre el orden de los dÃ­as?
-   Si no estÃ¡s 100% seguro de cÃ³mo funcionan estas claves, DETÃ‰N la asunciÃ³n y genera preguntas especÃ­ficas en "unclear_items".
+3. SERIES: Extrae el número total de series indicado.
+4. DÍAS: Identifica específicamente los días de la semana (Lunes, Martes, etc.). Si NO están escritos, GENERA una pregunta en "unclear_items" preguntando a qué días de la semana corresponde cada bloque o entrenamiento. No asumas "Día 1" por defecto si hay ambigüedad.
+5. INSPECCIÓN ESTRUCTURAL Y CONSULTA: Antes de extraer la lista completa, detecta "claves de autor":
+   - ¿Hay símbolos (*, â—, âˆš) que diferencien bloques?
+   - ¿Hay códigos de colores o subrayados que separen por días o categorías?
+   - ¿Hay notas al margen sobre el orden de los días?
+   Si no estás 100% seguro de cómo funcionan estas claves, DETÉN la asunción y genera preguntas específicas en "unclear_items".
    
-INSTRUCCIÃ“N DE CLARIFICACIÃ“N:
-- Si el orden de los dÃ­as es ambiguo: PREGUNTA.
+INSTRUCCIÓN DE CLARIFICACIÓN:
+- Si el orden de los días es ambiguo: PREGUNTA.
 - Si la diferencia entre calentamiento y rutina principal no es obvia: PREGUNTA.
-- Si hay texto manuscrito que parece ser una instrucciÃ³n de uso de la tabla: PREGUNTA.
+- Si hay texto manuscrito que parece ser una instrucción de uso de la tabla: PREGUNTA.
 
 ESTRUCTURA DE RESPUESTA (JSON PURO):
 {
@@ -90,7 +90,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
             "id": "uuid",
             "dia": "Lunes, Martes, etc.",
             "nombre_original": "Texto imagen",
-            "nombre_estandarizado": "Nombre tÃ©cnico",
+            "nombre_estandarizado": "Nombre técnico",
             "series": 3,
             "repeticiones": "12-15",
             "observaciones": "notas extra",
@@ -101,7 +101,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
     "unclear_items": [
         {
             "id": "q_id",
-            "question": "Â¿QuÃ© significan los puntos rojos junto a estos ejercicios?",
+            "question": "¿Qué significan los puntos rojos junto a estos ejercicios?",
             "detected_value": "Punto rojo",
             "options": ["Calentamiento", "Serie pesada", "Biset"],
             "exercise_index": 0,
@@ -150,7 +150,7 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
                 repeticiones: String(ex.repeticiones || "10-12"),
                 descanso: 60,
                 categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',
-                dia: ex.dia || "DÃ­a 1",
+                dia: ex.dia || "Día 1",
                 grupoMuscular: ex.grupo_muscular,
                 nombreOriginal: ex.nombre_original,
                 observaciones: ex.observaciones,
@@ -189,14 +189,14 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
                         repeticiones: String(ex.repeticiones || "10-12"),
                         descanso: 60,
                         categoria: 'maquina' as const,
-                        dia: ex.dia || "DÃ­a 1",
+                        dia: ex.dia || "Día 1",
                     })),
                     unclearItems: [],
                     confidence: 'medium',
                     routineName: parsed.routine_name
                 };
             }
-            throw new Error("No pudimos formatear los datos. Intenta con una foto mÃ¡s nÃ­tida.");
+            throw new Error("No pudimos formatear los datos. Intenta con una foto más nítida.");
         }
 
         throw new Error("No pudimos extraer datos de la imagen.");
@@ -215,31 +215,31 @@ export const generateRoutineFromProfile = async (
         const isCouple = !!member2;
 
         const prompt = `
-            ActÃºa como un entrenador personal de Ã©lite.
+            Actúa como un entrenador personal de élite.
             
             OBJETIVO:
             Crea una rutina personalizada ${isCouple ? 'para una PAREJA' : 'para una persona'}.
             
-            INSTRUCCIÃ“N TÃ‰CNICA (PRECISIÃ“N):
-            - GeneraciÃ³n de datos tÃ©cnica y funcional.
+            INSTRUCCIÓN TÉCNICA (PRECISIÓN):
+            - Generación de datos técnica y funcional.
             - Evita descripciones creativas innecesarias.
             - Respeta estrictamente los perfiles proporcionados.
             
-            DINÃMICA DE REPETICIONES (IMPORTANTE):
+            DINÁMICA DE REPETICIONES (IMPORTANTE):
             Usa variedad en el campo "repeticiones" (String):
             - Rangos para hipertrofia: "10-12" o "12-15".
-            - IsomÃ©tricos/Resistencia: "30-45 seg".
+            - Isométricos/Resistencia: "30-45 seg".
             - Progresivas/Piramidales: "15-12-10" (indicando que cada serie baja reps y sube peso).
             
-            PERFIL MIEMBRO 1 (${member1.nombre}): ${member1.nivel}, ${member1.objetivo}, ${member1.peso}kg.
-            ${isCouple ? `PERFIL MIEMBRO 2 (${member2?.nombre}): ${member2?.nivel}, ${member2?.objetivo}, ${member2?.peso}kg.` : ''}
+            PERFIL MIEMBRO 1 (${member1.nombre}): ${member1.nivel}, ${member1.objetivo}, ${member1.peso}kg. Lesiones: ${member1.lesiones || 'Ninguna'}.
+            ${isCouple ? `PERFIL MIEMBRO 2 (${member2?.nombre}): ${member2?.nivel}, ${member2?.objetivo}, ${member2?.peso}kg. Lesiones: ${member2?.lesiones || 'Ninguna'}.` : ''}
 
             REGLAS:
-            1. HORARIO: Usa ESTRICTAMENTE estos dÃ­as y grupos: ${JSON.stringify(horario?.dias?.filter((d: DiaEntrenamiento) => d.entrena).map((d: DiaEntrenamiento) => `${d.dia}: ${d.grupoMuscular}`))}.
-            2. CATEGORÃAS: Cada dÃ­a DEBE empezar con 2-3 ejercicios de "calentamiento" (activaciÃ³n especÃ­fica, movilidad) y luego 5-7 ejercicios de "maquina" (rutina principal).
-            3. ORDEN LÃ“GICO: Dentro de la rutina principal, coloca primero los ejercicios multiarticulares pesados y al final los de aislamiento. Controla el volumen para evitar sobrecarga.
-            4. Si es pareja, ejercicios compartidos ("ambos") + 2 especÃ­ficos para cada uno ("hombre"/"mujer") intercalados lÃ³gicamente.
-            5. Incluye progresiones en ejercicios bÃ¡sicos (ej: Sentadillas: "12-10-8").
+            1. HORARIO: Usa ESTRICTAMENTE estos días y grupos: ${JSON.stringify(horario?.dias?.filter((d: DiaEntrenamiento) => d.entrena).map((d: DiaEntrenamiento) => `${d.dia}: ${d.grupoMuscular}`))}.
+            2. CATEGORÍAS: Cada día DEBE empezar con 2-3 ejercicios de "calentamiento" (activación específica, movilidad) y luego 5-7 ejercicios de "maquina" (rutina principal).
+            3. ORDEN LÓGICO: Dentro de la rutina principal, coloca primero los ejercicios multiarticulares pesados y al final los de aislamiento. Controla el volumen para evitar sobrecarga.
+            4. Si es pareja, ejercicios compartidos ("ambos") + 2 específicos para cada uno ("hombre"/"mujer") intercalados lógicamente.
+            5. Incluye progresiones en ejercicios básicos (ej: Sentadillas: "12-10-8").
 
             ESTRUCTURA (JSON):
             {
@@ -247,7 +247,7 @@ export const generateRoutineFromProfile = async (
                 "exercises": [
                     {
                         "id": "uuid",
-                        "dia": "Lunes, Martes, etc. (segÃºn horario)",
+                        "dia": "Lunes, Martes, etc. (según horario)",
                         "nombre": "Ejercicio",
                         "series": 4, 
                         "repeticiones": "12-10-8 o 45s o 10-12",
@@ -316,9 +316,9 @@ export const reorganizeRoutine = async (
     userDescription?: string
 ): Promise<AnalysisResult> => {
     try {
-        const prompt = `ActÃºa como un experto entrenador personal.
+        const prompt = `Actúa como un experto entrenador personal.
         
-        Tu tarea es REORGANIZAR la siguiente lista de ejercicios en una rutina semanal lÃ³gica.
+        Tu tarea es REORGANIZAR la siguiente lista de ejercicios en una rutina semanal lógica.
         
         ENTRADA:
         ENTRADA:
@@ -332,13 +332,13 @@ export const reorganizeRoutine = async (
         })))}
         
         CONTEXTO ADICIONAL:
-        "${userDescription || 'Divide los ejercicios en dÃ­as lÃ³gicos y separa el calentamiento de la rutina principal.'}"
+        "${userDescription || 'Divide los ejercicios en días lógicos y separa el calentamiento de la rutina principal.'}"
         
         REGLAS:
-        1. Identifica quÃ© ejercicios son de CALENTAMIENTO y mÃ¡rcalos como "categoria": "calentamiento".
-        2. Divide los ejercicios en dÃ­as (DÃ­a 1, DÃ­a 2, etc. o nombres de mÃºsculos).
-        2. Divide los ejercicios en dÃ­as (DÃ­a 1, DÃ­a 2, etc. o nombres de mÃºsculos) usando "dia_actual" como referencia si tiene sentido.
-        3. MantÃ©n los valores de series, repeticiones y descanso originales si son vÃ¡lidos.
+        1. Identifica qué ejercicios son de CALENTAMIENTO y márcalos como "categoria": "calentamiento".
+        2. Divide los ejercicios en días (Día 1, Día 2, etc. o nombres de músculos).
+        2. Divide los ejercicios en días (Día 1, Día 2, etc. o nombres de músculos) usando "dia_actual" como referencia si tiene sentido.
+        3. Mantén los valores de series, repeticiones y descanso originales si son válidos.
         
         ESTRUCTURA DE RESPUESTA (JSON):
         {
@@ -346,7 +346,7 @@ export const reorganizeRoutine = async (
             "exercises": [
                 {
                     "nombre": "Nombre",
-                    "dia": "DÃ­a 1",
+                    "dia": "Día 1",
                     "categoria": "calentamiento o maquina",
                     "series": 3,
                     "repeticiones": "12",
@@ -414,11 +414,11 @@ export const coachChat = async (
             history: [
                 {
                     role: "user",
-                    parts: [{ text: `Eres el Coach de Gymbro. Perfil del usuario: ${userProfile.nombre}, ${userProfile.nivel}, objetivo: ${userProfile.objetivo}, peso: ${userProfile.peso}kg. Responde de forma motivadora y tÃ©cnica.` }],
+                    parts: [{ text: `Eres el Coach de Gymbro. Perfil del usuario: ${userProfile.nombre}, ${userProfile.nivel}, objetivo: ${userProfile.objetivo}, peso: ${userProfile.peso}kg, lesiones: ${userProfile.lesiones || 'Ninguna'}. Responde de forma motivadora y técnica.` }],
                 },
                 {
                     role: "model",
-                    parts: [{ text: `Â¡Entendido! Soy el Coach de ${userProfile.nombre}. Estoy listo para ayudarle a alcanzar su objetivo de ${userProfile.objetivo} con consejos tÃ©cnicos y motivaciÃ³n. Â¿En quÃ© puedo ayudarte hoy?` }],
+                    parts: [{ text: `¡Entendido! Soy el Coach de ${userProfile.nombre}. Estoy listo para ayudarle a alcanzar su objetivo de ${userProfile.objetivo} con consejos técnicos y motivación. ¿En qué puedo ayudarte hoy?` }],
                 },
                 ...validHistory
             ],
@@ -429,6 +429,9 @@ export const coachChat = async (
         return response.text();
     } catch (error) {
         console.error("Gemini Chat Error:", error);
-        return "Lo siento, tuve un problema al procesar tu consulta. IntÃ©ntalo de nuevo.";
+        return "Lo siento, tuve un problema al procesar tu consulta. Inténtalo de nuevo.";
     }
 };
+
+
+
