@@ -16,6 +16,7 @@ import { authService } from '@/services/authService';
 import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
 import { NivelExperiencia, ObjetivoFitness } from '@/stores/userStore';
+import { LinkRequestsNotifier } from '@/components/LinkRequestsNotifier';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface FirebaseAuthError {
@@ -39,15 +40,67 @@ export const ProfilePage: React.FC = () => {
     // Modal States
     const [showPartnerModal, setShowPartnerModal] = useState(false);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
-    const [partnerIdInput, setPartnerIdInput] = useState('');
-    const [tempAvatar, setTempAvatar] = useState(userInfo.avatar || '');
 
-    const handleSavePartner = () => {
-        if (partnerIdInput.trim()) {
-            useUserStore.getState().setPartnerId(partnerIdInput.trim());
-            setShowPartnerModal(false);
+    // New state for partner linking flow
+    const [partnerAliasInput, setPartnerAliasInput] = useState('');
+    const [foundUser, setFoundUser] = useState<{ id: string; name: string; alias: string } | null>(null);
+    const [searchStatus, setSearchStatus] = useState<'idle' | 'searching' | 'found' | 'not_found' | 'error' | 'request_sent'>('idle');
+
+
+    const handleSearchPartner = async () => {
+        if (!partnerAliasInput.trim() || !userId) return;
+        if (partnerAliasInput.trim().toLowerCase() === perfil.alias?.toLowerCase()) {
+            setSearchStatus('error');
+            toast.error('No puedes vincularte contigo mismo.');
+            return;
+        }
+
+        setSearchStatus('searching');
+        setFoundUser(null);
+        try {
+            const user = await firebaseService.findUserByAlias(partnerAliasInput.trim());
+            // The original findUserByAlias could return a fallback object with the alias as ID.
+            // We need to ensure a real user document was found. A simple way is to check if id and alias are different,
+            // or better, ensure getProfile for that ID returns a valid profile.
+            // For now, let's assume if an ID is returned and it's not the same as the alias, it's a valid user.
+            if (user && user.id !== user.alias) {
+                const userProfile = await firebaseService.getProfile(user.id);
+                if (userProfile) {
+                    setFoundUser(user);
+                    setSearchStatus('found');
+                } else {
+                    setSearchStatus('not_found');
+                }
+            } else {
+                setSearchStatus('not_found');
+            }
+        } catch (error) {
+            console.error("Error finding user:", error);
+            setSearchStatus('error');
         }
     };
+
+    const handleSendRequest = async () => {
+        if (!foundUser || !userId || !perfil.alias) return;
+
+        try {
+            await firebaseService.sendLinkRequest(userId, perfil.alias, foundUser.id);
+            setSearchStatus('request_sent');
+            toast.success(`Solicitud enviada a ${foundUser.name}`);
+            // Optionally close modal after a delay
+            setTimeout(() => {
+                setShowPartnerModal(false);
+                setSearchStatus('idle');
+                setPartnerAliasInput('');
+                setFoundUser(null);
+            }, 2000);
+        } catch (error) {
+            console.error("Error sending link request:", error);
+            toast.error('Error al enviar la solicitud.');
+            setSearchStatus('error');
+        }
+    };
+
 
     const handleAvatarSelect = (seed: string) => {
         setTempAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4`);
@@ -408,6 +461,9 @@ export const ProfilePage: React.FC = () => {
                 )}
             </Card>
 
+            {/* Link Requests Notifier */}
+            <LinkRequestsNotifier />
+
             {/* Partner Section */}
             <h3 style={styles.sectionTitle}>Mi Pareja Gymbro</h3>
             {partnerInfo ? (
@@ -544,32 +600,69 @@ export const ProfilePage: React.FC = () => {
             }
 
             {/* Partner Modal */}
-            {
-                showPartnerModal && (
-                    <div style={styles.modalOverlay}>
-                        <div style={styles.modal}>
-                            <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>Vincular Pareja</h3>
-                                <button onClick={() => setShowPartnerModal(false)} style={styles.closeBtn}>
-                                    <X size={20} color={Colors.text} />
-                                </button>
-                            </div>
-                            <p style={styles.modalText}>
-                                Introduce el ID de tu pareja para sincronizar rutinas y progreso.
-                            </p>
-                            <input
-                                style={styles.modalInput}
-                                placeholder="Ej: user-1234..."
-                                value={partnerIdInput}
-                                onChange={(e) => setPartnerIdInput(e.target.value)}
-                            />
-                            <button style={styles.saveBtn} onClick={handleSavePartner}>
-                                Vincular
+            {showPartnerModal && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modal}>
+                        <div style={styles.modalHeader}>
+                            <h3 style={styles.modalTitle}>Vincular Pareja</h3>
+                            <button onClick={() => {
+                                setShowPartnerModal(false);
+                                setSearchStatus('idle');
+                                setPartnerAliasInput('');
+                                setFoundUser(null);
+                            }} style={styles.closeBtn}>
+                                <X size={20} color={Colors.text} />
                             </button>
                         </div>
+                        <p style={styles.modalText}>
+                            Introduce el alias de tu pareja para enviarle una solicitud de vinculación.
+                        </p>
+                        <div style={styles.partnerSearchContainer}>
+                            <input
+                                style={styles.modalInput}
+                                placeholder="ej: titan23"
+                                value={partnerAliasInput}
+                                onChange={(e) => setPartnerAliasInput(e.target.value)}
+                                disabled={searchStatus === 'searching' || searchStatus === 'request_sent'}
+                            />
+                            <button
+                                style={styles.searchBtn}
+                                onClick={handleSearchPartner}
+                                disabled={searchStatus === 'searching' || !partnerAliasInput.trim()}
+                            >
+                                {searchStatus === 'searching' ? <Loader2 size={20} className="animate-spin" /> : 'Buscar'}
+                            </button>
+                        </div>
+
+                        {searchStatus === 'found' && foundUser && (
+                            <div style={styles.foundUserCard}>
+                                <img
+                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${foundUser.name}&backgroundColor=b6e3f4`}
+                                    alt="found user"
+                                    style={styles.foundUserAvatar}
+                                />
+                                <div>
+                                    <p style={styles.foundUserName}>{foundUser.name}</p>
+                                    <p style={styles.foundUserAlias}>@{foundUser.alias}</p>
+                                </div>
+                                <button style={styles.sendRequestBtn} onClick={handleSendRequest}>
+                                    Enviar Solicitud
+                                </button>
+                            </div>
+                        )}
+
+                        {searchStatus === 'not_found' && (
+                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e inténtalo de nuevo.</p>
+                        )}
+                        {searchStatus === 'error' && (
+                            <p style={styles.searchStatusTextError}>Hubo un error. Inténtalo más tarde.</p>
+                        )}
+                        {searchStatus === 'request_sent' && (
+                            <p style={styles.searchStatusTextSuccess}>¡Solicitud enviada! Esperando respuesta.</p>
+                        )}
                     </div>
-                )
-            }
+                </div>
+            )}
 
             {/* Avatar Modal */}
             {
@@ -1185,6 +1278,71 @@ const styles: Record<string, React.CSSProperties> = {
         overflow: 'hidden',
         cursor: 'pointer',
         border: `1px solid ${Colors.border}`,
+    },
+    partnerSearchContainer: {
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '20px',
+    },
+    searchBtn: {
+        padding: '12px 16px',
+        background: Colors.primary,
+        border: 'none',
+        borderRadius: '12px',
+        color: '#000',
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    foundUserCard: {
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr auto',
+        alignItems: 'center',
+        gap: '12px',
+        background: Colors.background,
+        padding: '12px',
+        borderRadius: '16px',
+        textAlign: 'left',
+    },
+    foundUserAvatar: {
+        width: '48px',
+        height: '48px',
+        borderRadius: '24px',
+    },
+    foundUserName: {
+        margin: 0,
+        fontWeight: 700,
+        color: Colors.text,
+    },
+    foundUserAlias: {
+        margin: 0,
+        fontSize: '12px',
+        color: Colors.textSecondary,
+    },
+    sendRequestBtn: {
+        padding: '10px 14px',
+        background: Colors.success,
+        border: 'none',
+        borderRadius: '10px',
+        color: '#fff',
+        fontWeight: 600,
+        cursor: 'pointer',
+    },
+    searchStatusText: {
+        marginTop: '16px',
+        color: Colors.textSecondary,
+        fontSize: '13px',
+    },
+    searchStatusTextError: {
+        marginTop: '16px',
+        color: Colors.error,
+        fontSize: '13px',
+        fontWeight: 600,
+    },
+    searchStatusTextSuccess: {
+        marginTop: '16px',
+        color: Colors.success,
+        fontSize: '13px',
+        fontWeight: 600,
     }
 };
 

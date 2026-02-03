@@ -1,7 +1,8 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useUserStore } from '../stores/userStore';
 import { firebaseService } from '../services/firebaseService';
+import { RoutineCopyModal } from './RoutineCopyModal';
 
 export const CloudSyncManager: React.FC = () => {
     const { userId, perfil, setIsSyncing, setLastSyncError } = useUserStore();
@@ -10,6 +11,12 @@ export const CloudSyncManager: React.FC = () => {
 
     // Flag to prevent double initial pull
     const initialPullDone = useRef(false);
+
+    // State for routine copy modal
+    const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
+    const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
+    const prevPartnerId = useRef(perfil.partnerId);
+
 
     // Initial Fetch (On App Start or Login)
     useEffect(() => {
@@ -94,5 +101,39 @@ export const CloudSyncManager: React.FC = () => {
         };
     }, [perfil, userId, setIsSyncing, setLastSyncError]);
 
-    return null; // Silent manager
+    // Effect to detect new partner link
+    useEffect(() => {
+        const currentPartnerId = perfil.partnerId;
+        const previousPartnerId = prevPartnerId.current;
+
+        if (currentPartnerId && currentPartnerId !== previousPartnerId) {
+            const fetchPartnerDetails = async () => {
+                const partnerProfile = await firebaseService.getProfile(currentPartnerId);
+                if (partnerProfile && partnerProfile.alias) {
+                    setPartnerDetails({
+                        id: currentPartnerId,
+                        name: partnerProfile.usuario.nombre,
+                        alias: partnerProfile.alias,
+                    });
+                    setShowRoutineCopyModal(true);
+                }
+            };
+            fetchPartnerDetails();
+        }
+
+        prevPartnerId.current = currentPartnerId;
+    }, [perfil.partnerId]);
+
+    return (
+        <>
+            {showRoutineCopyModal && partnerDetails && (
+                <RoutineCopyModal
+                    partnerId={partnerDetails.id}
+                    partnerName={partnerDetails.name}
+                    partnerAlias={partnerDetails.alias}
+                    onClose={() => setShowRoutineCopyModal(false)}
+                />
+            )}
+        </>
+    );
 };

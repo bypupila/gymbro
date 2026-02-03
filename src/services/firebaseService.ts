@@ -1,9 +1,19 @@
 import {
     doc, setDoc, getDoc, collection, addDoc, query,
-    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc
+    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, EjercicioRutina } from '../stores/userStore';
+import { EjercicioBase } from '../data/exerciseDatabase';
+
+export interface LinkRequest {
+    id: string;
+    requesterId: string;
+    requesterAlias: string;
+    recipientId: string;
+    status: 'pending' | 'accepted' | 'declined';
+    createdAt: string;
+}
 
 export const firebaseService = {
     // ========== PROFILE MANAGEMENT ==========
@@ -219,6 +229,19 @@ export const firebaseService = {
         })) as RutinaUsuario[];
     },
 
+    async getPartnerRoutine(partnerId: string): Promise<RutinaUsuario | null> {
+        try {
+            const partnerProfile = await this.getProfile(partnerId);
+            if (partnerProfile && partnerProfile.rutina) {
+                return partnerProfile.rutina;
+            }
+            return null;
+        } catch (error) {
+            console.error('Error getting partner routine:', error);
+            return null;
+        }
+    },
+
     // ========== EXTRA ACTIVITIES MANAGEMENT ==========
 
     async saveExtraActivity(userId: string, activity: ExtraActivity): Promise<void> {
@@ -229,7 +252,7 @@ export const firebaseService = {
     },
 
     async deleteExtraActivity(userId: string, activityId: string): Promise<void> {
-        
+
         const activityRef = doc(db, 'users', userId, 'extraActivities', activityId);
         await deleteDoc(activityRef);
     },
@@ -253,6 +276,56 @@ export const firebaseService = {
         }
         return [];
     },
+
+    // ========== ACCOUNT LINKING ==========
+
+    async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string): Promise<void> {
+        const requestsRef = collection(db, 'linkRequests');
+        await addDoc(requestsRef, {
+            requesterId,
+            requesterAlias,
+            recipientId,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+        });
+    },
+
+    onLinkRequestsChange(userId: string, callback: (requests: LinkRequest[]) => void) {
+        const requestsRef = collection(db, 'linkRequests');
+        const q = query(requestsRef, where('recipientId', '==', userId), where('status', '==', 'pending'));
+
+        return onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            } as LinkRequest));
+            callback(requests);
+        });
+    },
+
+    async acceptLinkRequest(request: LinkRequest): Promise<void> {
+        const batch = writeBatch(db);
+
+        // 1. Update request status
+        const requestRef = doc(db, 'linkRequests', request.id);
+        batch.update(requestRef, { status: 'accepted' });
+
+        // 2. Update requester's profile
+        const requesterProfileRef = doc(db, 'users', request.requesterId, 'profile', 'main');
+        batch.update(requesterProfileRef, { partnerId: request.recipientId });
+
+        // 3. Update recipient's profile
+        const recipientProfileRef = doc(db, 'users', request.recipientId, 'profile', 'main');
+        batch.update(recipientProfileRef, { partnerId: request.requesterId });
+
+        await batch.commit();
+    },
+
+    async declineLinkRequest(requestId: string): Promise<void> {
+        const requestRef = doc(db, 'linkRequests', requestId);
+        await updateDoc(requestRef, { status: 'declined' });
+    },
+
 
     // ========== USER LOOKUP ==========
 
@@ -358,12 +431,12 @@ export const firebaseService = {
 
     // ========== CATALOG MANAGEMENT (ADMIN) ==========
 
-    async getAllExercises(): Promise<EjercicioRutina[]> {
+    async getAllExercises(): Promise<EjercicioBase[]> {
         const querySnapshot = await getDocs(collection(db, 'exercises'));
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EjercicioBase));
     },
 
-    async saveExercise(exerciseId: string, data: Partial<EjercicioRutina>): Promise<void> {
+    async saveExercise(exerciseId: string, data: Partial<EjercicioBase>): Promise<void> {
         const ref = doc(db, 'exercises', exerciseId);
         await setDoc(ref, {
             ...data,
@@ -372,11 +445,11 @@ export const firebaseService = {
     },
 
     async deleteExercise(exerciseId: string): Promise<void> {
-        
+
         await deleteDoc(doc(db, 'exercises', exerciseId));
     },
 
-    async initializeCatalog(initialData: EjercicioRutina[]): Promise<void> {
+    async initializeCatalog(initialData: EjercicioBase[]): Promise<void> {
         // Subir en lotes de 500 (límite de Firestore batch)
         const chunks = [];
         for (let i = 0; i < initialData.length; i += 400) {

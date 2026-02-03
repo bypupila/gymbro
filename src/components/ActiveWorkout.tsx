@@ -1243,6 +1243,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     function renderExerciseCard(ex: ExerciseTracking) {
         const globalIdx = activeSession?.exercises.findIndex(e => e.id === ex.id) ?? 0;
+        const { isDualSession, partnerExercises } = activeSession;
+        const partnerEx = isDualSession && partnerExercises ? partnerExercises.find(pEx => pEx.id === ex.id) : null;
+
         return (
             <Card key={ex.id} style={{
                 ...styles.exerciseCard,
@@ -1368,126 +1371,140 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         </button>
                                     </div>
                                 ) : null}
-
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
-                                    gap: '8px',
-                                    marginBottom: '12px',
-                                    marginTop: '8px',
-                                    padding: '0 4px'
-                                }}>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>#</span>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>PESO (kg)</span>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>REPS</span>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>TIEMPO (s)</span>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>DESC. (s)</span>
-                                    <span></span>
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    {ex.sets.map((set, sIdx) => (
-                                        <div
-                                            key={sIdx}
-                                            style={{
-                                                display: 'grid',
-                                                gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
-                                                gap: '8px',
-                                                alignItems: 'center',
-                                                background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : Colors.surface,
-                                                padding: '8px 4px',
-                                                borderRadius: '12px',
-                                                border: `1px solid ${set.completed ? `${Colors.success}30` : Colors.border}`,
-                                                opacity: (set.completed || set.skipped) ? 0.7 : 1
-                                            }}
-                                        >
-                                            <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
-
-                                            <input
-                                                type="number"
-                                                placeholder="0"
-                                                value={set.weight || ''}
-                                                onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
-                                                style={styles.newInput}
-                                                disabled={set.completed || set.skipped}
-                                                onFocus={() => setActiveExerciseId(ex.id)}
-                                            />
-
-                                            <input
-                                                type="number"
-                                                placeholder="0"
-                                                value={set.reps || ''}
-                                                onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
-                                                style={styles.newInput}
-                                                disabled={set.completed || set.skipped}
-                                                onFocus={() => setActiveExerciseId(ex.id)}
-                                            />
-
-                                            <input
-                                                type="number"
-                                                placeholder="-"
-                                                value={set.duration || ''}
-                                                onChange={(e) => updateSet(ex.id, sIdx, { duration: parseInt(e.target.value) || 0 })}
-                                                style={styles.newInput}
-                                                disabled={set.completed || set.skipped}
-                                                onFocus={() => setActiveExerciseId(ex.id)}
-                                            />
-
-                                            <input
-                                                type="number"
-                                                placeholder="-"
-                                                value={set.rest || ''}
-                                                onChange={(e) => updateSet(ex.id, sIdx, { rest: parseInt(e.target.value) || 0 })}
-                                                style={styles.newInput}
-                                                disabled={set.completed || set.skipped}
-                                                onFocus={() => setActiveExerciseId(ex.id)}
-                                            />
-
-                                            <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                                {!set.completed && !set.skipped ? (
-                                                    (isTimeBased(ex.targetReps) && ex.categoria === 'calentamiento') ? (
-                                                        <div style={{ display: 'flex', gap: '4px' }}>
-                                                            <button
-                                                                style={{ ...styles.checkBtn, background: Colors.surface, border: `1px solid ${Colors.border}`, color: Colors.textSecondary }}
-                                                                onClick={() => updateSet(ex.id, sIdx, { skipped: true })}
-                                                            >
-                                                                <SkipForward size={14} />
-                                                            </button>
-                                                            <button
-                                                                style={styles.checkBtn}
-                                                                onClick={() => handleStartSet(ex.id, sIdx)}
-                                                            >
-                                                                <Play size={16} />
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div style={{ display: 'flex', gap: '4px' }}>
-                                                            <button
-                                                                style={{ ...styles.checkBtn, background: Colors.surface, border: `1px solid ${Colors.border}`, color: Colors.textSecondary }}
-                                                                onClick={() => updateSet(ex.id, sIdx, { skipped: true })}
-                                                            >
-                                                                <SkipForward size={14} />
-                                                            </button>
-                                                            <button
-                                                                style={styles.checkBtn}
-                                                                onClick={() => updateSet(ex.id, sIdx, { completed: true })}
-                                                            >
-                                                                <Check size={18} />
-                                                            </button>
-                                                        </div>
-                                                    )
-                                                ) : (
-                                                    <button
-                                                        style={styles.undoIconBtn}
-                                                        onClick={() => updateSet(ex.id, sIdx, { completed: false, skipped: false })}
-                                                    >
-                                                        <RotateCcw size={16} />
-                                                    </button>
-                                                )}
-                                            </div>
+                                
+                                {isDualSession && partnerEx ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {/* Header for dual session */}
+                                        <div style={{...styles.dualSetHeader, gridTemplateColumns: '0.8fr 2.4fr 2.4fr 1fr'}}>
+                                            <span style={{...styles.setHeaderCell, textAlign: 'center'}}>#</span>
+                                            <span style={{...styles.setHeaderCell, textAlign: 'center'}}>{perfil.usuario.nombre.split(' ')[0]}</span>
+                                            <span style={{...styles.setHeaderCell, textAlign: 'center'}}>{perfil.pareja?.nombre.split(' ')[0]}</span>
+                                            <span></span>
                                         </div>
-                                    ))}
-                                </div>
+                                        {ex.sets.map((set, sIdx) => renderDualSetRow(ex, partnerEx, sIdx))}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
+                                            gap: '8px',
+                                            marginBottom: '12px',
+                                            marginTop: '8px',
+                                            padding: '0 4px'
+                                        }}>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>#</span>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>PESO (kg)</span>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>REPS</span>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>TIEMPO (s)</span>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>DESC. (s)</span>
+                                            <span></span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {ex.sets.map((set, sIdx) => (
+                                                <div
+                                                    key={sIdx}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
+                                                        gap: '8px',
+                                                        alignItems: 'center',
+                                                        background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : Colors.surface,
+                                                        padding: '8px 4px',
+                                                        borderRadius: '12px',
+                                                        border: `1px solid ${set.completed ? `${Colors.success}30` : Colors.border}`,
+                                                        opacity: (set.completed || set.skipped) ? 0.7 : 1
+                                                    }}
+                                                >
+                                                    <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
+
+                                                    <input
+                                                        type="number"
+                                                        placeholder="0"
+                                                        value={set.weight || ''}
+                                                        onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target..value) || 0 })}
+                                                        style={styles.newInput}
+                                                        disabled={set.completed || set.skipped}
+                                                        onFocus={() => setActiveExerciseId(ex.id)}
+                                                    />
+
+                                                    <input
+                                                        type="number"
+                                                        placeholder="0"
+                                                        value={set.reps || ''}
+                                                        onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
+                                                        style={styles.newInput}
+                                                        disabled={set.completed || set.skipped}
+                                                        onFocus={() => setActiveExerciseId(ex.id)}
+                                                    />
+
+                                                    <input
+                                                        type="number"
+                                                        placeholder="-"
+                                                        value={set.duration || ''}
+                                                        onChange={(e) => updateSet(ex.id, sIdx, { duration: parseInt(e.target.value) || 0 })}
+                                                        style={styles.newInput}
+                                                        disabled={set.completed || set.skipped}
+                                                        onFocus={() => setActiveExerciseId(ex.id)}
+                                                    />
+
+                                                    <input
+                                                        type="number"
+                                                        placeholder="-"
+                                                        value={set.rest || ''}
+                                                        onChange={(e) => updateSet(ex.id, sIdx, { rest: parseInt(e.target.value) || 0 })}
+                                                        style={styles.newInput}
+                                                        disabled={set.completed || set.skipped}
+                                                        onFocus={() => setActiveExerciseId(ex.id)}
+                                                    />
+
+                                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                        {!set.completed && !set.skipped ? (
+                                                            (isTimeBased(ex.targetReps) && ex.categoria === 'calentamiento') ? (
+                                                                <div style={{ display: 'flex', gap: '4px' }}>
+                                                                    <button
+                                                                        style={{ ...styles.checkBtn, background: Colors.surface, border: `1px solid ${Colors.border}`, color: Colors.textSecondary }}
+                                                                        onClick={() => updateSet(ex.id, sIdx, { skipped: true })}
+                                                                    >
+                                                                        <SkipForward size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        style={styles.checkBtn}
+                                                                        onClick={() => handleStartSet(ex.id, sIdx)}
+                                                                    >
+                                                                        <Play size={16} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ display: 'flex', gap: '4px' }}>
+                                                                    <button
+                                                                        style={{ ...styles.checkBtn, background: Colors.surface, border: `1px solid ${Colors.border}`, color: Colors.textSecondary }}
+                                                                        onClick={() => updateSet(ex.id, sIdx, { skipped: true })}
+                                                                    >
+                                                                        <SkipForward size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        style={styles.checkBtn}
+                                                                        onClick={() => updateSet(ex.id, sIdx, { completed: true })}
+                                                                    >
+                                                                        <Check size={18} />
+                                                                    </button>
+                                                                </div>
+                                                            )
+                                                        ) : (
+                                                            <button
+                                                                style={styles.undoIconBtn}
+                                                                onClick={() => updateSet(ex.id, sIdx, { completed: false, skipped: false })}
+                                                            >
+                                                                <RotateCcw size={16} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Complete Exercise Button */}
                                 {ex.sets.every(s => s.completed || s.skipped) && (
@@ -1539,6 +1556,174 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             </Card>
         );
     }
+    function renderDualSetRow(userEx: ExerciseTracking, partnerEx: ExerciseTracking, sIdx: number) {
+        const userSet = userEx.sets[sIdx];
+        const partnerSet = partnerEx.sets[sIdx];
+        const isCompleted = userSet.completed && partnerSet.completed;
+        const isSkipped = userSet.skipped && partnerSet.skipped;
+
+        return (
+            <div
+                key={sIdx}
+                style={{
+                    ...styles.dualSetRow,
+                    background: isCompleted ? `${Colors.success}10` : isSkipped ? Colors.surfaceLight : Colors.surface,
+                    border: `1px solid ${isCompleted ? `${Colors.success}30` : Colors.border}`,
+                    opacity: (isCompleted || isSkipped) ? 0.7 : 1
+                }}
+            >
+                <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
+
+                {/* User's inputs */}
+                <div style={styles.dualInputGroup}>
+                    <input
+                        type="number"
+                        placeholder="kg"
+                        value={userSet.weight || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, false)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                    <input
+                        type="number"
+                        placeholder="reps"
+                        value={userSet.reps || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, false)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                </div>
+
+                {/* Partner's inputs */}
+                <div style={styles.dualInputGroup}>
+                    <input
+                        type="number"
+                        placeholder="kg"
+                        value={partnerSet.weight || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, true)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                    <input
+                        type="number"
+                        placeholder="reps"
+                        value={partnerSet.reps || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, true)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                </div>
+
+                <div style={styles.dualSetActions}>
+                    {!isCompleted && !isSkipped ? (
+                        <button
+                            style={styles.checkBtn}
+                            onClick={() => {
+                                updateSet(userEx.id, sIdx, { completed: true }, false);
+                                updateSet(userEx.id, sIdx, { completed: true }, true);
+                            }}
+                        >
+                            <Check size={18} />
+                        </button>
+                    ) : (
+                        <button
+                            style={styles.undoIconBtn}
+                            onClick={() => {
+                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, false);
+                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, true);
+                            }}
+                        >
+                            <RotateCcw size={16} />
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+    function renderDualSetRow(userEx: ExerciseTracking, partnerEx: ExerciseTracking, sIdx: number) {
+        const userSet = userEx.sets[sIdx];
+        const partnerSet = partnerEx.sets[sIdx];
+        const isCompleted = userSet.completed && partnerSet.completed;
+        const isSkipped = userSet.skipped && partnerSet.skipped;
+
+        return (
+            <div
+                key={sIdx}
+                style={{
+                    ...styles.dualSetRow,
+                    background: isCompleted ? `${Colors.success}10` : isSkipped ? Colors.surfaceLight : Colors.surface,
+                    border: `1px solid ${isCompleted ? `${Colors.success}30` : Colors.border}`,
+                    opacity: (isCompleted || isSkipped) ? 0.7 : 1
+                }}
+            >
+                <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
+
+                {/* User's inputs */}
+                <div style={styles.dualInputGroup}>
+                    <input
+                        type="number"
+                        placeholder="kg"
+                        value={userSet.weight || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, false)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                    <input
+                        type="number"
+                        placeholder="reps"
+                        value={userSet.reps || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, false)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                </div>
+
+                {/* Partner's inputs */}
+                <div style={styles.dualInputGroup}>
+                    <input
+                        type="number"
+                        placeholder="kg"
+                        value={partnerSet.weight || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, true)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                    <input
+                        type="number"
+                        placeholder="reps"
+                        value={partnerSet.reps || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, true)}
+                        style={styles.dualInput}
+                        disabled={isCompleted || isSkipped}
+                    />
+                </div>
+
+                <div style={styles.dualSetActions}>
+                    {!isCompleted && !isSkipped ? (
+                        <button
+                            style={styles.checkBtn}
+                            onClick={() => {
+                                updateSet(userEx.id, sIdx, { completed: true }, false);
+                                updateSet(userEx.id, sIdx, { completed: true }, true);
+                            }}
+                        >
+                            <Check size={18} />
+                        </button>
+                    ) : (
+                        <button
+                            style={styles.undoIconBtn}
+                            onClick={() => {
+                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, false);
+                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, true);
+                            }}
+                        >
+                            <RotateCcw size={16} />
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -1552,6 +1737,39 @@ const styles: Record<string, React.CSSProperties> = {
         zIndex: 5000,
         display: 'flex',
         flexDirection: 'column',
+    },
+    dualSetHeader: {
+        display: 'grid',
+        gap: '8px',
+        padding: '0 4px 8px 4px',
+        borderBottom: `1px solid ${Colors.border}`,
+    },
+    dualSetRow: {
+        display: 'grid',
+        gridTemplateColumns: '0.8fr 2.4fr 2.4fr 1fr',
+        gap: '8px',
+        alignItems: 'center',
+        padding: '8px 4px',
+        borderRadius: '12px',
+    },
+    dualInputGroup: {
+        display: 'flex',
+        gap: '8px',
+    },
+    dualInput: {
+        width: '100%',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '8px',
+        padding: '12px 8px',
+        color: Colors.text,
+        fontSize: '14px',
+        textAlign: 'center',
+        outline: 'none',
+    },
+    dualSetActions: {
+        display: 'flex',
+        justifyContent: 'center',
     },
     header: {
         padding: '16px 20px',

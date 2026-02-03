@@ -10,9 +10,13 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Usuarios solo pueden leer/escribir su perfil
+    // Usuarios pueden leer/escribir su perfil, y la pareja puede leer.
     match /users/{userId}/profile/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId) || (
+        isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)/profile/main).data.partnerId == userId
+      );
+      allow write: if isOwner(userId);
     }
 
     // Historial de entrenamientos
@@ -53,6 +57,21 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName == 'bypupila'
       );
+    }
+
+    // Solicitudes de vinculación de cuentas
+    match /linkRequests/{requestId} {
+      // Permite leer si eres el que envía o el que recibe
+      allow read: if isAuthenticated() && (
+        resource.data.requesterId == request.auth.uid ||
+        resource.data.recipientId == request.auth.uid
+      );
+      // Permite crear si eres el que envía la solicitud
+      allow create: if isAuthenticated() && request.resource.data.requesterId == request.auth.uid;
+      // Permite actualizar (aceptar/rechazar) solo si eres el que recibe
+      allow update: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+      // No se permite borrar para mantener historial
+      allow delete: if false;
     }
   }
 }

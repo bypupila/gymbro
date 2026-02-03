@@ -1,14 +1,12 @@
-// =====================================================
-// GymBro PWA - User Store (Zustand)
-// =====================================================
-
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { LinkRequest } from '../services/firebaseService';
 
 // Types
 export type NivelExperiencia = 'principiante' | 'intermedio' | 'avanzado';
 export type ObjetivoFitness = 'ganar_musculo' | 'perder_grasa' | 'mantener' | 'fuerza' | 'resistencia';
 export type GrupoMuscular = 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Piernas' | 'Core' | 'Full Body' | 'Descanso';
+
 
 export interface DatosPersonales {
     nombre: string;
@@ -184,6 +182,8 @@ export interface ActiveSession {
     exercises: ExerciseTracking[];
     routineName: string;
     preWorkoutMood?: number;
+    isDualSession: boolean;
+    partnerExercises: ExerciseTracking[] | null;
 }
 
 interface UserStore {
@@ -192,10 +192,12 @@ interface UserStore {
     activeSession: ActiveSession | null;
     isSyncing: boolean;
     lastSyncError: string | null;
+    linkRequests: LinkRequest[];
 
     setUserId: (id: string | null) => void;
     setIsSyncing: (status: boolean) => void;
     setLastSyncError: (error: string | null) => void;
+    setLinkRequests: (requests: LinkRequest[]) => void;
     setDatosPersonales: (datos: Partial<DatosPersonales>) => void;
     setDatosPareja: (datos: DatosPersonales | null) => void;
     setHorario: (horario: HorarioSemanal) => void;
@@ -204,8 +206,8 @@ interface UserStore {
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
     startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: number) => void;
-    updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>) => void;
-    skipSet: (exerciseId: string, setIndex: number) => void;
+    updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>, isPartner?: boolean) => void;
+    skipSet: (exerciseId: string, setIndex: number, isPartner?: boolean) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
     addExerciseToSession: (newExercise: EjercicioRutina) => void;
     markExerciseAsCompleted: (exerciseId: string) => void;
@@ -243,10 +245,12 @@ export const useUserStore = create<UserStore>()(
             activeSession: null,
             isSyncing: false,
             lastSyncError: null,
+            linkRequests: [],
 
             setUserId: (id) => set({ userId: id }),
             setIsSyncing: (status) => set({ isSyncing: status }),
             setLastSyncError: (error) => set({ lastSyncError: error }),
+            setLinkRequests: (requests) => set({ linkRequests: requests }),
             setPartnerId: (id) => set((state) => ({
                 perfil: { ...state.perfil, partnerId: id }
             })),
@@ -325,52 +329,82 @@ export const useUserStore = create<UserStore>()(
                 return { entrena: false, grupoMuscular: 'Descanso' as GrupoMuscular, hora: '', dia: diaNombre };
             },
 
-            startSession: (dayName, exercises, routineName, preWorkoutMood) => set(() => ({
-                activeSession: {
-                    startTime: new Date().toISOString(),
-                    dayName,
-                    routineName,
-                    preWorkoutMood,
-                    exercises: exercises.map(ex => ({
-                        id: ex.id,
-                        nombre: ex.nombre,
-                        targetSeries: ex.series,
-                        targetReps: ex.repeticiones,
-                        categoria: ex.categoria, // Include category for warmup/main separation
-                        isOptional: ex.isOptional,
-                        isCompleted: false,
-                        sets: Array.from({ length: ex.series }, () => ({
-                            completed: false,
-                            skipped: false,
-                            weight: 0,
-                            reps: parseInt(ex.repeticiones) || 10,
-                            duration: ex.segundos || 0,
-                            rest: ex.descanso || 60
-                        }))
-                    }))
-                }
-            })),
+            startSession: (dayName, exercises, routineName, preWorkoutMood) => {
+                const { perfil } = get();
+                const isDual = !!perfil.partnerId;
 
-            updateSet: (exerciseId, setIndex, fields) => set((state) => {
+                const createExerciseTracking = (ex: EjercicioRutina): ExerciseTracking => ({
+                    id: ex.id,
+                    nombre: ex.nombre,
+                    targetSeries: ex.series,
+                    targetReps: ex.repeticiones,
+                    categoria: ex.categoria,
+                    isOptional: ex.isOptional,
+                    isCompleted: false,
+                    sets: Array.from({ length: ex.series }, () => ({
+                        completed: false,
+                        skipped: false,
+                        weight: 0,
+                        reps: parseInt(ex.repeticiones) || 10,
+                        duration: ex.segundos || 0,
+                        rest: ex.descanso || 60
+                    }))
+                });
+
+                const userExercises = exercises.map(createExerciseTracking);
+                const partnerExercises = isDual ? exercises.map(createExerciseTracking) : null;
+
+                set({
+                    activeSession: {
+                        startTime: new Date().toISOString(),
+                        dayName,
+                        routineName,
+                        preWorkoutMood,
+                        exercises: userExercises,
+                        isDualSession: isDual,
+                        partnerExercises: partnerExercises,
+                    }
+                });
+            },
+
+            updateSet: (exerciseId, setIndex, fields, isPartner = false) => set((state) => {
                 if (!state.activeSession) return state;
-                const newExercises = state.activeSession.exercises.map(ex => {
+
+                const targetArray = isPartner ? state.activeSession.partnerExercises : state.activeSession.exercises;
+                if (!targetArray) return state;
+
+                const newExercises = targetArray.map(ex => {
                     if (ex.id !== exerciseId) return ex;
                     const newSets = [...ex.sets];
                     newSets[setIndex] = { ...newSets[setIndex], ...fields };
                     return { ...ex, sets: newSets };
                 });
-                return { activeSession: { ...state.activeSession, exercises: newExercises } };
+
+                if (isPartner) {
+                    return { activeSession: { ...state.activeSession, partnerExercises: newExercises } };
+                } else {
+                    return { activeSession: { ...state.activeSession, exercises: newExercises } };
+                }
             }),
 
-            skipSet: (exerciseId, setIndex) => set((state) => {
+            skipSet: (exerciseId, setIndex, isPartner = false) => set((state) => {
                 if (!state.activeSession) return state;
-                const newExercises = state.activeSession.exercises.map(ex => {
+
+                const targetArray = isPartner ? state.activeSession.partnerExercises : state.activeSession.exercises;
+                if (!targetArray) return state;
+
+                const newExercises = targetArray.map(ex => {
                     if (ex.id !== exerciseId) return ex;
                     const newSets = [...ex.sets];
                     newSets[setIndex] = { ...newSets[setIndex], skipped: true, completed: false };
                     return { ...ex, sets: newSets };
                 });
-                return { activeSession: { ...state.activeSession, exercises: newExercises } };
+
+                if (isPartner) {
+                    return { activeSession: { ...state.activeSession, partnerExercises: newExercises } };
+                } else {
+                    return { activeSession: { ...state.activeSession, exercises: newExercises } };
+                }
             }),
 
             // Replace an exercise in the current session only (doesn't affect the main routine)
@@ -453,70 +487,75 @@ export const useUserStore = create<UserStore>()(
                 const state = get();
                 if (!state.activeSession) return;
 
-                const realizado: EntrenamientoRealizado = {
+                const { firebaseService } = await import('../services/firebaseService');
+                const { userId, perfil, activeSession } = state;
+                const { isDualSession, partnerExercises } = activeSession;
+
+                // Helper to create a workout object from tracking data
+                const createWorkoutFromExercises = (trackedExercises: ExerciseTracking[]): EntrenamientoRealizado => ({
                     id: `${new Date().toISOString()}-${Math.random().toString(36).substr(2, 9)}`,
                     fecha: new Date().toISOString(),
                     duracionMinutos: durationMinutos,
-                    nombre: `${state.activeSession.dayName} - ${state.activeSession.routineName}`,
-                    moodPre: state.activeSession.preWorkoutMood,
+                    nombre: `${activeSession.dayName} - ${activeSession.routineName}`,
+                    moodPre: activeSession.preWorkoutMood,
                     moodPost: postWorkoutMood,
-                    ejercicios: state.activeSession.exercises.map(ex => ({
+                    ejercicios: trackedExercises.map(ex => ({
                         nombre: ex.nombre,
                         sets: ex.sets
-                            .filter(s => s.completed || (s.weight > 0 || s.reps > 0)) // Auto-include sets with data
+                            .filter(s => s.completed || (s.weight > 0 || s.reps > 0))
                             .map((s, i) => ({
                                 numero: i + 1,
                                 reps: s.reps,
                                 peso: s.weight
                             }))
                     })).filter(ex => ex.sets.length > 0)
-                };
+                });
 
-                // Sync with Partner if exists
-                if (state.perfil.partnerId) {
-                    console.log("Syncing workout to partner:", state.perfil.partnerId);
+                // Create workout for the main user
+                const userWorkout = createWorkoutFromExercises(activeSession.exercises);
+
+                // Save main user's workout
+                if (userId) {
+                    try {
+                        await firebaseService.addWorkout(userId, userWorkout);
+                        set((s) => ({
+                            perfil: { ...s.perfil, historial: [userWorkout, ...s.perfil.historial] }
+                        }));
+                    } catch (e) {
+                        console.error("Failed to save user workout to cloud", e);
+                    }
                 }
 
-                // Import dynamically to avoid circular dependencies
-                try {
-                    const { firebaseService } = await import('../services/firebaseService');
-
-                    // CRITICAL: Save to the main user's workoutHistory collection
-                    if (state.userId) {
-                        await firebaseService.addWorkout(state.userId, realizado);
-                        console.log("Workout saved to workoutHistory collection.");
+                // If it's a dual session, create and save partner's workout
+                if (isDualSession && partnerExercises && perfil.partnerId) {
+                    const partnerWorkout = createWorkoutFromExercises(partnerExercises);
+                    try {
+                        // Note: We use addWorkoutToPartner, which just calls addWorkout with the partner's ID
+                        await firebaseService.addWorkoutToPartner(perfil.partnerId, partnerWorkout);
+                    } catch (e) {
+                        console.error("Failed to save partner workout to cloud", e);
                     }
-
-                    // Sync to partner if applicable
-                    if (state.perfil.partnerId) {
-                        await firebaseService.addWorkoutToPartner(state.perfil.partnerId, realizado);
-                    }
-                } catch (e) {
-                    console.error("Failed to sync workout to cloud", e);
                 }
 
-                set((state) => {
-                    const newTracking = { ...(state.perfil.weeklyTracking || {}) };
-                    const dateKey = realizado.fecha.split('T')[0];
+                // Final state update
+                set((s) => {
+                    const newTracking = { ...(s.perfil.weeklyTracking || {}) };
+                    const dateKey = userWorkout.fecha.split('T')[0];
                     newTracking[dateKey] = 'completed';
 
                     return {
                         perfil: {
-                            ...state.perfil,
-                            historial: [realizado, ...state.perfil.historial],
-                            weeklyTracking: newTracking
+                            ...s.perfil,
+                            weeklyTracking: newTracking,
                         },
                         activeSession: null
                     };
                 });
 
-                // Explicitly save the updated profile to Firebase to ensure data is not lost
-                const { userId, perfil } = get();
+                // Explicitly save the updated profile to Firebase to persist weekly tracking
                 if (userId) {
                     try {
-                        const { firebaseService } = await import('../services/firebaseService');
-                        await firebaseService.saveProfile(userId, perfil);
-                        console.log("Workout saved and profile synced to cloud.");
+                        await firebaseService.saveProfile(userId, get().perfil);
                     } catch (e) {
                         console.error("Failed to sync profile after workout completion", e);
                     }
