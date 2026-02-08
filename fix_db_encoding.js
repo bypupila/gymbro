@@ -1,0 +1,31 @@
+import fs from 'fs';
+
+const filePath = 'c:\\0. BY PUPILA - Proyectos\\Gymbro\\src\\data\\exerciseDatabase.ts';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Define replacements
+const replacements = [
+    { original: 'ðŸ”¥', replacement: '🔥' },
+    { original: 'ðŸ’ª', replacement: '💪' },
+    { original: 'ðŸ“‹', replacement: '📋' },
+    { original: 'ðŸ ƒâ€ â™‚ï¸ ', replacement: '🏃‍♂️' },
+    { original: 'ðŸ Ž', replacement: '🏃‍♂️' },
+    { original: 'Catlogo', replacement: 'Catálogo' }, // Just in case
+    { original: 'CatÃ¡logo', replacement: 'Catálogo' }
+];
+
+let changed = false;
+for (const { original, replacement } of replacements) {
+    if (content.includes(original)) {
+        console.log(`Found ${original}, replacing with ${replacement}`);
+        content = content.split(original).join(replacement);
+        changed = true;
+    }
+}
+
+if (changed) {
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.log('File updated successfully.');
+} else {
+    console.log('No changes needed.');
+}

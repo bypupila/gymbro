@@ -33,6 +33,39 @@ export interface LiveSessionParticipant {
     currentExerciseId?: string | null;
 }
 
+// =====================================================
+// Granular Live Update Interfaces
+// =====================================================
+export interface SetUpdatePayload {
+    type: 'SET_UPDATE';
+    exerciseId: string;
+    setIndex: number;
+    fields: Partial<{
+        completed: boolean;
+        skipped: boolean;
+        weight: number;
+        reps: number;
+        startTime: number;
+        duration: number;
+        rest: number;
+    }>;
+}
+
+export interface ExerciseCompletionPayload {
+    type: 'EXERCISE_COMPLETED';
+    exerciseId: string;
+}
+
+export interface ExerciseSkipPayload {
+    type: 'EXERCISE_SKIPPED';
+    exerciseId: string;
+}
+
+export type GranularLiveUpdate = SetUpdatePayload | ExerciseCompletionPayload | ExerciseSkipPayload;
+
+// =====================================================
+
+
 export const liveSessionService = {
     /**
      * Create a new live session
@@ -107,6 +140,64 @@ export const liveSessionService = {
             exercises,
             lastUpdate: serverTimestamp(),
             currentExerciseId: currentExerciseId || null,
+        });
+    },
+
+    /**
+     * Apply a granular update to a participant's exercises in a live session
+     */
+    async applyGranularUpdate(
+        sessionId: string,
+        userId: string,
+        update: GranularLiveUpdate
+    ): Promise<void> {
+        const participantRef = doc(db, 'liveSessions', sessionId, 'participants', userId);
+        const snapshot = await getDoc(participantRef);
+
+        if (!snapshot.exists()) {
+            console.error(`Participant ${userId} not found in session ${sessionId}`);
+            return;
+        }
+
+        let currentExercises = (snapshot.data() as LiveSessionParticipant).exercises;
+
+        switch (update.type) {
+            case 'SET_UPDATE':
+                currentExercises = currentExercises.map(ex => {
+                    if (ex.id === update.exerciseId) {
+                        const newSets = [...ex.sets];
+                        if (newSets[update.setIndex]) {
+                            newSets[update.setIndex] = { ...newSets[update.setIndex], ...update.fields };
+                        }
+                        return { ...ex, sets: newSets };
+                    }
+                    return ex;
+                });
+                break;
+            case 'EXERCISE_COMPLETED':
+                currentExercises = currentExercises.map(ex => {
+                    if (ex.id === update.exerciseId) {
+                        return { ...ex, isCompleted: true };
+                    }
+                    return ex;
+                });
+                break;
+            case 'EXERCISE_SKIPPED':
+                currentExercises = currentExercises.map(ex => {
+                    if (ex.id === update.exerciseId) {
+                        return { ...ex, isSkipped: true };
+                    }
+                    return ex;
+                });
+                break;
+            default:
+                console.warn('Unknown granular update type:', update);
+                return;
+        }
+
+        await updateDoc(participantRef, {
+            exercises: currentExercises,
+            lastUpdate: serverTimestamp(),
         });
     },
 

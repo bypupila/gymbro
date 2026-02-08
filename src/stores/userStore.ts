@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { liveSessionService, GranularLiveUpdate } from '../services/liveSessionService';
 import { LinkRequest } from '../services/firebaseService';
 
 // Types
@@ -54,12 +55,14 @@ export interface EjercicioRutina {
 }
 
 export interface RutinaUsuario {
+    id: string; // Unique ID for the routine
     nombre: string;
     duracionSemanas: number;
     ejercicios: EjercicioRutina[];
     fechaInicio: string;
     fechaExpiracion?: string; // Cu?ndo deber?a cambiarse
     analizadaPorIA: boolean;
+    isDefault?: boolean; // New: indicates if this is the default routine
 }
 
 export interface Clarification {
@@ -141,6 +144,7 @@ export interface PerfilCompleto {
     weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de d?as entrenados { '2026-01-29': 'completed' }
     actividadesExtras: ExtraActivity[]; // Extra activities logged
     catalogoExtras: string[]; // Unique activity types discovered
+    defaultRoutineId?: string; // New: ID of the default routine
 }
 
 const datosIniciales: DatosPersonales = {
@@ -245,6 +249,12 @@ interface UserStore {
     getExtraActivitiesCatalog: () => string[];
     skipExercise: (exerciseId: string, isPartner?: boolean) => void;
     setDayTracking: (dateStr: string, status: 'completed' | 'skipped' | null) => void;
+
+    // New routine management functions
+    activateRoutine: (routineId: string) => void;
+    saveCurrentRoutineToHistory: () => void;
+    setDefaultRoutine: (routineId: string | null) => void;
+    importRoutine: (routine: RutinaUsuario, activate?: boolean) => void; // New function for importing routines
 }
 
 export const useUserStore = create<UserStore>()(
@@ -302,29 +312,53 @@ export const useUserStore = create<UserStore>()(
                 perfil: { ...state.perfil, horario }
             })),
 
-            setRutina: (rutina) => set((state) => {
+            setRutina: (newRutina) => set((state) => {
                 const historialPrevio = [...state.perfil.historialRutinas];
                 const rutinaActual = state.perfil.rutina;
+                let updatedDefaultRoutineId = state.perfil.defaultRoutineId;
 
-                // Si hay una rutina actual y es diferente a la nueva, la guardamos en el historial
-                if (rutinaActual && rutina) {
-                    historialPrevio.push(rutinaActual);
+                // If there's an existing active routine, move it to history
+                if (rutinaActual) {
+                    // Clear its isDefault flag as it's no longer the *active* default
+                    const routineToArchive = { ...rutinaActual, isDefault: false };
+                    historialPrevio.push(routineToArchive);
                 }
 
-                if (rutina) {
-                    // Aplicar versionado: "Rutina VX - [Nombre]"
-                    const version = historialPrevio.length + 1;
-                    const prefijo = `Rutina V${version}`;
-                    if (!rutina.nombre.startsWith('Rutina V')) {
-                        rutina.nombre = `${prefijo} - ${rutina.nombre}`;
+                let rutinaParaActivar: RutinaUsuario | null = null;
+                if (newRutina) {
+                    // Ensure the new routine has an ID. If not, generate one.
+                    if (!newRutina.id) {
+                        newRutina.id = `routine_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    }
+
+                    // Apply versioning if it's a new routine without a version prefix
+                    if (!newRutina.nombre.startsWith('Rutina V') && !newRutina.nombre.startsWith('Rutina Compartida')) {
+                        const version = historialPrevio.length + 1; // Base version on current history size
+                        newRutina.nombre = `Rutina V${version} - ${newRutina.nombre}`;
+                    }
+
+                    rutinaParaActivar = newRutina;
+                    
+                    // If the new routine is marked as default, update the profile's defaultRoutineId
+                    if (newRutina.isDefault) {
+                        updatedDefaultRoutineId = newRutina.id;
+                    } else if (updatedDefaultRoutineId === newRutina.id && !newRutina.isDefault) {
+                        // If it was the default, but now it's not, clear defaultRoutineId
+                        updatedDefaultRoutineId = undefined;
+                    }
+                } else {
+                    // If no new routine is provided (clearing the current routine), clear default if it was the current one
+                    if (rutinaActual && updatedDefaultRoutineId === rutinaActual.id) {
+                        updatedDefaultRoutineId = undefined;
                     }
                 }
 
                 return {
                     perfil: {
                         ...state.perfil,
-                        rutina,
-                        historialRutinas: historialPrevio
+                        rutina: rutinaParaActivar,
+                        historialRutinas: historialPrevio,
+                        defaultRoutineId: updatedDefaultRoutineId
                     }
                 };
             }),
@@ -409,45 +443,87 @@ export const useUserStore = create<UserStore>()(
                 });
             },
 
-            updateSet: (exerciseId, setIndex, fields, isPartner = false) => set((state) => {
-                if (!state.activeSession) return state;
+            updateSet: (exerciseId, setIndex, fields, isPartner = false) => {
+                const state = get();
+                if (!state.activeSession) return;
 
                 const targetArray = isPartner ? state.activeSession.partnerExercises : state.activeSession.exercises;
-                if (!targetArray) return state;
+                if (!targetArray) return;
 
                 const newExercises = targetArray.map(ex => {
                     if (ex.id !== exerciseId) return ex;
                     const newSets = [...ex.sets];
-                    newSets[setIndex] = { ...newSets[setIndex], ...fields };
+                    if (newSets[setIndex]) {
+                        newSets[setIndex] = { ...newSets[setIndex], ...fields };
+                    }
                     return { ...ex, sets: newSets };
                 });
 
-                if (isPartner) {
-                    return { activeSession: { ...state.activeSession, partnerExercises: newExercises } };
-                } else {
-                    return { activeSession: { ...state.activeSession, exercises: newExercises } };
-                }
-            }),
+                // Update local state immediately
+                set((state) => {
+                    if (!state.activeSession) return state; // Should not happen given the check above
+                    if (isPartner) {
+                        return { activeSession: { ...state.activeSession, partnerExercises: newExercises } };
+                    } else {
+                        return { activeSession: { ...state.activeSession, exercises: newExercises } };
+                    }
+                });
 
-            skipSet: (exerciseId, setIndex, isPartner = false) => set((state) => {
-                if (!state.activeSession) return state;
+                // If it's a linked session and this is the local user's update, send granular update to Firestore
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
+                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`; // Assuming sessionId format
+                    const updatePayload: GranularLiveUpdate = {
+                        type: 'SET_UPDATE',
+                        exerciseId,
+                        setIndex,
+                        fields,
+                    };
+                    void liveSessionService.applyGranularUpdate(sessionId, state.userId, updatePayload).catch(e => {
+                        console.error("Failed to send granular SET_UPDATE to liveSessionService:", e);
+                    });
+                }
+            },
+
+            skipSet: (exerciseId, setIndex, isPartner = false) => {
+                const state = get();
+                if (!state.activeSession) return;
 
                 const targetArray = isPartner ? state.activeSession.partnerExercises : state.activeSession.exercises;
-                if (!targetArray) return state;
+                if (!targetArray) return;
 
                 const newExercises = targetArray.map(ex => {
                     if (ex.id !== exerciseId) return ex;
                     const newSets = [...ex.sets];
-                    newSets[setIndex] = { ...newSets[setIndex], skipped: true, completed: false };
+                    if (newSets[setIndex]) {
+                        newSets[setIndex] = { ...newSets[setIndex], skipped: true, completed: false };
+                    }
                     return { ...ex, sets: newSets };
                 });
 
-                if (isPartner) {
-                    return { activeSession: { ...state.activeSession, partnerExercises: newExercises } };
-                } else {
-                    return { activeSession: { ...state.activeSession, exercises: newExercises } };
+                // Update local state immediately
+                set((state) => {
+                    if (!state.activeSession) return state;
+                    if (isPartner) {
+                        return { activeSession: { ...state.activeSession, partnerExercises: newExercises } };
+                    } else {
+                        return { activeSession: { ...state.activeSession, exercises: newExercises } };
+                    }
+                });
+
+                // If it's a linked session and this is the local user's update, send granular update to Firestore
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
+                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`;
+                    const updatePayload: GranularLiveUpdate = {
+                        type: 'SET_UPDATE',
+                        exerciseId,
+                        setIndex,
+                        fields: { skipped: true, completed: false },
+                    };
+                    void liveSessionService.applyGranularUpdate(sessionId, state.userId, updatePayload).catch(e => {
+                        console.error("Failed to send granular SET_UPDATE (skipped) to liveSessionService:", e);
+                    });
                 }
-            }),
+            },
 
             // Replace an exercise in the current session only (doesn't affect the main routine)
             replaceExerciseInSession: (oldExerciseId, newExercise) => set((state) => {
@@ -511,53 +587,87 @@ export const useUserStore = create<UserStore>()(
                 };
             }),
 
-            markExerciseAsCompleted: (exerciseId, isPartner = false) => set((state) => {
-                if (!state.activeSession) return state;
+            markExerciseAsCompleted: (exerciseId, isPartner = false) => {
+                const state = get();
+                if (!state.activeSession) return;
                 
-                if (isPartner && state.activeSession.partnerExercises) {
+                // Update local state immediately
+                set((state) => {
+                    if (!state.activeSession) return state;
+                    if (isPartner && state.activeSession.partnerExercises) {
+                        return {
+                            activeSession: {
+                                ...state.activeSession,
+                                partnerExercises: state.activeSession.partnerExercises.map(ex =>
+                                    ex.id === exerciseId ? { ...ex, isCompleted: true } : ex
+                                )
+                            }
+                        };
+                    }
+                    
                     return {
                         activeSession: {
                             ...state.activeSession,
-                            partnerExercises: state.activeSession.partnerExercises.map(ex =>
+                            exercises: state.activeSession.exercises.map(ex =>
                                 ex.id === exerciseId ? { ...ex, isCompleted: true } : ex
                             )
                         }
                     };
-                }
-                
-                return {
-                    activeSession: {
-                        ...state.activeSession,
-                        exercises: state.activeSession.exercises.map(ex =>
-                            ex.id === exerciseId ? { ...ex, isCompleted: true } : ex
-                        )
-                    }
-                };
-            }),
+                });
 
-            skipExercise: (exerciseId, isPartner = false) => set((state) => {
-                if (!state.activeSession) return state;
+                // If it's a linked session and this is the local user's update, send granular update to Firestore
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
+                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`; // Assuming sessionId format
+                    const updatePayload: GranularLiveUpdate = {
+                        type: 'EXERCISE_COMPLETED',
+                        exerciseId,
+                    };
+                    void liveSessionService.applyGranularUpdate(sessionId, state.userId, updatePayload).catch(e => {
+                        console.error("Failed to send granular EXERCISE_COMPLETED to liveSessionService:", e);
+                    });
+                }
+            },
+
+            skipExercise: (exerciseId, isPartner = false) => {
+                const state = get();
+                if (!state.activeSession) return;
                 
-                if (isPartner && state.activeSession.partnerExercises) {
+                // Update local state immediately
+                set((state) => {
+                    if (!state.activeSession) return state;
+                    if (isPartner && state.activeSession.partnerExercises) {
+                        return {
+                            activeSession: {
+                                ...state.activeSession,
+                                partnerExercises: state.activeSession.partnerExercises.map(ex =>
+                                    ex.id === exerciseId ? { ...ex, isSkipped: true } : ex
+                                )
+                            }
+                        };
+                    }
+                    
                     return {
                         activeSession: {
                             ...state.activeSession,
-                            partnerExercises: state.activeSession.partnerExercises.map(ex =>
+                            exercises: state.activeSession.exercises.map(ex =>
                                 ex.id === exerciseId ? { ...ex, isSkipped: true } : ex
                             )
                         }
                     };
+                });
+
+                // If it's a linked session and this is the local user's update, send granular update to Firestore
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
+                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`;
+                    const updatePayload: GranularLiveUpdate = {
+                        type: 'EXERCISE_SKIPPED',
+                        exerciseId,
+                    };
+                    void liveSessionService.applyGranularUpdate(sessionId, state.userId, updatePayload).catch(e => {
+                        console.error("Failed to send granular EXERCISE_SKIPPED to liveSessionService:", e);
+                    });
                 }
-                
-                return {
-                    activeSession: {
-                        ...state.activeSession,
-                        exercises: state.activeSession.exercises.map(ex =>
-                            ex.id === exerciseId ? { ...ex, isSkipped: true } : ex
-                        )
-                    }
-                };
-            }),
+            },
 
             finishSession: async (durationMinutos, postWorkoutData) => {
                 const state = get();
@@ -715,6 +825,157 @@ export const useUserStore = create<UserStore>()(
                     }
                 };
             }),
+
+            activateRoutine: (routineId) => set((state) => {
+                const { perfil } = state;
+                const newHistory = [...perfil.historialRutinas];
+                let routineToActivate: RutinaUsuario | undefined;
+                let newCurrentRoutine: RutinaUsuario | null = null;
+
+                // Find and remove the routine to activate from history
+                const indexToActivate = newHistory.findIndex(r => r.id === routineId);
+                if (indexToActivate !== -1) {
+                    routineToActivate = newHistory.splice(indexToActivate, 1)[0];
+                }
+
+                // If found, and there's a current routine, move current to history
+                if (routineToActivate) {
+                    if (perfil.rutina) {
+                        // Clear its isDefault flag as it's no longer the *active* default
+                        newHistory.push({ ...perfil.rutina, isDefault: false });
+                    }
+                    newCurrentRoutine = routineToActivate;
+                } else {
+                    // Check if the current routine is the one to activate
+                    if (perfil.rutina && perfil.rutina.id === routineId) {
+                        newCurrentRoutine = perfil.rutina;
+                    }
+                }
+
+                if (!newCurrentRoutine) {
+                    console.warn(`Routine with ID ${routineId} not found in history or as current.`);
+                    return state; // No change if routine not found
+                }
+
+                // Update defaultRoutineId if the activated routine is default
+                let updatedDefaultRoutineId = perfil.defaultRoutineId;
+                if (newCurrentRoutine.isDefault) {
+                    updatedDefaultRoutineId = newCurrentRoutine.id;
+                } else if (updatedDefaultRoutineId === newCurrentRoutine.id) {
+                    // If it was default, but now is not marked, clear it
+                    updatedDefaultRoutineId = undefined;
+                }
+
+
+                return {
+                    perfil: {
+                        ...perfil,
+                        rutina: newCurrentRoutine,
+                        historialRutinas: newHistory,
+                        defaultRoutineId: updatedDefaultRoutineId
+                    }
+                };
+            }),
+
+            saveCurrentRoutineToHistory: () => set((state) => {
+                const { perfil } = state;
+                const rutinaActual = perfil.rutina;
+                const newHistory = [...perfil.historialRutinas];
+                let updatedDefaultRoutineId = perfil.defaultRoutineId;
+
+                if (rutinaActual) {
+                    // Clear its isDefault flag as it's no longer the *active* default
+                    newHistory.push({ ...rutinaActual, isDefault: false });
+                    
+                    // If the routine being saved was the default, clear the default ID
+                    if (updatedDefaultRoutineId === rutinaActual.id) {
+                        updatedDefaultRoutineId = undefined;
+                    }
+                } else {
+                    console.warn("No active routine to save to history.");
+                    return state;
+                }
+
+                return {
+                    perfil: {
+                        ...perfil,
+                        rutina: null, // Clear the current active routine
+                        historialRutinas: newHistory,
+                        defaultRoutineId: updatedDefaultRoutineId
+                    }
+                };
+            }),
+
+            setDefaultRoutine: (routineId) => set((state) => {
+                const { perfil } = state;
+                let newCurrentRoutine = perfil.rutina ? { ...perfil.rutina } : null;
+                const newHistory = perfil.historialRutinas.map(r => ({ ...r, isDefault: false })); // Clear all existing default flags
+
+                let newDefaultRoutineId: string | undefined = undefined;
+
+                if (routineId) {
+                    // Try to find in current routine
+                    if (newCurrentRoutine && newCurrentRoutine.id === routineId) {
+                        newCurrentRoutine.isDefault = true;
+                        newDefaultRoutineId = routineId;
+                    } else {
+                        // Try to find in history
+                        const foundInHistoryIndex = newHistory.findIndex(r => r.id === routineId);
+                        if (foundInHistoryIndex !== -1) {
+                            newHistory[foundInHistoryIndex].isDefault = true;
+                            newDefaultRoutineId = routineId;
+                        } else {
+                            console.warn(`Routine with ID ${routineId} not found to set as default.`);
+                        }
+                    }
+                } else {
+                    // Clear default
+                    if (newCurrentRoutine) newCurrentRoutine.isDefault = false;
+                }
+
+                return {
+                    perfil: {
+                        ...perfil,
+                        rutina: newCurrentRoutine,
+                        historialRutinas: newHistory,
+                        defaultRoutineId: newDefaultRoutineId
+                    }
+                };
+            }),
+
+            importRoutine: (routine, activate = false) => {
+                set((state) => {
+                    const { perfil } = state;
+                    const newHistory = [...perfil.historialRutinas];
+
+                    // Ensure the imported routine has a unique ID and is not marked as default initially
+                    const importedRoutine: RutinaUsuario = {
+                        ...routine,
+                        id: routine.id || `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        isDefault: false, // Imported routine should not be default automatically
+                        nombre: `Importada - ${routine.nombre}` // Prefix to distinguish imported routines
+                    };
+
+                    // Check for duplicates before adding
+                    if (!newHistory.some(r => r.id === importedRoutine.id)) {
+                        newHistory.push(importedRoutine);
+                    } else {
+                        console.warn(`Routine with ID ${importedRoutine.id} already exists in history. Skipping import.`);
+                    }
+                    
+                    return {
+                        perfil: {
+                            ...perfil,
+                            historialRutinas: newHistory
+                        }
+                    };
+                });
+
+                if (activate) {
+                    // Activate the routine if requested
+                    get().activateRoutine(routine.id || `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+                }
+            },
 
             setAlias: (alias) => set((state) => ({
                 perfil: { ...state.perfil, alias }

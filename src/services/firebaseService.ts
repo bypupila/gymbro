@@ -24,12 +24,22 @@ export const firebaseService = {
             usuario: profile.usuario,
             pareja: profile.pareja,
             horario: profile.horario,
-            rutina: profile.rutina,
+            rutina: profile.rutina ? { // Ensure ID and isDefault are saved
+                id: profile.rutina.id,
+                nombre: profile.rutina.nombre,
+                duracionSemanas: profile.rutina.duracionSemanas,
+                ejercicios: profile.rutina.ejercicios,
+                fechaInicio: profile.rutina.fechaInicio,
+                fechaExpiracion: profile.rutina.fechaExpiracion,
+                analizadaPorIA: profile.rutina.analizadaPorIA,
+                isDefault: profile.rutina.isDefault || false,
+            } : null,
             onboardingCompletado: profile.onboardingCompletado,
             partnerId: profile.partnerId || null,
             partners: profile.partners || [],
             weeklyTracking: profile.weeklyTracking || {},
             catalogoExtras: profile.catalogoExtras || [],
+            defaultRoutineId: profile.defaultRoutineId || null, // Save the default routine ID
             updatedAt: new Date().toISOString(),
         });
     },
@@ -60,7 +70,16 @@ export const firebaseService = {
             usuario: data.usuario,
             pareja: data.pareja,
             horario: data.horario,
-            rutina: data.rutina,
+            rutina: data.rutina ? {
+                id: data.rutina.id,
+                nombre: data.rutina.nombre,
+                duracionSemanas: data.rutina.duracionSemanas,
+                ejercicios: data.rutina.ejercicios,
+                fechaInicio: data.rutina.fechaInicio,
+                fechaExpiracion: data.rutina.fechaExpiracion,
+                analizadaPorIA: data.rutina.analizadaPorIA,
+                isDefault: data.rutina.isDefault || false,
+            } : null,
             historial,
             historialRutinas,
             onboardingCompletado: data.onboardingCompletado,
@@ -71,6 +90,7 @@ export const firebaseService = {
             weeklyTracking: data.weeklyTracking || {},
             actividadesExtras: extraActivities,
             catalogoExtras: catalogExtras,
+            defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
         };
     },
 
@@ -100,7 +120,16 @@ export const firebaseService = {
                 usuario: data.usuario,
                 pareja: data.pareja,
                 horario: data.horario,
-                rutina: data.rutina,
+                rutina: data.rutina ? {
+                    id: data.rutina.id,
+                    nombre: data.rutina.nombre,
+                    duracionSemanas: data.rutina.duracionSemanas,
+                    ejercicios: data.rutina.ejercicios,
+                    fechaInicio: data.rutina.fechaInicio,
+                    fechaExpiracion: data.rutina.fechaExpiracion,
+                    analizadaPorIA: data.rutina.analizadaPorIA,
+                    isDefault: data.rutina.isDefault || false,
+                } : null,
                 historial,
                 historialRutinas,
                 onboardingCompletado: data.onboardingCompletado,
@@ -111,6 +140,7 @@ export const firebaseService = {
                 weeklyTracking: data.weeklyTracking || {},
                 actividadesExtras: extraActivities,
                 catalogoExtras: catalogExtras,
+                defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
             });
         });
     },
@@ -209,15 +239,27 @@ export const firebaseService = {
 
     async saveRoutine(userId: string, routine: RutinaUsuario | null): Promise<void> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
-        await setDoc(profileRef, { rutina: routine }, { merge: true });
+        await setDoc(profileRef, {
+            rutina: routine ? {
+                id: routine.id,
+                nombre: routine.nombre,
+                duracionSemanas: routine.duracionSemanas,
+                ejercicios: routine.ejercicios,
+                fechaInicio: routine.fechaInicio,
+                fechaExpiracion: routine.fechaExpiracion,
+                analizadaPorIA: routine.analizadaPorIA,
+                isDefault: routine.isDefault || false,
+            } : null
+        }, { merge: true });
     },
 
     async archiveRoutine(userId: string, routine: RutinaUsuario): Promise<void> {
-        const routinesRef = collection(db, 'users', userId, 'routineHistory');
-        await addDoc(routinesRef, {
+        const routineRef = doc(db, 'users', userId, 'routineHistory', routine.id); // Use routine.id as document ID
+        await setDoc(routineRef, {
             ...routine,
             fechaInicio: new Date(routine.fechaInicio),
             archivedAt: new Date(),
+            isDefault: routine.isDefault || false, // Ensure isDefault is saved
         });
     },
 
@@ -227,8 +269,10 @@ export const firebaseService = {
         const snapshot = await getDocs(q);
 
         return snapshot.docs.map(doc => ({
+            id: doc.id, // Explicitly get the ID from the document
             ...doc.data(),
             fechaInicio: doc.data().fechaInicio.toISOString ? doc.data().fechaInicio.toISOString() : new Date(doc.data().fechaInicio.seconds * 1000).toISOString(),
+            isDefault: doc.data().isDefault || false, // Ensure isDefault is retrieved
         })) as RutinaUsuario[];
     },
 
@@ -242,6 +286,26 @@ export const firebaseService = {
         } catch (error) {
             console.error('Error getting partner routine:', error);
             return null;
+        }
+    },
+
+    async getPartnerRoutines(partnerId: string): Promise<RutinaUsuario[]> {
+        try {
+            const partnerProfile = await this.getProfile(partnerId);
+            let allRoutines: RutinaUsuario[] = [];
+
+            if (partnerProfile) {
+                if (partnerProfile.rutina) {
+                    allRoutines.push(partnerProfile.rutina);
+                }
+                if (partnerProfile.historialRutinas) {
+                    allRoutines = allRoutines.concat(partnerProfile.historialRutinas);
+                }
+            }
+            return allRoutines;
+        } catch (error) {
+            console.error('Error getting partner routines:', error);
+            return [];
         }
     },
 
@@ -397,22 +461,25 @@ export const firebaseService = {
     async shareRoutine(targetAlias: string, routine: RutinaUsuario): Promise<{ success: boolean; message: string }> {
         try {
             const targetUser = await this.findUserByAlias(targetAlias);
-            if (!targetUser) {
+            if (!targetUser || !targetUser.id) { // Ensure targetUser and its ID exist
                 return { success: false, message: 'Usuario no encontrado' };
             }
 
             const targetId = targetUser.id;
             const targetProfile = await this.getProfile(targetId);
 
-            const routineCopy = {
+            // Create a copy of the routine with a new ID and mark as shared, not default
+            const routineCopy: RutinaUsuario = {
                 ...routine,
-                nombre: `${routine.nombre} (Compartida)`,
+                id: `shared_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Generate new ID
+                nombre: `Rutina Compartida - ${routine.nombre}`, // Clearly mark as shared
                 fechaInicio: new Date().toISOString(),
+                isDefault: false, // Shared routines should not be default by creation
+                analizadaPorIA: false, // Assume shared routines are not AI-analyzed unless explicitly specified
             };
 
             if (!targetProfile) {
-                // Crear perfil b?sico si no existe (though this implies user doesn't exist which contradicts successful findUserByAlias if alias maps to existing user)
-                // Check plan: "Crear perfil b?sico si no existe"
+                // If target user has no profile, create a basic one with the shared routine as active
                 const newProfile: PerfilCompleto = {
                     usuario: {
                         nombre: targetUser.alias,
@@ -425,23 +492,28 @@ export const firebaseService = {
                     },
                     pareja: null,
                     horario: { dias: [] },
-                    rutina: routineCopy,
+                    rutina: routineCopy, // Set as active routine
                     historial: [],
                     historialRutinas: [],
                     onboardingCompletado: true,
                     actividadesExtras: [],
-                    catalogoExtras: []
+                    catalogoExtras: [],
+                    defaultRoutineId: undefined, // No default initially
                 };
                 await this.saveProfile(targetId, newProfile);
             } else {
-                // Archivar rutina actual y establecer nueva
-                if (targetProfile.rutina) {
-                    await this.archiveRoutine(targetId, targetProfile.rutina);
-                }
-                await this.saveRoutine(targetId, routineCopy);
+                // If target user has a profile, add the shared routine to their history
+                // (they can choose to activate it later)
+                const routinesRef = collection(db, 'users', targetId, 'routineHistory');
+                const routineRef = doc(routinesRef, routineCopy.id); // Use routineCopy.id as document ID
+                await setDoc(routineRef, {
+                    ...routineCopy,
+                    fechaInicio: new Date(routineCopy.fechaInicio),
+                    archivedAt: new Date(),
+                });
             }
 
-            return { success: true, message: 'Rutina compartida con ?xito' };
+            return { success: true, message: 'Rutina compartida con éxito' };
         } catch (error) {
             console.error('Share Routine Error:', error);
             return { success: false, message: 'Error al compartir la rutina' };
