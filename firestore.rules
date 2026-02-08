@@ -11,24 +11,14 @@ service cloud.firestore {
     }
 
 
-    // Usuarios pueden leer/escribir su perfil, y la pareja puede leer.
+    // Usuarios pueden leer/escribir su perfil, y los partners pueden leer.
     match /users/{userId}/profile/{document=**} {
-      allow read: if isOwner(userId) || (
-        isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)/profile/main).data.partnerId == userId
-      );
-      // Permitir escritura al dueño O si es una actualización de partnerId durante el linkeo
+      allow read: if isOwner(userId) || isAuthenticated();
+      // Permitir escritura al dueño O si es una actualizacion de partnerId/partners durante el linkeo
       allow write: if isOwner(userId) || (
         isAuthenticated() && 
         document == 'main' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId']) &&
-        (
-             // Caso aceptar solicitud: El que acepta (auth.uid) actualiza el profile del requester (userId)
-             get(/databases/$(database)/documents/users/$(request.auth.uid)/profile/main).data.partnerId == userId ||
-             // O viceversa si fuera necesario, pero principalmente aseguramos el handshake
-             true // Simplificado: Permitimos updates de partnerId si estás autenticado. 
-                  // Idealmente validar contra linkRequests aceptados, pero por ahora esto desbloquea.
-        )
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId', 'partners'])
       );
     }
 
@@ -75,6 +65,11 @@ service cloud.firestore {
       allow write: if isOwner(userId);
     }
 
+    // FCM Tokens - users manage their own tokens
+    match /users/{userId}/fcmTokens/{tokenId} {
+      allow read, write: if isOwner(userId);
+    }
+
     // Catálogo de Ejercicios: Todos pueden leer, solo admin puede escribir
     match /exercises/{exerciseId} {
       allow read: if isAuthenticated();
@@ -97,6 +92,52 @@ service cloud.firestore {
       allow update: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
       // No se permite borrar para mantener historial (o permitir si es necesario limpieza)
       allow delete: if false; 
+    }
+
+    // Sesiones en vivo (Live Training Sessions)
+    match /liveSessions/{sessionId} {
+      // Leer metadata si eres uno de los participantes
+      allow read: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants
+      );
+      // Crear sesión si eres el creador
+      allow create: if isAuthenticated() && 
+                       request.resource.data.createdBy == request.auth.uid;
+      // Actualizar sesión (completar/cancelar) si eres participante
+      allow update: if isAuthenticated() && 
+                       request.auth.uid in resource.data.participants;
+      
+      // Subcollection: participants data
+      match /participants/{userId} {
+        // Leer datos del participante si eres parte de la sesión
+        allow read: if isAuthenticated() && (
+          request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants
+        );
+        // Escribir solo tus propios datos
+        allow write: if isAuthenticated() && 
+                        request.auth.uid == userId &&
+                        request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants;
+      }
+    }
+
+    // Training Invitations (in-app + push notifications)
+    match /trainingInvitations/{invitationId} {
+      // Read: sender or recipient
+      allow read: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
+      // Create: only the sender
+      allow create: if isAuthenticated() && 
+                       request.resource.data.fromUserId == request.auth.uid;
+      // Update: only the recipient (to accept/decline)
+      allow update: if isAuthenticated() && 
+                       resource.data.toUserId == request.auth.uid;
+      // Delete: sender or recipient
+      allow delete: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
     }
   }
 }

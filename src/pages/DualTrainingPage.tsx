@@ -1,26 +1,26 @@
 // =====================================================
-// GymBro PWA - Dual Training Page
+// GymBro PWA - Dual Training Page (Multi-Partner)
 // =====================================================
 
 import React from 'react';
 import Colors from '@/styles/colors';
-import { ChevronLeft, Users, Zap, Heart, ShieldCheck, Share2 } from 'lucide-react';
+import { ChevronLeft, Users, Zap, Heart, ShieldCheck, Share2, UserX, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
-import { useUserStore } from '@/stores/userStore';
+import { useUserStore, PartnerInfo } from '@/stores/userStore';
 import { toast } from 'react-hot-toast';
 
 import { firebaseService } from '@/services/firebaseService';
 
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, userId } = useUserStore();
+    const { perfil, userId, removePartner } = useUserStore();
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [aliasInput, setAliasInput] = React.useState('');
     const [connectError, setConnectError] = React.useState('');
 
-    // Check local state or if partnerId exists
-    const parejaconectada = !!perfil.pareja || !!perfil.partnerId;
+    const partners = perfil.partners || [];
+    const hasPartners = partners.length > 0 || !!perfil.partnerId;
 
     const handleConnect = async () => {
         if (!aliasInput.trim()) return;
@@ -44,6 +44,12 @@ export const DualTrainingPage: React.FC = () => {
                 return;
             }
 
+            // Check if already linked
+            if (partners.some(p => p.id === user.id)) {
+                setConnectError('Ya estas vinculado con esta persona.');
+                return;
+            }
+
             await firebaseService.sendLinkRequest(userId, perfil.alias, user.id);
             toast.success(`Solicitud enviada a ${user.name || user.alias}`);
             setAliasInput('');
@@ -54,6 +60,42 @@ export const DualTrainingPage: React.FC = () => {
         } finally {
             setIsConnecting(false);
         }
+    };
+
+    const handleUnlink = (partner: PartnerInfo) => {
+        toast((t) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>Desvincular a {partner.nombre}?</span>
+                <span style={{ fontSize: '12px', color: '#aaa' }}>
+                    Podran volver a vincularse despues
+                </span>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={async () => {
+                            try {
+                                if (userId) {
+                                    await firebaseService.unlinkPartner(userId, partner);
+                                    removePartner(partner.id);
+                                    toast.success(`${partner.nombre} desvinculado`);
+                                }
+                                toast.dismiss(t.id);
+                            } catch (error) {
+                                toast.error('Error al desvincular');
+                            }
+                        }}
+                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                    >
+                        Desvincular
+                    </button>
+                </div>
+            </div>
+        ), { duration: 5000 });
     };
 
     return (
@@ -78,26 +120,27 @@ export const DualTrainingPage: React.FC = () => {
                     <div style={styles.synergyMain}>
                         <div style={styles.synergyRing}>
                             <Users size={32} color={Colors.primary} />
-                            <div style={styles.synergyValue}>88</div>
-                            <div style={styles.synergyLabel}>PUNTOS</div>
+                            <div style={styles.synergyValue}>{partners.length}</div>
+                            <div style={styles.synergyLabel}>PARTNERS</div>
                         </div>
                     </div>
                     <div style={styles.synergyInfo}>
-                        <h2 style={styles.synergyTitle}>Sinergia de Pareja</h2>
+                        <h2 style={styles.synergyTitle}>Tu Red de Entrenamiento</h2>
                         <p style={styles.synergyDesc}>
-                            {parejaconectada
-                                ? "¡Gran ritmo! Habéis completado 4 sesiones juntos esta semana."
-                                : "Conecta a tu pareja para duplicar resultados y mantener la racha."
+                            {hasPartners
+                                ? `Tienes ${partners.length} partner${partners.length !== 1 ? 's' : ''} vinculado${partners.length !== 1 ? 's' : ''}. Elige con quien entrenar al iniciar tu sesion.`
+                                : "Conecta con tus partners para entrenar juntos y motivarse mutuamente."
                             }
                         </p>
                     </div>
                 </div>
             </Card>
 
-            {/* Connection Status */}
+            {/* Partners List */}
             <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Estado de Conexión</h3>
+                <h3 style={styles.sectionTitle}>Partners Vinculados</h3>
                 <Card style={styles.connectionCard}>
+                    {/* Current user row */}
                     <div style={styles.userRow}>
                         <div style={styles.avatarWrapper}>
                             <img
@@ -108,66 +151,111 @@ export const DualTrainingPage: React.FC = () => {
                             <div style={{ ...styles.statusDot, background: Colors.primary }} />
                         </div>
                         <div style={styles.userInfo}>
-                            <span style={styles.userName}>{perfil.usuario.nombre || 'Tú'}</span>
-                            <span style={styles.userStatus}>En línea</span>
+                            <span style={styles.userName}>{perfil.usuario.nombre || 'Tu'}</span>
+                            <span style={styles.userStatus}>En linea</span>
                         </div>
                         <div style={styles.userIcon}>
                             <Zap size={18} color={Colors.primary} />
                         </div>
                     </div>
 
-                    <div style={styles.divider} />
+                    {/* Partner rows */}
+                    {partners.length > 0 ? (
+                        partners.map((partner) => (
+                            <React.Fragment key={partner.id}>
+                                <div style={styles.divider} />
+                                <div style={styles.userRow}>
+                                    <div style={styles.avatarWrapper}>
+                                        <img
+                                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${partner.nombre || partner.alias}`}
+                                            style={styles.avatar}
+                                            alt={partner.nombre}
+                                        />
+                                        <div style={{ ...styles.statusDot, background: Colors.textTertiary }} />
+                                    </div>
+                                    <div style={styles.userInfo}>
+                                        <span style={styles.userName}>{partner.nombre}</span>
+                                        <span style={styles.userStatus}>@{partner.alias}</span>
+                                    </div>
+                                    <button
+                                        onClick={() => handleUnlink(partner)}
+                                        style={{
+                                            background: `${Colors.error}15`,
+                                            border: `1px solid ${Colors.error}30`,
+                                            borderRadius: '8px',
+                                            padding: '6px 8px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                        }}
+                                    >
+                                        <UserX size={14} color={Colors.error} />
+                                    </button>
+                                </div>
+                            </React.Fragment>
+                        ))
+                    ) : perfil.partnerId ? (
+                        // Legacy single partner fallback
+                        <>
+                            <div style={styles.divider} />
+                            <div style={styles.userRow}>
+                                <div style={styles.avatarWrapper}>
+                                    <img
+                                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${perfil.pareja?.nombre || 'GymBro'}`}
+                                        style={styles.avatar}
+                                        alt="Partner"
+                                    />
+                                    <div style={{ ...styles.statusDot, background: Colors.textTertiary }} />
+                                </div>
+                                <div style={styles.userInfo}>
+                                    <span style={styles.userName}>{perfil.pareja?.nombre || 'Partner vinculado'}</span>
+                                    <span style={styles.userStatus}>Vinculado (legacy)</span>
+                                </div>
+                            </div>
+                        </>
+                    ) : null}
 
-                    {(perfil.pareja || perfil.partnerId) ? (
-                        <div style={styles.userRow}>
-                            <div style={styles.avatarWrapper}>
-                                <img
-                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${perfil.pareja?.nombre || 'GymBro'}`}
-                                    style={styles.avatar}
-                                    alt="Pareja"
-                                />
-                                <div style={{ ...styles.statusDot, background: Colors.textTertiary }} />
-                            </div>
-                            <div style={styles.userInfo}>
-                                <span style={styles.userName}>{perfil.pareja?.nombre || 'Pareja vinculada'}</span>
-                                <span style={styles.userStatus}>{perfil.pareja ? 'Desconectado' : 'Vinculado'}</span>
-                            </div>
+                    {/* Add new partner input */}
+                    <div style={styles.divider} />
+                    <div style={{ padding: '10px 0 0 0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <UserPlus size={16} color={Colors.primary} />
+                            <p style={{ fontSize: '13px', margin: 0, color: Colors.textSecondary, fontWeight: 600 }}>Agregar Partner</p>
                         </div>
-                    ) : (
-                        <div style={{ padding: '10px' }}>
-                            <p style={{ fontSize: '14px', marginBottom: '8px', color: Colors.textSecondary }}>Ingresa el Alias de tu GymBro:</p>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <input
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        borderRadius: '8px',
-                                        border: `1px solid ${Colors.border}`,
-                                        background: Colors.background,
-                                        color: Colors.text
-                                    }}
-                                    placeholder="Ej: TitanFit"
-                                    value={aliasInput}
-                                    onChange={e => setAliasInput(e.target.value)}
-                                />
-                                <button
-                                    style={{
-                                        ...styles.connectBtn,
-                                        width: 'auto',
-                                        padding: '0 16px',
-                                        background: Colors.primary,
-                                        color: '#000',
-                                        border: 'none'
-                                    }}
-                                    onClick={handleConnect}
-                                    disabled={isConnecting}
-                                >
-                                    {isConnecting ? '...' : <Zap size={18} />}
-                                </button>
-                            </div>
-                            {connectError && <p style={{ color: Colors.error, fontSize: '12px', marginTop: '8px' }}>{connectError}</p>}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                style={{
+                                    flex: 1,
+                                    padding: '10px',
+                                    borderRadius: '8px',
+                                    border: `1px solid ${Colors.border}`,
+                                    background: Colors.background,
+                                    color: Colors.text,
+                                    fontSize: '14px',
+                                }}
+                                placeholder="Alias del partner"
+                                value={aliasInput}
+                                onChange={e => setAliasInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleConnect()}
+                            />
+                            <button
+                                style={{
+                                    ...styles.connectBtn,
+                                    width: 'auto',
+                                    padding: '0 16px',
+                                    background: Colors.primary,
+                                    color: '#000',
+                                    border: 'none'
+                                }}
+                                onClick={handleConnect}
+                                disabled={isConnecting}
+                            >
+                                {isConnecting ? '...' : <Zap size={18} />}
+                            </button>
                         </div>
-                    )}
+                        {connectError && <p style={{ color: Colors.error, fontSize: '12px', marginTop: '8px' }}>{connectError}</p>}
+                    </div>
                 </Card>
             </div>
 
@@ -178,8 +266,8 @@ export const DualTrainingPage: React.FC = () => {
                         <Heart size={20} color={Colors.error} />
                     </div>
                     <div style={styles.featureContent}>
-                        <h4 style={styles.featureTitle}>Racha Compartida</h4>
-                        <p style={styles.featureDesc}>Si uno falla, la racha de ambos peligra. Motivación mutua.</p>
+                        <h4 style={styles.featureTitle}>Multiples Partners</h4>
+                        <p style={styles.featureDesc}>Vincularte con varias personas y elige con quien entrenar cada dia.</p>
                     </div>
                 </div>
                 <div style={styles.featureItem}>
@@ -187,23 +275,26 @@ export const DualTrainingPage: React.FC = () => {
                         <ShieldCheck size={20} color="#C026D3" />
                     </div>
                     <div style={styles.featureContent}>
-                        <h4 style={styles.featureTitle}>Sincronización de Descansos</h4>
-                        <p style={styles.featureDesc}>Tiempos de descanso coordinados en tiempo real.</p>
+                        <h4 style={styles.featureTitle}>Dos Modos de Entrenamiento</h4>
+                        <p style={styles.featureDesc}>Mismo celular o cada quien el suyo con sincronizacion en tiempo real.</p>
                     </div>
                 </div>
             </div>
 
-            {/* Action Button */}
-            <button
-                style={{
-                    ...styles.mainActionBtn,
-                    opacity: parejaconectada ? 1 : 0.6
-                }}
-                disabled={!parejaconectada}
-                onClick={() => navigate('/train')}
-            >
-                INICIAR SESIÓN DUAL
-            </button>
+            {/* Shared Sessions History */}
+            {hasPartners && (
+                <div style={styles.section}>
+                    <h3 style={styles.sectionTitle}>Sesiones Compartidas Recientes</h3>
+                    <Card style={styles.historyCard}>
+                        <p style={styles.historyPlaceholder}>
+                            El historial de sesiones compartidas aparecera aqui
+                        </p>
+                        <p style={styles.historyNote}>
+                            (Proximamente)
+                        </p>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 };
@@ -427,19 +518,28 @@ const styles: Record<string, React.CSSProperties> = {
         margin: 0,
         lineHeight: 1.4,
     },
-    mainActionBtn: {
-        width: '100%',
-        padding: '18px',
-        borderRadius: '16px',
-        background: Colors.gradientPrimary,
-        color: '#000',
-        fontWeight: 900,
-        fontSize: '16px',
-        border: 'none',
-        cursor: 'pointer',
-        boxShadow: `0 8px 24px ${Colors.primary}40`,
-        letterSpacing: '0.5px',
+    // mainActionBtn removed - sessions start from HomePage now
+    historyCard: {
+        padding: '24px',
+        background: Colors.surface,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
     },
+    historyPlaceholder: {
+        fontSize: '14px',
+        color: Colors.textSecondary,
+        textAlign: 'center',
+        margin: 0,
+    },
+    historyNote: {
+        fontSize: '12px',
+        color: Colors.textTertiary,
+        textAlign: 'center',
+        margin: 0,
+        fontStyle: 'italic',
+    }
 };
 
 export default DualTrainingPage;

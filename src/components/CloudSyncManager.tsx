@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useUserStore } from '../stores/userStore';
 import { firebaseService } from '../services/firebaseService';
 import { RoutineCopyModal } from './RoutineCopyModal';
+import { requestNotificationPermission, onForegroundMessage } from '../services/pushNotificationService';
 
 export const CloudSyncManager: React.FC = () => {
     const { userId, perfil, setIsSyncing, setLastSyncError } = useUserStore();
@@ -100,6 +101,35 @@ export const CloudSyncManager: React.FC = () => {
             if (syncTimeout.current) clearTimeout(syncTimeout.current);
         };
     }, [perfil, userId, setIsSyncing, setLastSyncError]);
+
+    // Push notification setup - request permission after initial load
+    useEffect(() => {
+        if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
+
+        // Request notification permission (non-blocking)
+        const initPush = async () => {
+            try {
+                await requestNotificationPermission(userId);
+                // Listen for foreground messages
+                const unsubMsg = await onForegroundMessage((payload) => {
+                    // Foreground messages are handled by TrainingInvitationNotifier via Firestore
+                    // This is just for logging/debugging
+                    console.log('Foreground push received:', payload);
+                });
+                return unsubMsg;
+            } catch (e) {
+                // Push notifications are optional - don't break the app
+                console.warn('Push notification setup skipped:', e);
+            }
+        };
+
+        // Delay push permission request to not interrupt UX
+        const timer = setTimeout(() => {
+            initPush();
+        }, 5000);
+
+        return () => clearTimeout(timer);
+    }, [userId, perfil.onboardingCompletado]);
 
     // Effect to detect new partner link
     useEffect(() => {

@@ -1,124 +1,68 @@
-// =====================================================
-// GymBro PWA - Desktop Layout Component
-// =====================================================
-
-import Colors from '@/styles/colors';
-import {
-    Dumbbell, Home, Info, Share2, TrendingUp, User,
-    FileText, ChevronRight, ChevronLeft, Layout, Zap, Users, Library
-} from 'lucide-react';
-import React, { useState } from 'react';
+import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { Home, Dumbbell, Zap, TrendingUp, User, Search, Settings, LogOut } from 'lucide-react';
+import Colors from '@/styles/colors';
+import { Agentation } from 'agentation';
+import { useUserStore } from '@/stores/userStore';
 
-const navItems = [
-    { path: '/', icon: Home, label: 'Home' },
-    { path: '/train', icon: Zap, label: 'Live Session' },
-    { path: '/dual-training', icon: Users, label: 'Dual Training' },
-    { path: '/catalog', icon: Library, label: 'Catálogo' },
-    { path: '/routine', icon: FileText, label: 'Mi Rutina' },
-    { path: '/progress', icon: TrendingUp, label: 'Mi Progreso' },
+const sidebarItems = [
+    { path: '/', icon: Home, label: 'Inicio' },
+    { path: '/routine', icon: Dumbbell, label: 'Mi Rutina' },
+    { path: '/train', icon: Zap, label: 'Entrenar' },
+    { path: '/catalog', icon: Search, label: 'CatÃ¡logo' }, // Fixed Label
+    { path: '/progress', icon: TrendingUp, label: 'Progreso' },
     { path: '/profile', icon: User, label: 'Perfil' },
 ];
-
-import { Agentation } from 'agentation';
 
 export const DesktopLayout: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const showRightPanel = useMediaQuery('(min-width: 1200px)');
-    const [isRightPanelHidden, setIsRightPanelHidden] = useState(false);
+    const { logout } = useUserStore();
 
     return (
         <div style={styles.container}>
-            {/* Sidebar Navigation */}
+            {/* Sidebar */}
             <aside style={styles.sidebar}>
-                <div style={styles.sidebarContent}>
-                    <div style={styles.logoContainer}>
-                        <div style={styles.logoIcon}>
-                            <Dumbbell color="#000" size={28} />
-                        </div>
-                        <h1 style={styles.logoText}>GymBro</h1>
-                    </div>
+                <div style={styles.logoContainer}>
+                    <h1 style={styles.logo}>GymBro</h1>
+                </div>
 
-                    <nav style={styles.nav}>
-                        {navItems.map((item) => {
-                            const isActive = location.pathname === item.path;
-                            const Icon = item.icon;
-                            return (
-                                <button
-                                    key={item.path}
-                                    onClick={() => navigate(item.path)}
-                                    style={{
-                                        ...styles.navItem,
-                                        backgroundColor: isActive ? `${Colors.primary}15` : 'transparent',
-                                        color: isActive ? Colors.primary : Colors.textSecondary,
-                                    }}
-                                >
-                                    <Icon size={22} color={isActive ? Colors.primary : Colors.textSecondary} />
-                                    <span style={styles.navLabel}>{item.label}</span>
-                                    {isActive && <div style={styles.activeIndicator} />}
-                                </button>
-                            );
-                        })}
-                    </nav>
+                <nav style={styles.nav}>
+                    {sidebarItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = location.pathname === item.path;
+                        return (
+                            <button
+                                key={item.path}
+                                onClick={() => navigate(item.path)}
+                                style={{
+                                    ...styles.navItem,
+                                    background: isActive ? 'rgba(0, 230, 153, 0.1)' : 'transparent',
+                                    color: isActive ? Colors.primary : Colors.textSecondary,
+                                    borderRight: isActive ? `3px solid ${Colors.primary}` : '3px solid transparent',
+                                }}
+                            >
+                                <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
+                                <span style={{ fontWeight: isActive ? 600 : 500 }}>{item.label}</span>
+                            </button>
+                        );
+                    })}
+                </nav>
 
-                    <div style={styles.sidebarFooter}>
-                        <button style={styles.footerItem}>
-                            <Share2 size={18} color={Colors.textMuted} />
-                            <span>Compartir</span>
-                        </button>
-                        <button style={styles.footerItem}>
-                            <Info size={18} color={Colors.textMuted} />
-                            <span>Soporte</span>
-                        </button>
-                        <div style={styles.divider} />
-                        <p style={styles.copyright}>Â© 2026 GymBro AI Platform</p>
-                    </div>
+                <div style={styles.footer}>
+                    <button onClick={() => logout()} style={styles.logoutBtn}>
+                        <LogOut size={20} />
+                        <span>Cerrar SesiÃ³n</span>
+                    </button>
                 </div>
             </aside>
 
-            {/* Main Content Area */}
+            {/* Main Content */}
             <main style={styles.main}>
                 <div style={styles.contentWrapper}>
                     <Outlet />
                 </div>
-
-                {/* Restore Right Panel Button */}
-                {showRightPanel && isRightPanelHidden && (
-                    <button
-                        style={styles.restorePanelBtn}
-                        onClick={() => setIsRightPanelHidden(false)}
-                        title="Mostrar panel lateral"
-                    >
-                        <ChevronLeft size={20} color={Colors.primary} />
-                        <Layout size={18} color={Colors.primary} style={{ opacity: 0.5 }} />
-                    </button>
-                )}
             </main>
-
-            {/* Right Panel (Optional/Stats) - Only visible on large screens */}
-            {showRightPanel && !isRightPanelHidden && (
-                <aside style={styles.rightPanel}>
-                    <div style={styles.rightPanelHeader}>
-                        <button
-                            style={styles.hidePanelBtn}
-                            onClick={() => setIsRightPanelHidden(true)}
-                            title="Ocultar panel"
-                        >
-                            <ChevronRight size={20} color={Colors.textMuted} />
-                        </button>
-                    </div>
-                    <div style={styles.card}>
-                        <h3 style={styles.cardTitle}>Sincronización IA</h3>
-                        <p style={styles.cardText}>Tu progreso se sincroniza en tiempo real con nuestra nube.</p>
-                    </div>
-                    <div style={styles.card}>
-                        <h3 style={styles.cardTitle}>Próximo Hito</h3>
-                        <p style={styles.cardText}>Estás a 3 sesiones de completar tu objetivo semanal.</p>
-                    </div>
-                </aside>
-            )}
 
             {import.meta.env.DEV && <Agentation />}
         </div>
@@ -129,44 +73,29 @@ const styles: Record<string, React.CSSProperties> = {
     container: {
         display: 'flex',
         height: '100vh',
-        width: '100vw',
-        background: Colors.background,
-        color: Colors.text,
+        width: '100%',
+        backgroundColor: Colors.background,
+        overflow: 'hidden',
     },
     sidebar: {
-        width: '280px',
+        width: '240px',
+        backgroundColor: Colors.surface,
         borderRight: `1px solid ${Colors.border}`,
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 100,
-        background: '#0D0D0E',
-    },
-    sidebarContent: {
-        padding: '32px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
+        padding: '24px 0',
     },
     logoContainer: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        marginBottom: '48px',
+        padding: '0 24px',
+        marginBottom: '40px',
     },
-    logoIcon: {
-        width: '44px',
-        height: '44px',
-        background: Colors.gradientPrimary,
-        borderRadius: '12px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: `0 8px 16px ${Colors.primary}40`,
-    },
-    logoText: {
+    logo: {
         fontSize: '24px',
         fontWeight: 900,
-        letterSpacing: '-0.5px',
+        background: Colors.gradientPrimary,
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        margin: 0,
     },
     nav: {
         display: 'flex',
@@ -177,125 +106,40 @@ const styles: Record<string, React.CSSProperties> = {
     navItem: {
         display: 'flex',
         alignItems: 'center',
-        gap: '16px',
-        padding: '14px 16px',
-        borderRadius: '16px',
-        transition: 'all 0.2s ease',
+        gap: '12px',
+        padding: '12px 24px',
+        border: 'none',
+        cursor: 'pointer',
+        fontSize: '15px',
         textAlign: 'left',
-        position: 'relative',
-        fontSize: '16px',
-        fontWeight: 600,
+        transition: 'all 0.2s',
+        width: '100%',
     },
-    navLabel: {
-        flex: 1,
+    footer: {
+        padding: '24px',
+        borderTop: `1px solid ${Colors.border}`,
     },
-    activeIndicator: {
-        width: '4px',
-        height: '20px',
-        backgroundColor: Colors.primary,
-        borderRadius: '2px',
-        position: 'absolute',
-        right: '12px',
+    logoutBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        background: 'none',
+        border: 'none',
+        color: Colors.textSecondary,
+        cursor: 'pointer',
+        fontSize: '14px',
+        padding: 0,
     },
     main: {
         flex: 1,
         overflow: 'auto',
-        background: Colors.background,
         position: 'relative',
     },
     contentWrapper: {
         maxWidth: '1200px',
         margin: '0 auto',
-        padding: '40px',
-    },
-    rightPanel: {
-        width: '320px',
-        padding: '32px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-        background: '#0D0D0E',
-        borderLeft: `1px solid ${Colors.border}`,
-    },
-    card: {
-        background: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: '24px',
-        padding: '24px',
-        border: `1px solid ${Colors.borderLight}`,
-    },
-    cardTitle: {
-        fontSize: '14px',
-        fontWeight: 800,
-        color: Colors.primary,
-        marginBottom: '12px',
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-    },
-    cardText: {
-        fontSize: '14px',
-        color: Colors.textSecondary,
-        lineHeight: 1.6,
-    },
-    sidebarFooter: {
-        marginTop: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-    },
-    footerItem: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '8px 4px',
-        fontSize: '14px',
-        color: Colors.textMuted,
-        fontWeight: 500,
-        transition: 'color 0.2s',
-    },
-    divider: {
-        height: '1px',
-        backgroundColor: Colors.border,
-        margin: '12px 0',
-    },
-    copyright: {
-        fontSize: '11px',
-        color: Colors.textMuted,
-        opacity: 0.6,
-    },
-    rightPanelHeader: {
-        display: 'flex',
-        justifyContent: 'flex-start',
-        marginBottom: '12px',
-    },
-    hidePanelBtn: {
-        background: 'rgba(255,255,255,0.05)',
-        border: 'none',
-        borderRadius: '8px',
-        padding: '8px',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'all 0.2s',
-    },
-    restorePanelBtn: {
-        position: 'absolute',
-        top: '40px',
-        right: '20px',
-        background: 'rgba(255,255,255,0.03)',
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '12px',
-        padding: '12px 8px',
-        cursor: 'pointer',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '8px',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        zIndex: 50,
-        backdropFilter: 'blur(10px)',
-    },
+        minHeight: '100%',
+    }
 };
 
 export default DesktopLayout;
-

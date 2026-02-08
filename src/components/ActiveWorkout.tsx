@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useUserStore, ExerciseTracking, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
@@ -54,6 +54,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedExercises, setExpandedExercises] = useState<string[]>([]);
+    const [showPartnerWidget, setShowPartnerWidget] = useState(false); // New: for linked mode
+    const [partnerExercises, setPartnerExercises] = useState<ExerciseTracking[] | null>(null); // New: partner's real-time exercises
+    const [partnerCurrentExercise, setPartnerCurrentExercise] = useState<string | null>(null); // New: partner's current exercise
     const [guidedMode, setGuidedMode] = useState<{
         active: boolean;
         exerciseId: string | null;
@@ -105,6 +108,26 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const timer = setInterval(() => setDuration(d => d + 1), 1000);
         return () => clearInterval(timer);
     }, []);
+
+    // Linked Session: Real-time sync with partner
+    useEffect(() => {
+        if (!activeSession || activeSession.sessionMode !== 'linked' || !activeSession.selectedPartnerId) {
+            return;
+        }
+
+        // TODO: Implement live session sync
+        // 1. Create or join live session
+        // 2. Listen to partner's exercises updates
+        // 3. Debounce and send local exercise updates
+        
+        // For now, just show the widget
+        setShowPartnerWidget(true);
+
+        return () => {
+            // Cleanup: mark as offline when component unmounts
+            setShowPartnerWidget(false);
+        };
+    }, [activeSession]);
 
     const formatTime = (secs: number) => {
         const mins = Math.floor(secs / 60);
@@ -221,7 +244,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     </button>
                     <button
                         onClick={() => {
-                            skipExercise(exerciseId);
+                            skipExercise(exerciseId, isPartner);
                             setIsTimerRunning(false);
                             setTimerSeconds(0);
                             toast.dismiss(t.id);
@@ -525,12 +548,34 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 <div style={{ ...styles.progressFill, width: `${progress}%` }} />
             </div>
 
+            {/* Dual Session Indicator */}
+            {activeSession.isDualSession && activeSession.partnerExercises && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '16px',
+                    padding: '8px 20px',
+                    background: `${Colors.primary}08`,
+                    borderBottom: `1px solid ${Colors.border}`,
+                    fontSize: '12px',
+                    color: Colors.textSecondary
+                }}>
+                    <span style={{ fontWeight: 700, color: Colors.text }}>{perfil.usuario.nombre.split(' ')[0]}</span>
+                    <span style={{ color: Colors.textTertiary }}>+</span>
+                    <span style={{ fontWeight: 700, color: Colors.primary }}>{activeSession.selectedPartnerName || perfil.pareja?.nombre.split(' ')[0] || 'Partner'}</span>
+                    <span style={{ color: Colors.textTertiary, fontSize: '10px', marginLeft: '8px' }}>
+                        {activeSession.sessionMode === 'shared' ? 'Mismo cel' : 'Vinculado'}
+                    </span>
+                </div>
+            )}
+
             <div style={styles.activeContent}>
                 {/* Warmup Section */}
                 {activeSession.exercises.filter(ex => ex.categoria === 'calentamiento').length > 0 && (
                     <>
                         <div style={styles.sectionHeader}>
-                            <span style={styles.sectionEmoji}>ðŸ”¥</span>
+                            <span style={styles.sectionEmoji}>”¥</span>
                             <div style={styles.sectionTextContainer}>
                                 <h3 style={styles.sectionTitle}>CALENTAMIENTO</h3>
                                 <p style={styles.sectionSubtitle}>Prepara tu cuerpo antes de empezar</p>
@@ -544,7 +589,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                 {/* Main Routine Section */}
                 <div style={styles.sectionHeader}>
-                    <span style={styles.sectionEmoji}>ðŸ’ª</span>
+                    <span style={styles.sectionEmoji}>’ª</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
                         <p style={styles.sectionSubtitle}>Dale al botón Play para comenzar cada ejercicio</p>
@@ -629,6 +674,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             <button
                                                 onClick={() => {
                                                     if (!selectedExerciseForAdd) return;
+                                                    const isAddingForPartner = activeSession?.sessionMode === 'shared' && activeTab === 'partner';
                                                     addExerciseToSession({
                                                         id: selectedExerciseForAdd.id,
                                                         nombre: selectedExerciseForAdd.nombre,
@@ -636,7 +682,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         repeticiones: addConfig.unit !== 'reps' ? `${addConfig.repeticiones}${addConfig.unit}` : addConfig.repeticiones,
                                                         descanso: addConfig.descanso,
                                                         categoria: 'maquina'
-                                                    });
+                                                    }, isAddingForPartner);
                                                     setShowAddModal(false);
                                                     setSelectedExerciseForAdd(null);
                                                     setSearchQuery('');
@@ -746,7 +792,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 setShowMoodCheckin(true);
                                             }}
                                         >
-                                            <div style={styles.optionIcon}>ðŸ“‹</div>
+                                            <div style={styles.optionIcon}>“‹</div>
                                             <div style={styles.optionText}>
                                                 <h4>Rutina Completa</h4>
                                                 <p>Guardar progreso y finalizar</p>
@@ -758,7 +804,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             style={styles.optionBtn}
                                             onClick={() => setCompletionType('extra')}
                                         >
-                                            <div style={styles.optionIcon}>ðŸƒâ€â™‚ï¸</div>
+                                            <div style={styles.optionIcon}>ƒâ€â™‚ï¸</div>
                                             <div style={styles.optionText}>
                                                 <h4>Actividad Extra</h4>
                                                 <p>Agregar cardio, estiramiento, deporte...</p>
@@ -1094,6 +1140,44 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 )}
             </AnimatePresence>
 
+            {/* Partner Widget for Linked Session */}
+            {showPartnerWidget && activeSession.sessionMode === 'linked' && (
+                <div style={styles.partnerWidget}>
+                    <div style={styles.partnerWidgetHeader}>
+                        <span style={styles.partnerWidgetTitle}>{activeSession.selectedPartnerName || perfil.pareja?.nombre.split(' ')[0] || 'Partner'}</span>
+                        <span style={styles.partnerOnlineIndicator}>●</span>
+                    </div>
+                    <div style={styles.partnerWidgetContent}>
+                        {partnerCurrentExercise ? (
+                            <>
+                                <span style={styles.partnerCurrentExercise}>
+                                    {partnerCurrentExercise}
+                                </span>
+                                <div style={styles.partnerProgress}>
+                                    {partnerExercises ? (
+                                        <span style={styles.partnerProgressText}>
+                                            {partnerExercises.filter(ex => ex.isCompleted).length}/{partnerExercises.length} completados
+                                        </span>
+                                    ) : (
+                                        <span style={styles.partnerProgressText}>Cargando...</span>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <span style={styles.partnerProgressText}>Esperando...</span>
+                        )}
+                    </div>
+                    <button
+                        style={styles.partnerWidgetExpand}
+                        onClick={() => {
+                            toast('Vista detallada del partner - próximamente', { icon: '🚧' });
+                        }}
+                    >
+                        Ver detalle →
+                    </button>
+                </div>
+            )}
+
             {/* Mood Checkin Modal */}
             {showMoodCheckin && (
                 <MoodCheckin
@@ -1197,7 +1281,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                         {sortedCategories.length > 0 ? (
                             sortedCategories.map(catKey => {
-                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: 'ðŸ’ª', color: Colors.text };
+                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: '’ª', color: Colors.text };
                                 return (
                                     <div key={catKey} style={{ marginBottom: '20px' }}>
                                         <div style={{
@@ -1263,9 +1347,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         );
     }
 
-    function renderExerciseCard(ex: ExerciseTracking) {
+    function renderExerciseCard(ex: ExerciseTracking, isPartner: boolean = false) {
         const globalIdx = activeSession?.exercises.findIndex(e => e.id === ex.id) ?? 0;
-        const isDualSession = activeSession?.isDualSession;
+        const isDualSession = activeSession?.isDualSession; // Mostrar dual row en shared y linked modes
         const partnerExercises = activeSession?.partnerExercises;
         const partnerEx = isDualSession && partnerExercises ? partnerExercises.find((pEx: ExerciseTracking) => pEx.id === ex.id) : null;
         const isResting = guidedMode.active && guidedMode.exerciseId === ex.id && guidedMode.phase === 'rest';
@@ -1400,13 +1484,22 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 {isDualSession && partnerEx ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         {/* Header for dual session */}
-                                        <div style={{ ...styles.dualSetHeader, gridTemplateColumns: '0.8fr 2.4fr 2.4fr 1fr' }}>
+                                        <div style={{ 
+                                            display: 'grid',
+                                            gridTemplateColumns: '0.5fr 0.8fr 1fr 1fr 1fr 1fr 0.6fr',
+                                            gap: '4px',
+                                            padding: '4px 8px 8px 8px',
+                                            borderBottom: `1px solid ${Colors.border}`
+                                        }}>
                                             <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>#</span>
-                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>{perfil.usuario.nombre.split(' ')[0]}</span>
-                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>{perfil.pareja?.nombre.split(' ')[0]}</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>QUIEN</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>KG</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>REPS</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>TIEMPO</span>
+                                            <span style={{ ...styles.setHeaderCell, textAlign: 'center' }}>DESC.</span>
                                             <span></span>
                                         </div>
-                                        {ex.sets.map((set, sIdx) => renderDualSetRow(ex, partnerEx, sIdx))}
+                                        {ex.sets.map((_set, sIdx) => renderDualSetRow(ex, partnerEx, sIdx))}
                                     </div>
                                 ) : (
                                     <>
@@ -1587,7 +1680,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                             </button>
                                                             <button
                                                                 onClick={() => {
-                                                                    markExerciseAsCompleted(ex.id);
+                                                                    markExerciseAsCompleted(ex.id, isPartner);
                                                                     setIsTimerRunning(false);
                                                                     setTimerSeconds(0);
                                                                     toast.dismiss(t.id);
@@ -1617,83 +1710,188 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     function renderDualSetRow(userEx: ExerciseTracking, partnerEx: ExerciseTracking, sIdx: number) {
         const userSet = userEx.sets[sIdx];
         const partnerSet = partnerEx.sets[sIdx];
-        const isCompleted = userSet.completed && partnerSet.completed;
-        const isSkipped = userSet.skipped && partnerSet.skipped;
+        const bothCompleted = userSet.completed && partnerSet.completed;
+        const bothSkipped = userSet.skipped && partnerSet.skipped;
+        const userName = perfil.usuario.nombre.split(' ')[0];
+        const partnerName = activeSession?.selectedPartnerName || perfil.pareja?.nombre.split(' ')[0] || 'Partner';
+
+        const gridCols = '0.5fr 0.8fr 1fr 1fr 1fr 1fr 0.6fr';
 
         return (
             <div
                 key={sIdx}
                 style={{
-                    ...styles.dualSetRow,
-                    background: isCompleted ? `${Colors.success}10` : isSkipped ? Colors.surfaceLight : Colors.surface,
-                    border: `1px solid ${isCompleted ? `${Colors.success}30` : Colors.border}`,
-                    opacity: (isCompleted || isSkipped) ? 0.7 : 1
+                    display: 'flex',
+                    flexDirection: 'column',
+                    marginBottom: '8px',
+                    background: bothCompleted ? `${Colors.success}10` : bothSkipped ? Colors.surfaceLight : Colors.surface,
+                    border: `1px solid ${bothCompleted ? `${Colors.success}30` : Colors.border}`,
+                    borderRadius: '12px',
+                    padding: '6px 8px',
+                    opacity: (bothCompleted || bothSkipped) ? 0.7 : 1
                 }}
             >
-                <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
-
-                {/* User's inputs */}
-                <div style={styles.dualInputGroup}>
+                {/* User Row */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: gridCols,
+                    gap: '4px',
+                    alignItems: 'center',
+                    paddingBottom: '4px'
+                }}>
+                    <span style={{ ...styles.setNumber, background: 'transparent', fontSize: '11px' }}>{sIdx + 1}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: Colors.text, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userName}</span>
+                    
                     <input
                         type="number"
                         placeholder="kg"
                         value={userSet.weight || ''}
                         onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, false)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
+                        style={{ ...styles.dualInput, padding: '6px 4px', fontSize: '13px' }}
+                        disabled={userSet.completed || userSet.skipped}
                     />
                     <input
                         type="number"
                         placeholder="reps"
                         value={userSet.reps || ''}
                         onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, false)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
+                        style={{ ...styles.dualInput, padding: '6px 4px', fontSize: '13px' }}
+                        disabled={userSet.completed || userSet.skipped}
                     />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                        <input
+                            type="number"
+                            placeholder="-"
+                            value={(() => {
+                                const val = userSet.duration || 0;
+                                const unit = durationUnits[`${userEx.id}-${sIdx}-user`] || 's';
+                                if (unit === 'm') return parseFloat((val / 60).toFixed(2));
+                                if (unit === 'h') return parseFloat((val / 3600).toFixed(2));
+                                return val;
+                            })() || ''}
+                            onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                const unit = durationUnits[`${userEx.id}-${sIdx}-user`] || 's';
+                                let multiplier = 1;
+                                if (unit === 'm') multiplier = 60;
+                                if (unit === 'h') multiplier = 3600;
+                                updateSet(userEx.id, sIdx, { duration: Math.round(val * multiplier) }, false);
+                            }}
+                            style={{ ...styles.dualInput, padding: '6px 2px', fontSize: '12px', minWidth: 0 }}
+                            disabled={userSet.completed || userSet.skipped}
+                        />
+                        <select
+                            value={durationUnits[`${userEx.id}-${sIdx}-user`] || 's'}
+                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${userEx.id}-${sIdx}-user`]: e.target.value as any })}
+                            style={{ background: 'transparent', border: 'none', color: Colors.textSecondary, fontSize: '9px', padding: 0, cursor: 'pointer', width: '22px' }}
+                            disabled={userSet.completed || userSet.skipped}
+                        >
+                            <option value="s">s</option>
+                            <option value="m">m</option>
+                            <option value="h">h</option>
+                        </select>
+                    </div>
+                    <input
+                        type="number"
+                        placeholder="-"
+                        value={userSet.rest || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { rest: parseInt(e.target.value) || 0 }, false)}
+                        style={{ ...styles.dualInput, padding: '6px 4px', fontSize: '13px' }}
+                        disabled={userSet.completed || userSet.skipped}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        {!userSet.completed && !userSet.skipped ? (
+                            <button style={{ ...styles.checkBtn, width: '26px', height: '26px' }} onClick={() => updateSet(userEx.id, sIdx, { completed: true }, false)}>
+                                <Check size={14} />
+                            </button>
+                        ) : (
+                            <button style={{ ...styles.undoIconBtn, width: '26px', height: '26px' }} onClick={() => updateSet(userEx.id, sIdx, { completed: false, skipped: false }, false)}>
+                                <RotateCcw size={12} />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                {/* Partner's inputs */}
-                <div style={styles.dualInputGroup}>
+                {/* Partner Row */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: gridCols,
+                    gap: '4px',
+                    alignItems: 'center',
+                    paddingTop: '4px',
+                    borderTop: `1px dashed ${Colors.border}`
+                }}>
+                    <span style={{ fontSize: '10px', color: 'transparent' }}>-</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: Colors.primary, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{partnerName}</span>
+                    
                     <input
                         type="number"
                         placeholder="kg"
                         value={partnerSet.weight || ''}
                         onChange={(e) => updateSet(userEx.id, sIdx, { weight: parseFloat(e.target.value) || 0 }, true)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
+                        style={{ ...styles.dualInput, padding: '6px 4px', fontSize: '13px' }}
+                        disabled={partnerSet.completed || partnerSet.skipped}
                     />
                     <input
                         type="number"
                         placeholder="reps"
                         value={partnerSet.reps || ''}
                         onChange={(e) => updateSet(userEx.id, sIdx, { reps: parseInt(e.target.value) || 0 }, true)}
-                        style={styles.dualInput}
-                        disabled={isCompleted || isSkipped}
+                        style={{ ...styles.dualInput, padding: '6px 4px', fontSize: '13px' }}
+                        disabled={partnerSet.completed || partnerSet.skipped}
                     />
-                </div>
-
-                <div style={styles.dualSetActions}>
-                    {!isCompleted && !isSkipped ? (
-                        <button
-                            style={styles.checkBtn}
-                            onClick={() => {
-                                updateSet(userEx.id, sIdx, { completed: true }, false);
-                                updateSet(userEx.id, sIdx, { completed: true }, true);
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                        <input
+                            type="number"
+                            placeholder="-"
+                            value={(() => {
+                                const val = partnerSet.duration || 0;
+                                const unit = durationUnits[`${userEx.id}-${sIdx}-partner`] || 's';
+                                if (unit === 'm') return parseFloat((val / 60).toFixed(2));
+                                if (unit === 'h') return parseFloat((val / 3600).toFixed(2));
+                                return val;
+                            })() || ''}
+                            onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                const unit = durationUnits[`${userEx.id}-${sIdx}-partner`] || 's';
+                                let multiplier = 1;
+                                if (unit === 'm') multiplier = 60;
+                                if (unit === 'h') multiplier = 3600;
+                                updateSet(userEx.id, sIdx, { duration: Math.round(val * multiplier) }, true);
                             }}
+                            style={{ ...styles.dualInput, padding: '6px 2px', fontSize: '12px', minWidth: 0 }}
+                            disabled={partnerSet.completed || partnerSet.skipped}
+                        />
+                        <select
+                            value={durationUnits[`${userEx.id}-${sIdx}-partner`] || 's'}
+                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${userEx.id}-${sIdx}-partner`]: e.target.value as any })}
+                            style={{ background: 'transparent', border: 'none', color: Colors.textSecondary, fontSize: '9px', padding: 0, cursor: 'pointer', width: '22px' }}
+                            disabled={partnerSet.completed || partnerSet.skipped}
                         >
-                            <Check size={18} />
-                        </button>
-                    ) : (
-                        <button
-                            style={styles.undoIconBtn}
-                            onClick={() => {
-                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, false);
-                                updateSet(userEx.id, sIdx, { completed: false, skipped: false }, true);
-                            }}
-                        >
-                            <RotateCcw size={16} />
-                        </button>
-                    )}
+                            <option value="s">s</option>
+                            <option value="m">m</option>
+                            <option value="h">h</option>
+                        </select>
+                    </div>
+                    <input
+                        type="number"
+                        placeholder="-"
+                        value={partnerSet.rest || ''}
+                        onChange={(e) => updateSet(userEx.id, sIdx, { rest: parseInt(e.target.value) || 0 }, true)}
+                        style={{ ...styles.dualInput, padding: '6px 4px', fontSize: '13px' }}
+                        disabled={partnerSet.completed || partnerSet.skipped}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        {!partnerSet.completed && !partnerSet.skipped ? (
+                            <button style={{ ...styles.checkBtn, width: '26px', height: '26px' }} onClick={() => updateSet(userEx.id, sIdx, { completed: true }, true)}>
+                                <Check size={14} />
+                            </button>
+                        ) : (
+                            <button style={{ ...styles.undoIconBtn, width: '26px', height: '26px' }} onClick={() => updateSet(userEx.id, sIdx, { completed: false, skipped: false }, true)}>
+                                <RotateCcw size={12} />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -1807,6 +2005,7 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.primary,
         transition: 'width 0.3s ease',
     },
+    // Tab styles removed - using inline dual layout instead
     activeContent: {
         flex: 1,
         padding: '20px',
@@ -2446,6 +2645,66 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '16px',
         color: Colors.text,
         outline: 'none',
+    },
+    partnerWidget: {
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        width: '280px',
+        background: Colors.surface,
+        border: `2px solid ${Colors.primary}`,
+        borderRadius: '16px',
+        padding: '16px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+        zIndex: 1000,
+    },
+    partnerWidgetHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '12px',
+    },
+    partnerWidgetTitle: {
+        fontSize: '16px',
+        fontWeight: 800,
+        color: Colors.text,
+    },
+    partnerOnlineIndicator: {
+        fontSize: '12px',
+        color: Colors.success,
+        animation: 'pulse 2s infinite',
+    },
+    partnerWidgetContent: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        marginBottom: '12px',
+    },
+    partnerCurrentExercise: {
+        fontSize: '14px',
+        fontWeight: 700,
+        color: Colors.primary,
+    },
+    partnerProgress: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+    },
+    partnerProgressText: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+    },
+    partnerWidgetExpand: {
+        width: '100%',
+        padding: '8px',
+        background: `${Colors.primary}15`,
+        border: `1px solid ${Colors.primary}`,
+        borderRadius: '8px',
+        color: Colors.primary,
+        fontSize: '12px',
+        fontWeight: 700,
+        cursor: 'pointer',
     }
 };
+
 

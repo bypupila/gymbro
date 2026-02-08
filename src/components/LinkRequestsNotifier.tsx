@@ -8,7 +8,7 @@ import { Check, X, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export const LinkRequestsNotifier: React.FC = () => {
-    const { linkRequests, setLinkRequests } = useUserStore();
+    const { linkRequests, setLinkRequests, perfil, addPartner } = useUserStore();
 
     if (linkRequests.length === 0) {
         return null;
@@ -16,9 +16,15 @@ export const LinkRequestsNotifier: React.FC = () => {
 
     const handleAccept = async (request: LinkRequest) => {
         try {
-            await firebaseService.acceptLinkRequest(request);
-            toast.success(`¡Ahora estás vinculado con ${request.requesterAlias}!`);
-            // The listener will update the store, removing the accepted request
+            const myName = perfil.alias || perfil.usuario.nombre || 'GymBro';
+            await firebaseService.acceptLinkRequest(request, myName);
+            // Also update local store with the new partner
+            addPartner({
+                id: request.requesterId,
+                alias: request.requesterAlias,
+                nombre: request.requesterAlias,
+            });
+            toast.success(`Ahora estas vinculado con ${request.requesterAlias}!`);
         } catch (error) {
             console.error('Error accepting request:', error);
             toast.error('No se pudo aceptar la solicitud.');

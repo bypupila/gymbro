@@ -3,15 +3,17 @@
 // =====================================================
 
 import { RoutineUpload } from '@/components/RoutineUpload';
-import { useUserStore, EjercicioRutina } from '@/stores/userStore';
+import { useUserStore, EjercicioRutina, PartnerInfo } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Play, Plus, FileText, Zap, Battery, BatteryLow, BatteryMedium, BatteryFull, Flame } from 'lucide-react'; // kept Activity/Zap for Premium icons if used there
-import React, { useState } from 'react';
+import { Play, Plus, FileText, Zap, Battery, BatteryLow, BatteryMedium, BatteryFull, Flame, ChevronLeft, Loader, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
 import { SyncStatus } from '@/components/SyncStatus';
 import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
 import { MoodStats } from '@/components/MoodStats';
+import { trainingInvitationService } from '@/services/trainingInvitationService';
+import { toast } from 'react-hot-toast';
 
 export const HomePage: React.FC = () => {
     const navigate = useNavigate();
@@ -21,19 +23,169 @@ export const HomePage: React.FC = () => {
 
     // Mood Tracking State
     const [showMoodModal, setShowMoodModal] = useState(false);
+    const [showModeModal, setShowModeModal] = useState(false);
+    const [modeStep, setModeStep] = useState<'choose' | 'selectPartner' | 'selectMode'>('choose');
     const [tempSessionData, setTempSessionData] = useState<{ day: string, exercises: EjercicioRutina[], name: string } | null>(null);
+    const [tempMood, setTempMood] = useState<number | undefined>(undefined);
+    const [selectedPartner, setSelectedPartner] = useState<PartnerInfo | null>(null);
+
+    // Day picker state
+    const [showDayPickerModal, setShowDayPickerModal] = useState(false);
+    const [selectedTrackingDate, setSelectedTrackingDate] = useState<string | undefined>(undefined);
+
+    const hasPartners = (perfil.partners && perfil.partners.length > 0) || !!perfil.partnerId;
+
+    // Get current week days for day picker
+    const getWeekDaysForPicker = () => {
+        const today = new Date();
+        const currentDay = today.getDay();
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+
+        return Array.from({ length: 7 }, (_, i) => {
+            const date = new Date(monday);
+            date.setDate(monday.getDate() + i);
+            return date;
+        });
+    };
+
+    const formatDateKey = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const dayNamesShort = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+    const dayNamesFull = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
 
     const handleInitiateSession = (day: string, exercises: EjercicioRutina[], name: string) => {
         setTempSessionData({ day, exercises, name });
+        setSelectedTrackingDate(formatDateKey(new Date())); // default to today
+        setShowDayPickerModal(true);
+    };
+
+    const handleDayPickerConfirm = () => {
+        setShowDayPickerModal(false);
         setShowMoodModal(true);
     };
 
     const confirmStartSession = (mood: number) => {
         if (tempSessionData) {
-            startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, undefined, mood);
+            setTempMood(mood);
             setShowMoodModal(false);
-            setTempSessionData(null);
+            
+            if (hasPartners) {
+                setModeStep('choose');
+                setSelectedPartner(null);
+                setShowModeModal(true);
+            } else {
+                startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, 'solo', mood, undefined, undefined, undefined, selectedTrackingDate);
+                setTempSessionData(null);
+                setTempMood(undefined);
+                setSelectedTrackingDate(undefined);
+            }
         }
+    };
+
+    const handleSoloMode = () => {
+        if (tempSessionData && tempMood !== undefined) {
+            startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, 'solo', tempMood, undefined, undefined, undefined, selectedTrackingDate);
+            resetModeModal();
+        }
+    };
+
+    const handlePartnerSelected = (partner: PartnerInfo) => {
+        setSelectedPartner(partner);
+        setModeStep('selectMode');
+    };
+
+    const [pendingInvitationId, setPendingInvitationId] = useState<string | null>(null);
+    const [isWaitingForAccept, setIsWaitingForAccept] = useState(false);
+
+    const handleModeConfirm = async (mode: 'shared' | 'linked') => {
+        if (!tempSessionData || tempMood === undefined || !selectedPartner) return;
+
+        if (mode === 'shared') {
+            // Shared mode: start immediately, both on same device
+            startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, mode, tempMood, undefined, undefined, selectedPartner, selectedTrackingDate);
+            resetModeModal();
+        } else {
+            // Linked mode: send invitation and wait for acceptance
+            try {
+                const { userId, perfil } = useUserStore.getState();
+                if (!userId) return;
+
+                const invitationId = await trainingInvitationService.sendInvitation(
+                    userId,
+                    perfil.usuario.nombre || perfil.alias || 'GymBro',
+                    selectedPartner.id,
+                    selectedPartner.nombre,
+                    mode,
+                    tempSessionData.name
+                );
+                setPendingInvitationId(invitationId);
+                setIsWaitingForAccept(true);
+                setModeStep('selectMode'); // stay on same step but show waiting state
+            } catch (error) {
+                console.error('Error sending invitation:', error);
+                toast.error('No se pudo enviar la invitacion');
+            }
+        }
+    };
+
+    // Listen for invitation acceptance
+    useEffect(() => {
+        if (!pendingInvitationId || !isWaitingForAccept) return;
+
+        const unsubscribe = trainingInvitationService.onInvitationStatusChange(
+            pendingInvitationId,
+            (invitation) => {
+                if (!invitation) return;
+
+                if (invitation.status === 'accepted') {
+                    // Partner accepted! Start the session
+                    if (tempSessionData && tempMood !== undefined && selectedPartner) {
+                        startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, 'linked', tempMood, undefined, undefined, selectedPartner, selectedTrackingDate);
+                        toast.success(`${selectedPartner.nombre} acepto! Entrenamiento iniciado`);
+                    }
+                    resetModeModal();
+                } else if (invitation.status === 'declined') {
+                    toast.error(`${selectedPartner?.nombre || 'Partner'} rechazo la invitacion`);
+                    setIsWaitingForAccept(false);
+                    setPendingInvitationId(null);
+                } else if (invitation.status === 'expired') {
+                    toast.error('La invitacion expiro');
+                    setIsWaitingForAccept(false);
+                    setPendingInvitationId(null);
+                }
+            }
+        );
+
+        return () => unsubscribe();
+    }, [pendingInvitationId, isWaitingForAccept]);
+
+    const cancelPendingInvitation = async () => {
+        if (pendingInvitationId) {
+            try {
+                await trainingInvitationService.cancelInvitation(pendingInvitationId);
+            } catch (e) {
+                // Ignore cleanup errors
+            }
+        }
+        setIsWaitingForAccept(false);
+        setPendingInvitationId(null);
+    };
+
+    const resetModeModal = () => {
+        cancelPendingInvitation();
+        setShowModeModal(false);
+        setTempSessionData(null);
+        setTempMood(undefined);
+        setSelectedPartner(null);
+        setSelectedTrackingDate(undefined);
+        setModeStep('choose');
+        setIsWaitingForAccept(false);
     };
 
 
@@ -95,8 +247,8 @@ export const HomePage: React.FC = () => {
                         <FileText size={24} color={Colors.primary} />
                     </div>
                     <div style={styles.promptContent}>
-                        <h3 style={styles.promptTitle}>¿Tienes una rutina?</h3>
-                        <p style={styles.promptSub}>Sube una foto y Gemini la analizará por ti.</p>
+                        <h3 style={styles.promptTitle}>Â¿Tienes una rutina?</h3>
+                        <p style={styles.promptSub}>Sube una foto y Gemini la analizarÃ¡ por ti.</p>
                     </div>
                     <div style={styles.promptAction}>
                         <Plus size={20} color={Colors.text} />
@@ -158,12 +310,145 @@ export const HomePage: React.FC = () => {
                 />
             )}
 
+            {/* Day Picker Modal - Ask which day this workout counts for */}
+            {showDayPickerModal && tempSessionData && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modalContent}>
+                        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                            <Calendar size={32} color={Colors.primary} />
+                        </div>
+                        <h2 style={styles.modalTitle}>
+                            {tempSessionData.day} - {tempSessionData.name}
+                        </h2>
+                        <p style={styles.modalSubtitle}>
+                            Selecciona el dia para el que cuenta este entrenamiento
+                        </p>
+
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(7, 1fr)',
+                            gap: '6px',
+                            marginBottom: '20px',
+                        }}>
+                            {getWeekDaysForPicker().map((date, index) => {
+                                const dateKey = formatDateKey(date);
+                                const isSelected = selectedTrackingDate === dateKey;
+                                const isToday = formatDateKey(new Date()) === dateKey;
+                                const isFuture = date > new Date();
+                                const tracking = perfil.weeklyTracking?.[dateKey];
+                                const isAlreadyCompleted = tracking === 'completed' || tracking === true;
+
+                                return (
+                                    <button
+                                        key={dateKey}
+                                        disabled={isFuture}
+                                        onClick={() => setSelectedTrackingDate(dateKey)}
+                                        style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            padding: '8px 4px',
+                                            borderRadius: '12px',
+                                            border: isSelected
+                                                ? `2px solid ${Colors.primary}`
+                                                : `1px solid ${Colors.border}`,
+                                            background: isSelected
+                                                ? `${Colors.primary}20`
+                                                : isAlreadyCompleted
+                                                    ? `${Colors.success}15`
+                                                    : Colors.surface,
+                                            cursor: isFuture ? 'not-allowed' : 'pointer',
+                                            opacity: isFuture ? 0.3 : 1,
+                                            transition: 'all 0.2s ease',
+                                        }}
+                                    >
+                                        <span style={{
+                                            fontSize: '10px',
+                                            fontWeight: 600,
+                                            color: isSelected ? Colors.primary : Colors.textSecondary,
+                                            textTransform: 'uppercase',
+                                        }}>
+                                            {dayNamesShort[index]}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '16px',
+                                            fontWeight: isSelected || isToday ? 700 : 500,
+                                            color: isSelected ? Colors.primary : isToday ? Colors.text : Colors.textSecondary,
+                                        }}>
+                                            {date.getDate()}
+                                        </span>
+                                        {isToday && (
+                                            <div style={{
+                                                width: '4px',
+                                                height: '4px',
+                                                borderRadius: '50%',
+                                                background: isSelected ? Colors.primary : Colors.textTertiary,
+                                            }} />
+                                        )}
+                                        {isAlreadyCompleted && !isToday && (
+                                            <div style={{
+                                                width: '4px',
+                                                height: '4px',
+                                                borderRadius: '50%',
+                                                background: Colors.success,
+                                            }} />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {selectedTrackingDate && selectedTrackingDate !== formatDateKey(new Date()) && (
+                            <p style={{
+                                fontSize: '13px',
+                                color: Colors.warning,
+                                textAlign: 'center',
+                                marginBottom: '12px',
+                                padding: '8px 12px',
+                                background: `${Colors.warning}15`,
+                                borderRadius: '8px',
+                            }}>
+                                Este entrenamiento se registrara para el{' '}
+                                {(() => {
+                                    const d = new Date(selectedTrackingDate + 'T12:00:00');
+                                    const idx = (d.getDay() + 6) % 7; // Monday = 0
+                                    return `${dayNamesFull[idx]} ${d.getDate()}`;
+                                })()}
+                            </p>
+                        )}
+
+                        <button
+                            style={{
+                                ...styles.confirmModeBtn,
+                                opacity: selectedTrackingDate ? 1 : 0.5,
+                            }}
+                            disabled={!selectedTrackingDate}
+                            onClick={handleDayPickerConfirm}
+                        >
+                            Continuar
+                        </button>
+
+                        <button
+                            style={styles.cancelLink}
+                            onClick={() => {
+                                setShowDayPickerModal(false);
+                                setTempSessionData(null);
+                                setSelectedTrackingDate(undefined);
+                            }}
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Mood / Energy Pre-Workout Modal */}
             {showMoodModal && (
                 <div style={styles.modalOverlay}>
                     <div style={styles.modalContent}>
-                        <h2 style={styles.modalTitle}>¿Cómo te sientes hoy?</h2>
-                        <p style={styles.modalSubtitle}>Nivel de energía antes de entrenar</p>
+                        <h2 style={styles.modalTitle}>Â¿CÃ³mo te sientes hoy?</h2>
+                        <p style={styles.modalSubtitle}>Nivel de energÃ­a antes de entrenar</p>
 
                         <div style={styles.moodGrid}>
                             {[
@@ -190,6 +475,178 @@ export const HomePage: React.FC = () => {
                             style={styles.cancelLink}
                             onClick={() => setShowMoodModal(false)}
                         >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Mode Selector Modal - Multi-step */}
+            {showModeModal && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modalContent}>
+                        {/* Step 1: Solo or with someone */}
+                        {modeStep === 'choose' && (
+                            <>
+                                <h2 style={styles.modalTitle}>Como entrenaras hoy?</h2>
+                                <p style={styles.modalSubtitle}>Elige tu modo de entrenamiento</p>
+
+                                <div style={styles.modeGrid}>
+                                    <button style={styles.modeCard} onClick={handleSoloMode}>
+                                        <div style={styles.modeIcon}>{'ðŸ‘¤'}</div>
+                                        <h3 style={styles.modeTitle}>Solo</h3>
+                                        <p style={styles.modeDesc}>Entrena individualmente</p>
+                                    </button>
+
+                                    <button style={styles.modeCard} onClick={() => setModeStep('selectPartner')}>
+                                        <div style={styles.modeIcon}>{'ðŸ‘¥'}</div>
+                                        <h3 style={styles.modeTitle}>Con alguien</h3>
+                                        <p style={styles.modeDesc}>Elige tu partner de entrenamiento</p>
+                                    </button>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Step 2: Select Partner */}
+                        {modeStep === 'selectPartner' && (
+                            <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', marginBottom: '16px' }}>
+                                    <button onClick={() => setModeStep('choose')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                                        <ChevronLeft size={20} color={Colors.textSecondary} />
+                                    </button>
+                                    <h2 style={{ ...styles.modalTitle, marginBottom: 0, flex: 1, textAlign: 'left' }}>Con quien entrenas?</h2>
+                                </div>
+                                <p style={{ ...styles.modalSubtitle, textAlign: 'left', width: '100%' }}>Selecciona a tu partner</p>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginBottom: '24px', maxHeight: '300px', overflowY: 'auto' }}>
+                                    {(perfil.partners && perfil.partners.length > 0) ? (
+                                        perfil.partners.map((partner) => (
+                                            <button
+                                                key={partner.id}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '12px',
+                                                    padding: '14px 16px',
+                                                    background: Colors.surfaceLight,
+                                                    border: `1px solid ${Colors.border}`,
+                                                    borderRadius: '12px',
+                                                    cursor: 'pointer',
+                                                    textAlign: 'left',
+                                                    transition: 'all 0.2s ease',
+                                                }}
+                                                onClick={() => handlePartnerSelected(partner)}
+                                            >
+                                                <img
+                                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${partner.nombre || partner.alias}`}
+                                                    style={{ width: '40px', height: '40px', borderRadius: '12px', background: Colors.background }}
+                                                    alt={partner.nombre}
+                                                />
+                                                <div style={{ flex: 1 }}>
+                                                    <span style={{ fontSize: '15px', fontWeight: 700, color: Colors.text, display: 'block' }}>{partner.nombre}</span>
+                                                    <span style={{ fontSize: '11px', color: Colors.textTertiary }}>@{partner.alias}</span>
+                                                </div>
+                                                <Zap size={18} color={Colors.primary} />
+                                            </button>
+                                        ))
+                                    ) : perfil.partnerId ? (
+                                        <button
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '12px',
+                                                padding: '14px 16px',
+                                                background: Colors.surfaceLight,
+                                                border: `1px solid ${Colors.border}`,
+                                                borderRadius: '12px',
+                                                cursor: 'pointer',
+                                                textAlign: 'left',
+                                            }}
+                                            onClick={() => handlePartnerSelected({
+                                                id: perfil.partnerId!,
+                                                alias: perfil.pareja?.nombre || 'Partner',
+                                                nombre: perfil.pareja?.nombre || 'Partner',
+                                            })}
+                                        >
+                                            <img
+                                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${perfil.pareja?.nombre || 'GymBro'}`}
+                                                style={{ width: '40px', height: '40px', borderRadius: '12px', background: Colors.background }}
+                                                alt="Partner"
+                                            />
+                                            <div style={{ flex: 1 }}>
+                                                <span style={{ fontSize: '15px', fontWeight: 700, color: Colors.text, display: 'block' }}>{perfil.pareja?.nombre || 'Partner'}</span>
+                                                <span style={{ fontSize: '11px', color: Colors.textTertiary }}>Vinculado</span>
+                                            </div>
+                                            <Zap size={18} color={Colors.primary} />
+                                        </button>
+                                    ) : (
+                                        <p style={{ color: Colors.textSecondary, textAlign: 'center', padding: '20px' }}>
+                                            No tienes partners vinculados. Ve a Entrenamiento Dual para agregar uno.
+                                        </p>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {/* Step 3: Select Mode */}
+                        {modeStep === 'selectMode' && selectedPartner && !isWaitingForAccept && (
+                            <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', marginBottom: '16px' }}>
+                                    <button onClick={() => setModeStep('selectPartner')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                                        <ChevronLeft size={20} color={Colors.textSecondary} />
+                                    </button>
+                                    <h2 style={{ ...styles.modalTitle, marginBottom: 0, flex: 1, textAlign: 'left' }}>Modo de entrenamiento</h2>
+                                </div>
+                                <p style={{ ...styles.modalSubtitle, textAlign: 'left', width: '100%' }}>
+                                    Entrenando con <span style={{ fontWeight: 700, color: Colors.primary }}>{selectedPartner.nombre}</span>
+                                </p>
+
+                                <div style={styles.modeGrid}>
+                                    <button style={styles.modeCard} onClick={() => handleModeConfirm('shared')}>
+                                        <div style={styles.modeIcon}>{'ðŸ“±'}</div>
+                                        <h3 style={styles.modeTitle}>Mismo celular</h3>
+                                        <p style={styles.modeDesc}>Los dos en un solo dispositivo</p>
+                                    </button>
+
+                                    <button style={styles.modeCard} onClick={() => handleModeConfirm('linked')}>
+                                        <div style={styles.modeIcon}>{'ðŸ”—'}</div>
+                                        <h3 style={styles.modeTitle}>Cada quien su cel</h3>
+                                        <p style={styles.modeDesc}>Sincronizacion en tiempo real</p>
+                                    </button>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Waiting for partner acceptance */}
+                        {isWaitingForAccept && selectedPartner && (
+                            <>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '20px 0', width: '100%' }}>
+                                    <div style={{
+                                        width: '64px',
+                                        height: '64px',
+                                        borderRadius: '50%',
+                                        border: `3px solid ${Colors.primary}`,
+                                        borderTopColor: 'transparent',
+                                        animation: 'spin 1s linear infinite',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                    }} />
+                                    <h2 style={{ ...styles.modalTitle, fontSize: '18px' }}>Esperando a {selectedPartner.nombre}</h2>
+                                    <p style={styles.modalSubtitle}>
+                                        Se envio una invitacion. Cuando la acepte, el entrenamiento comenzara automaticamente.
+                                    </p>
+                                    <img
+                                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedPartner.nombre || selectedPartner.alias}`}
+                                        style={{ width: '60px', height: '60px', borderRadius: '50%', background: Colors.background, border: `2px solid ${Colors.primary}` }}
+                                        alt={selectedPartner.nombre}
+                                    />
+                                </div>
+                                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                            </>
+                        )}
+
+                        <button style={styles.cancelLink} onClick={resetModeModal}>
                             Cancelar
                         </button>
                     </div>
@@ -362,6 +819,54 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '14px',
         textDecoration: 'underline',
         cursor: 'pointer',
+    },
+    confirmModeBtn: {
+        width: '100%',
+        padding: '14px 20px',
+        borderRadius: '16px',
+        background: Colors.primary,
+        color: '#000',
+        fontSize: '16px',
+        fontWeight: 800,
+        border: 'none',
+        cursor: 'pointer',
+        marginBottom: '12px',
+        transition: 'opacity 0.2s ease',
+    },
+    modeGrid: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        width: '100%',
+        marginBottom: '24px',
+    },
+    modeCard: {
+        background: Colors.surfaceLight,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '16px',
+        padding: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        textAlign: 'center',
+    },
+    modeIcon: {
+        fontSize: '32px',
+        marginBottom: '4px',
+    },
+    modeTitle: {
+        fontSize: '16px',
+        fontWeight: 800,
+        color: Colors.text,
+        margin: 0,
+    },
+    modeDesc: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+        margin: 0,
     },
     promptTitle: {
         fontSize: '16px',

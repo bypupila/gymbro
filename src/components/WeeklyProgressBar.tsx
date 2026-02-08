@@ -42,16 +42,18 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const weekDays = getWeekDays();
-    const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    const dayNames = ['Lun', 'Mar', 'Mi?', 'Jue', 'Vie', 'S?b', 'Dom'];
 
     const handleDayClick = (dateStr: string) => {
-        const isCompleted = weeklyTracking[dateStr];
+        const trackingStatus = weeklyTracking[dateStr];
+        const hasActivity = activeDatesSet.has(dateStr);
+        const isMarked = trackingStatus === 'completed' || trackingStatus === 'skipped' || trackingStatus === true;
 
-        if (isCompleted) {
+        if (isMarked || hasActivity) {
             setSelectedDate(dateStr);
             setShowDetailsModal(true);
         } else {
-            // If not completed, show modal to select routine
+            // If not completed/skipped, show modal to select routine
             setSelectedDate(dateStr);
             setShowModal(true);
         }
@@ -59,6 +61,9 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const handleUnmarkDay = async (dateStr: string) => {
         await removeExtraActivitiesOnDate(dateStr);
+        // Also clear the tracking status
+        const { setDayTracking } = useUserStore.getState();
+        setDayTracking(dateStr, null);
         setShowDetailsModal(false);
         setSelectedDate(null);
     };
@@ -70,12 +75,12 @@ export const WeeklyProgressBar: React.FC = () => {
             // Show extra activity form instead of marking as complete
             setShowModal(false);
             setShowExtraActivityForm(true);
-        } else if (dayName === 'Saltar día') {
+        } else if (dayName === 'Saltar d?a') {
             const { setDayTracking } = useUserStore.getState();
             setDayTracking(selectedDate, 'skipped');
             setShowModal(false);
             setSelectedDate(null);
-            toast.success('Día marcado como saltado');
+            toast.success('D?a marcado como saltado');
         } else {
             const { setDayTracking } = useUserStore.getState();
             setDayTracking(selectedDate, 'completed');
@@ -171,7 +176,7 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const getDaySchedule = (dayIndex: number) => {
-        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Mi?rcoles', 'Jueves', 'Viernes', 'S?bado'];
         const targetDay = dayNames[dayIndex];
         return perfil.horario.dias.find(d =>
             d.dia.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
@@ -185,6 +190,8 @@ export const WeeklyProgressBar: React.FC = () => {
     const completedDays = weekDays.filter(d => {
         const dateStr = formatDate(d);
         const status = weeklyTracking[dateStr];
+        // Skipped days do NOT count as completed
+        if (status === 'skipped') return false;
         const isCompleted = status === 'completed' || status === true;
         return activeDatesSet.has(dateStr) || isCompleted;
     }).length;
@@ -193,7 +200,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
 
-    const defaultActivities = ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
+    const defaultActivities = ['Running', 'Ciclismo', 'Nataci?n', 'F?tbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
     const currentActivityCatalog = perfil.catalogoExtras?.length ? perfil.catalogoExtras : defaultActivities;
 
     return (
@@ -217,8 +224,9 @@ export const WeeklyProgressBar: React.FC = () => {
                     {weekDays.map((date, index) => {
                         const dateStr = formatDate(date);
                         const trackingStatus = weeklyTracking[dateStr];
-                        const isCompleted = activeDatesSet.has(dateStr) || trackingStatus === 'completed' || trackingStatus === true;
+                        // IMPORTANT: skipped takes priority over completed
                         const isSkipped = trackingStatus === 'skipped';
+                        const isCompleted = !isSkipped && (activeDatesSet.has(dateStr) || trackingStatus === 'completed' || trackingStatus === true);
                         const schedule = getDaySchedule((index + 1) % 7); // Adjust for Monday start
                         const isScheduled = schedule?.entrena;
                         const today = isToday(date);
@@ -301,7 +309,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>¿Qué rutina hiciste?</h3>
+                                <h3 style={styles.modalTitle}>?Qu? rutina hiciste?</h3>
                                 <button onClick={() => setShowModal(false)} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
@@ -335,7 +343,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                     </div>
                                 </button>
                                 <button
-                                    onClick={() => handleRoutineSelection('Saltar día')}
+                                    onClick={() => handleRoutineSelection('Saltar d?a')}
                                     style={{
                                         ...styles.routineOption,
                                         borderColor: Colors.error,
@@ -344,7 +352,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                 >
                                     <X size={18} color={Colors.error} />
                                     <div style={styles.routineInfo}>
-                                        <span style={styles.routineDay}>Saltar día</span>
+                                        <span style={styles.routineDay}>Saltar d?a</span>
                                         <span style={styles.routineMuscle}>No pude entrenar hoy</span>
                                     </div>
                                 </button>
@@ -372,7 +380,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>Resumen del día</h3>
+                                <h3 style={styles.modalTitle}>Resumen del d?a</h3>
                                 <button onClick={() => setShowDetailsModal(false)} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
@@ -401,7 +409,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                                                     ? `${(extraActivity.analisisIA.duracionMinutos / 60).toFixed(1)}h`
                                                                     : `${extraActivity.analisisIA.duracionMinutos}m`}
                                                             </span>
-                                                            <span style={styles.statLabel}>Duración</span>
+                                                            <span style={styles.statLabel}>Duraci?n</span>
                                                         </div>
                                                     )}
                                                     {extraActivity.analisisIA?.distanciaKm && (
@@ -435,7 +443,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                                     <div style={{ flex: 1 }}>
                                                         <span style={styles.routineNameText}>{workout.nombre}</span>
                                                         <p style={styles.routineStatsText}>
-                                                            {workout.ejercicios.length} ejercicios â€¢ {workout.duracionMinutos} min
+                                                            {workout.ejercicios.length} ejercicios ? {workout.duracionMinutos} min
                                                         </p>
                                                     </div>
                                                 </div>
@@ -476,7 +484,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
                                     return (
                                         <div style={styles.noData}>
-                                            No hay datos específicos registrados para este día.
+                                            No hay datos espec?ficos registrados para este d?a.
                                         </div>
                                     );
                                 })()}
@@ -485,7 +493,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                     onClick={() => handleUnmarkDay(selectedDate)}
                                     style={styles.unmarkBtn}
                                 >
-                                    <X size={16} /> Desmarcar día
+                                    <X size={16} /> Desmarcar d?a
                                 </button>
                             </div>
                         </motion.div>
@@ -571,7 +579,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                 {/* Stats Inputs */}
                                 <div style={styles.statsInputGrid}>
                                     <div>
-                                        <label style={styles.label}>Duración (min)</label>
+                                        <label style={styles.label}>Duraci?n (min)</label>
                                         <input
                                             type="number"
                                             value={duration}
@@ -636,7 +644,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                         opacity: (!selectedActivityType || !duration) ? 0.5 : 1
                                     }}
                                 >
-                                    ðŸ’¾ Guardar Actividad
+                                    ?? Guardar Actividad
                                 </button>
                             </div>
                         </motion.div>

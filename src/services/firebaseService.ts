@@ -1,9 +1,9 @@
 import {
     doc, setDoc, getDoc, collection, addDoc, query,
-    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc
+    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc, arrayUnion, arrayRemove
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, EjercicioRutina } from '../stores/userStore';
+import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, EjercicioRutina, PartnerInfo } from '../stores/userStore';
 import { EjercicioBase } from '../data/exerciseDatabase';
 
 export interface LinkRequest {
@@ -27,6 +27,7 @@ export const firebaseService = {
             rutina: profile.rutina,
             onboardingCompletado: profile.onboardingCompletado,
             partnerId: profile.partnerId || null,
+            partners: profile.partners || [],
             weeklyTracking: profile.weeklyTracking || {},
             catalogoExtras: profile.catalogoExtras || [],
             updatedAt: new Date().toISOString(),
@@ -64,6 +65,7 @@ export const firebaseService = {
             historialRutinas,
             onboardingCompletado: data.onboardingCompletado,
             partnerId: data.partnerId,
+            partners: data.partners || [],
             alias: userData.displayName || '',
             role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
             weeklyTracking: data.weeklyTracking || {},
@@ -72,7 +74,7 @@ export const firebaseService = {
         };
     },
 
-    // Real-time listener para sync automático
+    // Real-time listener para sync autom?tico
     onProfileChange(userId: string, callback: (profile: PerfilCompleto | null) => void) {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         const userRef = doc(db, 'users', userId);
@@ -103,6 +105,7 @@ export const firebaseService = {
                 historialRutinas,
                 onboardingCompletado: data.onboardingCompletado,
                 partnerId: data.partnerId,
+                partners: data.partners || [],
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
                 weeklyTracking: data.weeklyTracking || {},
@@ -303,20 +306,36 @@ export const firebaseService = {
         });
     },
 
-    async acceptLinkRequest(request: LinkRequest): Promise<void> {
+    async acceptLinkRequest(request: LinkRequest, recipientName: string): Promise<void> {
         const batch = writeBatch(db);
 
         // 1. Update request status
         const requestRef = doc(db, 'linkRequests', request.id);
         batch.update(requestRef, { status: 'accepted' });
 
-        // 2. Update requester's profile
+        // 2. Get requester's name from their profile
         const requesterProfileRef = doc(db, 'users', request.requesterId, 'profile', 'main');
-        batch.update(requesterProfileRef, { partnerId: request.recipientId });
+        
+        // Add recipient to requester's partners array
+        batch.update(requesterProfileRef, {
+            partnerId: request.recipientId, // backward compat
+            partners: arrayUnion({
+                id: request.recipientId,
+                alias: recipientName,
+                nombre: recipientName,
+            } as PartnerInfo)
+        });
 
-        // 3. Update recipient's profile
+        // 3. Add requester to recipient's partners array
         const recipientProfileRef = doc(db, 'users', request.recipientId, 'profile', 'main');
-        batch.update(recipientProfileRef, { partnerId: request.requesterId });
+        batch.update(recipientProfileRef, {
+            partnerId: request.requesterId, // backward compat
+            partners: arrayUnion({
+                id: request.requesterId,
+                alias: request.requesterAlias,
+                nombre: request.requesterAlias,
+            } as PartnerInfo)
+        });
 
         await batch.commit();
     },
@@ -326,6 +345,31 @@ export const firebaseService = {
         await updateDoc(requestRef, { status: 'declined' });
     },
 
+    async unlinkPartner(userId: string, partnerToRemove: PartnerInfo): Promise<void> {
+        const batch = writeBatch(db);
+
+        // Remove partner from user's partners array
+        const userProfileRef = doc(db, 'users', userId, 'profile', 'main');
+        batch.update(userProfileRef, {
+            partners: arrayRemove(partnerToRemove)
+        });
+
+        // Remove user from partner's partners array (need to find the entry first)
+        const partnerProfileRef = doc(db, 'users', partnerToRemove.id, 'profile', 'main');
+        const partnerProfileSnap = await getDoc(partnerProfileRef);
+        if (partnerProfileSnap.exists()) {
+            const partnerData = partnerProfileSnap.data();
+            const partnerPartners = (partnerData.partners || []) as PartnerInfo[];
+            const entryToRemove = partnerPartners.find(p => p.id === userId);
+            if (entryToRemove) {
+                batch.update(partnerProfileRef, {
+                    partners: arrayRemove(entryToRemove)
+                });
+            }
+        }
+
+        await batch.commit();
+    },
 
     // ========== USER LOOKUP ==========
 
@@ -367,8 +411,8 @@ export const firebaseService = {
             };
 
             if (!targetProfile) {
-                // Crear perfil básico si no existe (though this implies user doesn't exist which contradicts successful findUserByAlias if alias maps to existing user)
-                // Check plan: "Crear perfil básico si no existe"
+                // Crear perfil b?sico si no existe (though this implies user doesn't exist which contradicts successful findUserByAlias if alias maps to existing user)
+                // Check plan: "Crear perfil b?sico si no existe"
                 const newProfile: PerfilCompleto = {
                     usuario: {
                         nombre: targetUser.alias,
@@ -397,7 +441,7 @@ export const firebaseService = {
                 await this.saveRoutine(targetId, routineCopy);
             }
 
-            return { success: true, message: 'Rutina compartida con éxito' };
+            return { success: true, message: 'Rutina compartida con ?xito' };
         } catch (error) {
             console.error('Share Routine Error:', error);
             return { success: false, message: 'Error al compartir la rutina' };
@@ -450,7 +494,7 @@ export const firebaseService = {
     },
 
     async initializeCatalog(initialData: EjercicioBase[]): Promise<void> {
-        // Subir en lotes de 500 (límite de Firestore batch)
+        // Subir en lotes de 500 (l?mite de Firestore batch)
         const chunks = [];
         for (let i = 0; i < initialData.length; i += 400) {
             chunks.push(initialData.slice(i, i + 400));
@@ -459,7 +503,7 @@ export const firebaseService = {
         for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((ex) => {
-                // Usar el nombre como ID para fácil lookup o generar uno nuevo
+                // Usar el nombre como ID para f?cil lookup o generar uno nuevo
                 // Preferible generar ID sanitizando el nombre o usar el ID existente si lo hay
                 const id = ex.id || ex.nombre.toLowerCase().replace(/[^a-z0-9]/g, '_');
                 const ref = doc(db, 'exercises', id);

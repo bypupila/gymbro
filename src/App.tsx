@@ -58,6 +58,7 @@ const OnboardingRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
 };
 
 import { AuthProvider } from './components/AuthProvider';
+import { TrainingInvitationNotifier } from './components/TrainingInvitationNotifier';
 
 function App() {
     return (
@@ -73,6 +74,7 @@ function App() {
                     }
                 }} />
                 <CloudSyncManager />
+                <TrainingInvitationNotifier />
                 <Suspense fallback={<Loader />}>
                     <Routes>
                         {/* Onboarding Routes - Full screen experience */}

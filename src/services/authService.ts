@@ -22,7 +22,7 @@ export const authService = {
         return result.user;
     },
 
-    // Recuperación de contraseña (envía email de reseteo)
+    // Recuperaciï¿½n de contraseï¿½a (envï¿½a email de reseteo)
     async sendPasswordReset(email: string) {
         await sendPasswordResetEmail(auth, email);
     },

@@ -44,8 +44,8 @@ export interface EjercicioRutina {
     segundos?: number;
     descanso: number;
     categoria: 'calentamiento' | 'maquina';
-    dia?: string; // Ej: "Día 1", "Lunes", etc.
-    enfocadoA?: 'hombre' | 'mujer' | 'ambos'; // Quién debe realizarlo
+    dia?: string; // Ej: "D?a 1", "Lunes", etc.
+    enfocadoA?: 'hombre' | 'mujer' | 'ambos'; // Qui?n debe realizarlo
     nombreOriginal?: string;
     observaciones?: string;
     grupoMuscular?: string; // Ej: "pectoral", "espalda", etc.
@@ -58,7 +58,7 @@ export interface RutinaUsuario {
     duracionSemanas: number;
     ejercicios: EjercicioRutina[];
     fechaInicio: string;
-    fechaExpiracion?: string; // Cuándo debería cambiarse
+    fechaExpiracion?: string; // Cu?ndo deber?a cambiarse
     analizadaPorIA: boolean;
 }
 
@@ -120,6 +120,12 @@ export interface ExtraActivity {
     };
 }
 
+export interface PartnerInfo {
+    id: string;
+    alias: string;
+    nombre: string;
+}
+
 export interface PerfilCompleto {
     usuario: DatosPersonales;
     pareja: DatosPersonales | null;
@@ -128,10 +134,11 @@ export interface PerfilCompleto {
     historial: EntrenamientoRealizado[];
     historialRutinas: RutinaUsuario[];
     onboardingCompletado: boolean;
-    partnerId?: string; // New field for Cloud ID
+    partnerId?: string; // Legacy single partner - kept for backward compat
+    partners?: PartnerInfo[]; // New: multiple partners
     alias?: string; // Add this
     role?: 'admin' | 'user'; // Rol del usuario
-    weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de días entrenados { '2026-01-29': 'completed' }
+    weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de d?as entrenados { '2026-01-29': 'completed' }
     actividadesExtras: ExtraActivity[]; // Extra activities logged
     catalogoExtras: string[]; // Unique activity types discovered
 }
@@ -150,10 +157,10 @@ const horarioInicial: HorarioSemanal = {
     dias: [
         { dia: 'Lunes', entrena: true, hora: '07:00', grupoMuscular: 'Pecho' },
         { dia: 'Martes', entrena: true, hora: '07:00', grupoMuscular: 'Espalda' },
-        { dia: 'Miércoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
+        { dia: 'Mi?rcoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
         { dia: 'Jueves', entrena: true, hora: '07:00', grupoMuscular: 'Hombros' },
         { dia: 'Viernes', entrena: true, hora: '07:00', grupoMuscular: 'Piernas' },
-        { dia: 'Sábado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
+        { dia: 'S?bado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
         { dia: 'Domingo', entrena: false, hora: '09:00', grupoMuscular: 'Descanso' },
     ]
 };
@@ -190,6 +197,10 @@ export interface ActiveSession {
     preWorkoutNote?: string;
     isDualSession: boolean;
     partnerExercises: ExerciseTracking[] | null;
+    sessionMode: 'solo' | 'shared' | 'linked';
+    selectedPartnerId?: string;
+    selectedPartnerName?: string;
+    trackingDate?: string; // YYYY-MM-DD - which day to mark as completed (defaults to today)
 }
 
 interface UserStore {
@@ -211,17 +222,20 @@ interface UserStore {
     agregarEntrenamiento: (entrenamiento: EntrenamientoRealizado) => void;
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
-    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string) => void;
+    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, sessionMode?: 'solo' | 'shared' | 'linked', preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string, selectedPartner?: PartnerInfo, trackingDate?: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>, isPartner?: boolean) => void;
     skipSet: (exerciseId: string, setIndex: number, isPartner?: boolean) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
-    addExerciseToSession: (newExercise: EjercicioRutina) => void;
-    markExerciseAsCompleted: (exerciseId: string) => void;
+    addExerciseToSession: (newExercise: EjercicioRutina, isPartner?: boolean) => void;
+    markExerciseAsCompleted: (exerciseId: string, isPartner?: boolean) => void;
     finishSession: (durationMinutos: number, postWorkoutData?: { mood?: number; energy?: number; note?: string }) => Promise<void>;
     cancelSession: () => void;
     resetear: () => void;
     logout: () => void;
     setPartnerId: (id: string | undefined) => void;
+    setPartners: (partners: PartnerInfo[]) => void;
+    addPartner: (partner: PartnerInfo) => void;
+    removePartner: (partnerId: string) => void;
     setAlias: (alias: string) => void;
     setRole: (role: 'admin' | 'user') => void;
     deleteRoutineFromHistory: (index: number) => void;
@@ -229,7 +243,7 @@ interface UserStore {
     removeExtraActivity: (activityId: string) => Promise<void>;
     removeExtraActivitiesOnDate: (dateStr: string) => Promise<void>;
     getExtraActivitiesCatalog: () => string[];
-    skipExercise: (exerciseId: string) => void;
+    skipExercise: (exerciseId: string, isPartner?: boolean) => void;
     setDayTracking: (dateStr: string, status: 'completed' | 'skipped' | null) => void;
 }
 
@@ -260,6 +274,18 @@ export const useUserStore = create<UserStore>()(
             setPartnerId: (id) => set((state) => ({
                 perfil: { ...state.perfil, partnerId: id }
             })),
+            setPartners: (partners) => set((state) => ({
+                perfil: { ...state.perfil, partners }
+            })),
+            addPartner: (partner) => set((state) => {
+                const current = state.perfil.partners || [];
+                if (current.some(p => p.id === partner.id)) return state;
+                return { perfil: { ...state.perfil, partners: [...current, partner] } };
+            }),
+            removePartner: (partnerId) => set((state) => {
+                const current = state.perfil.partners || [];
+                return { perfil: { ...state.perfil, partners: current.filter(p => p.id !== partnerId) } };
+            }),
 
             setDatosPersonales: (datos) => set((state) => ({
                 perfil: {
@@ -315,7 +341,7 @@ export const useUserStore = create<UserStore>()(
             })),
 
             getEntrenamientoHoy: () => {
-                const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+                const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Mi?rcoles', 'Jueves', 'Viernes', 'S?bado'];
                 const hoyIndex = new Date().getDay();
                 const diaNombre = diasSemana[hoyIndex];
 
@@ -335,9 +361,13 @@ export const useUserStore = create<UserStore>()(
                 return { entrena: false, grupoMuscular: 'Descanso' as GrupoMuscular, hora: '', dia: diaNombre };
             },
 
-            startSession: (dayName, exercises, routineName, preWorkoutMood, preWorkoutEnergy, preWorkoutNote) => {
+            startSession: (dayName, exercises, routineName, sessionMode, preWorkoutMood, preWorkoutEnergy, preWorkoutNote, selectedPartner, trackingDate) => {
                 const { perfil } = get();
-                const isDual = !!perfil.partnerId;
+                
+                // Determine session mode
+                const hasPartners = (perfil.partners && perfil.partners.length > 0) || !!perfil.partnerId;
+                const mode = sessionMode || (hasPartners ? 'shared' : 'solo');
+                const isDual = mode === 'shared' || mode === 'linked';
 
                 const createExerciseTracking = (ex: EjercicioRutina): ExerciseTracking => ({
                     id: ex.id,
@@ -371,6 +401,10 @@ export const useUserStore = create<UserStore>()(
                         exercises: userExercises,
                         isDualSession: isDual,
                         partnerExercises: partnerExercises,
+                        sessionMode: mode,
+                        selectedPartnerId: selectedPartner?.id,
+                        selectedPartnerName: selectedPartner?.nombre,
+                        trackingDate: trackingDate,
                     }
                 });
             },
@@ -441,7 +475,7 @@ export const useUserStore = create<UserStore>()(
             }),
 
             // Add an extra exercise to the current session only (doesn't affect the main routine)
-            addExerciseToSession: (newExercise) => set((state) => {
+            addExerciseToSession: (newExercise, isPartner = false) => set((state) => {
                 if (!state.activeSession) return state;
                 const newExerciseTracking = {
                     id: `temp_${Date.now()}_${newExercise.id}`,
@@ -459,6 +493,16 @@ export const useUserStore = create<UserStore>()(
                         rest: newExercise.descanso || 60
                     }))
                 };
+                
+                if (isPartner && state.activeSession.partnerExercises) {
+                    return {
+                        activeSession: {
+                            ...state.activeSession,
+                            partnerExercises: [...state.activeSession.partnerExercises, newExerciseTracking]
+                        }
+                    };
+                }
+                
                 return {
                     activeSession: {
                         ...state.activeSession,
@@ -467,8 +511,20 @@ export const useUserStore = create<UserStore>()(
                 };
             }),
 
-            markExerciseAsCompleted: (exerciseId) => set((state) => {
+            markExerciseAsCompleted: (exerciseId, isPartner = false) => set((state) => {
                 if (!state.activeSession) return state;
+                
+                if (isPartner && state.activeSession.partnerExercises) {
+                    return {
+                        activeSession: {
+                            ...state.activeSession,
+                            partnerExercises: state.activeSession.partnerExercises.map(ex =>
+                                ex.id === exerciseId ? { ...ex, isCompleted: true } : ex
+                            )
+                        }
+                    };
+                }
+                
                 return {
                     activeSession: {
                         ...state.activeSession,
@@ -479,8 +535,20 @@ export const useUserStore = create<UserStore>()(
                 };
             }),
 
-            skipExercise: (exerciseId) => set((state) => {
+            skipExercise: (exerciseId, isPartner = false) => set((state) => {
                 if (!state.activeSession) return state;
+                
+                if (isPartner && state.activeSession.partnerExercises) {
+                    return {
+                        activeSession: {
+                            ...state.activeSession,
+                            partnerExercises: state.activeSession.partnerExercises.map(ex =>
+                                ex.id === exerciseId ? { ...ex, isSkipped: true } : ex
+                            )
+                        }
+                    };
+                }
+                
                 return {
                     activeSession: {
                         ...state.activeSession,
@@ -539,11 +607,12 @@ export const useUserStore = create<UserStore>()(
                 }
 
                 // If it's a dual session, create and save partner's workout
-                if (isDualSession && partnerExercises && perfil.partnerId) {
+                const partnerTargetId = activeSession.selectedPartnerId || perfil.partnerId;
+                if (isDualSession && partnerExercises && partnerTargetId) {
                     const partnerWorkout = createWorkoutFromExercises(partnerExercises);
                     try {
                         // Note: We use addWorkoutToPartner, which just calls addWorkout with the partner's ID
-                        await firebaseService.addWorkoutToPartner(perfil.partnerId, partnerWorkout);
+                        await firebaseService.addWorkoutToPartner(partnerTargetId, partnerWorkout);
                     } catch (e) {
                         console.error("Failed to save partner workout to cloud", e);
                     }
@@ -552,7 +621,8 @@ export const useUserStore = create<UserStore>()(
                 // Final state update
                 set((s) => {
                     const newTracking = { ...(s.perfil.weeklyTracking || {}) };
-                    const dateKey = userWorkout.fecha.split('T')[0];
+                    // Use trackingDate if set (user chose a specific day), otherwise use today
+                    const dateKey = activeSession.trackingDate || userWorkout.fecha.split('T')[0];
                     newTracking[dateKey] = 'completed';
 
                     return {
