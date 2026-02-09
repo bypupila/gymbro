@@ -427,10 +427,29 @@ export const firebaseService = {
         }
 
         if (!reciprocalPending.empty) {
-            await updateDoc(reciprocalPending.docs[0].ref, {
+            const reciprocalDoc = reciprocalPending.docs[0];
+            const reciprocalData = reciprocalDoc.data() as LinkRequest;
+
+            // Update the reciprocal request status
+            await updateDoc(reciprocalDoc.ref, {
                 status: 'accepted',
                 resolvedAt: new Date().toISOString(),
             });
+
+            // Add partner info to both users' profiles
+            await Promise.all([
+                this.upsertOwnPartner(requesterId, {
+                    id: recipientId,
+                    alias: recipientAlias || recipientId,
+                    nombre: recipientAlias || recipientId,
+                }),
+                this.upsertOwnPartner(recipientId, {
+                    id: requesterId,
+                    alias: requesterAlias,
+                    nombre: requesterAlias,
+                })
+            ]);
+
             return;
         }
 
@@ -604,11 +623,22 @@ export const firebaseService = {
             status: 'accepted',
             resolvedAt: new Date().toISOString(),
         });
-        await this.upsertOwnPartner(request.recipientId, {
-            id: request.requesterId,
-            alias: request.requesterAlias,
-            nombre: request.requesterAlias,
-        });
+
+        // Add partner to BOTH users' profiles
+        await Promise.all([
+            // Add requester to recipient's profile
+            this.upsertOwnPartner(request.recipientId, {
+                id: request.requesterId,
+                alias: request.requesterAlias,
+                nombre: request.requesterAlias,
+            }),
+            // Add recipient to requester's profile
+            this.upsertOwnPartner(request.requesterId, {
+                id: request.recipientId,
+                alias: request.recipientAlias || request.recipientId,
+                nombre: request.recipientAlias || request.recipientId,
+            })
+        ]);
     },
 
     async declineLinkRequest(requestId: string): Promise<void> {
@@ -617,6 +647,8 @@ export const firebaseService = {
     },
 
     async unlinkPartner(userId: string, partnerToRemove: PartnerInfo): Promise<void> {
+        const { deleteField } = await import('firebase/firestore');
+
         await addDoc(collection(db, 'relationshipActions'), {
             actionType: 'UNLINK',
             initiatedBy: userId,
@@ -625,6 +657,41 @@ export const firebaseService = {
             status: 'pending',
             createdAt: new Date().toISOString(),
         });
+
+        // Helper to remove partner from a profile
+        const removePartnerFromProfile = async (targetId: string, partnerIdToRemove: string) => {
+            const profileRef = doc(db, 'users', targetId, 'profile', 'main');
+            const snap = await getDoc(profileRef);
+            if (!snap.exists()) return;
+
+            const data = snap.data();
+            const currentPartners = (data.partners || []) as PartnerInfo[];
+            const nextPartners = currentPartners.filter(p => p.id !== partnerIdToRemove);
+            const nextPartnerIds = (data.partnerIds || []).filter((id: string) => id !== partnerIdToRemove);
+
+            const updatePayload: any = {
+                partners: nextPartners,
+                partnerIds: nextPartnerIds,
+                updatedAt: new Date().toISOString(),
+            };
+
+            // If active partner was the removed one, clear it
+            if (data.activePartnerId === partnerIdToRemove) {
+                updatePayload.activePartnerId = nextPartners[0]?.id || null;
+            }
+            if (data.partnerId === partnerIdToRemove) {
+                updatePayload.partnerId = nextPartners[0]?.id || null;
+            }
+
+            await updateDoc(profileRef, updatePayload);
+        };
+
+        await Promise.all([
+            // Remove partner from my profile
+            removePartnerFromProfile(userId, partnerToRemove.id),
+            // Remove me from partner's profile
+            removePartnerFromProfile(partnerToRemove.id, userId)
+        ]);
     },
 
     async breakRoutineSync(userId: string, partnerId: string): Promise<void> {

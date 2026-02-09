@@ -17,9 +17,9 @@ export const RoutineRequestNotifier: React.FC = () => {
 
     if (requests.length === 0) return null;
 
-    const handleAccept = async (requestId: string) => {
+    const handleAccept = async (requestId: string, request: RoutineRequest) => {
         try {
-            await routineRequestService.acceptRequest(requestId);
+            await routineRequestService.acceptRequest(requestId, request);
             toast.success('Solicitud de rutina aceptada');
             setRequests((prev) => prev.filter((r) => r.id !== requestId));
         } catch {
@@ -56,7 +56,7 @@ export const RoutineRequestNotifier: React.FC = () => {
                             <X size={16} />
                             Rechazar
                         </button>
-                        <button style={styles.acceptBtn} onClick={() => handleAccept(req.id)}>
+                        <button style={styles.acceptBtn} onClick={() => handleAccept(req.id, req)}>
                             <Check size={16} />
                             Aceptar
                         </button>

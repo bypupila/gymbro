@@ -384,7 +384,8 @@ export const useUserStore = create<UserStore>()(
                         partnerId: nextPartners[0]?.id || null,
                         partnerIds: (state.perfil.partnerIds || []).filter((id) => id !== partnerId),
                         activePartnerId: nextActivePartnerId,
-                        routineSync: nextRoutineSync
+                        routineSync: nextRoutineSync,
+                        linkSetupPendingPartnerId: state.perfil.linkSetupPendingPartnerId === partnerId ? null : state.perfil.linkSetupPendingPartnerId
                     }
                 };
             }),
@@ -454,7 +455,7 @@ export const useUserStore = create<UserStore>()(
                     }
 
                     rutinaParaActivar = newRutina;
-                    
+
                     // If the new routine is marked as default, update the profile's defaultRoutineId
                     if (newRutina.isDefault) {
                         updatedDefaultRoutineId = newRutina.id;
@@ -513,7 +514,7 @@ export const useUserStore = create<UserStore>()(
 
             startSession: (dayName, exercises, routineName, sessionMode, preWorkoutMood, preWorkoutEnergy, preWorkoutNote, selectedPartner, trackingDate, liveSessionId) => {
                 const { perfil } = get();
-                
+
                 // Determine session mode
                 const hasPartners = (perfil.partners && perfil.partners.length > 0) || !!perfil.partnerId;
                 const mode = sessionMode || (hasPartners ? 'shared' : 'solo');
@@ -686,7 +687,7 @@ export const useUserStore = create<UserStore>()(
                         rest: newExercise.descanso || 60
                     }))
                 };
-                
+
                 if (isPartner && state.activeSession.partnerExercises) {
                     return {
                         activeSession: {
@@ -695,7 +696,7 @@ export const useUserStore = create<UserStore>()(
                         }
                     };
                 }
-                
+
                 return {
                     activeSession: {
                         ...state.activeSession,
@@ -707,7 +708,7 @@ export const useUserStore = create<UserStore>()(
             markExerciseAsCompleted: (exerciseId, isPartner = false) => {
                 const state = get();
                 if (!state.activeSession) return;
-                
+
                 // Update local state immediately
                 set((state) => {
                     if (!state.activeSession) return state;
@@ -721,7 +722,7 @@ export const useUserStore = create<UserStore>()(
                             }
                         };
                     }
-                    
+
                     return {
                         activeSession: {
                             ...state.activeSession,
@@ -748,7 +749,7 @@ export const useUserStore = create<UserStore>()(
             skipExercise: (exerciseId, isPartner = false) => {
                 const state = get();
                 if (!state.activeSession) return;
-                
+
                 // Update local state immediately
                 set((state) => {
                     if (!state.activeSession) return state;
@@ -762,7 +763,7 @@ export const useUserStore = create<UserStore>()(
                             }
                         };
                     }
-                    
+
                     return {
                         activeSession: {
                             ...state.activeSession,
@@ -1023,7 +1024,7 @@ export const useUserStore = create<UserStore>()(
                 if (rutinaActual) {
                     // Clear its isDefault flag as it's no longer the *active* default
                     newHistory.push({ ...rutinaActual, isDefault: false });
-                    
+
                     // If the routine being saved was the default, clear the default ID
                     if (updatedDefaultRoutineId === rutinaActual.id) {
                         updatedDefaultRoutineId = undefined;
@@ -1099,7 +1100,7 @@ export const useUserStore = create<UserStore>()(
                     } else {
                         console.warn(`Routine with ID ${importedRoutine.id} already exists in history. Skipping import.`);
                     }
-                    
+
                     return {
                         perfil: {
                             ...perfil,

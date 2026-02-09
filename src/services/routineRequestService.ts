@@ -60,11 +60,48 @@ export const routineRequestService = {
         });
     },
 
-    async acceptRequest(requestId: string): Promise<void> {
+    async acceptRequest(requestId: string, request: RoutineRequest): Promise<void> {
+        const { getDoc, doc, updateDoc, setDoc } = await import('firebase/firestore');
+        const { db } = await import('@/config/firebase');
+
+        // Update request status
         await updateDoc(doc(db, 'routineRequests', requestId), {
             status: 'accepted',
             resolvedAt: new Date().toISOString(),
         });
+
+        // Fetch source user's profile to get their routine
+        const sourceProfileRef = doc(db, 'users', request.sourceUserId, 'profile', 'main');
+        const sourceProfileSnap = await getDoc(sourceProfileRef);
+
+        if (!sourceProfileSnap.exists()) {
+            console.error('Source user profile not found');
+            return;
+        }
+
+        const sourceProfile = sourceProfileSnap.data();
+        const sourceRoutine = sourceProfile.rutina;
+
+        if (!sourceRoutine) {
+            console.error('Source user has no active routine');
+            return;
+        }
+
+        // Create a copy of the routine with a new ID and updated metadata
+        const routineCopy = {
+            ...sourceRoutine,
+            id: `copied_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            nombre: `${sourceRoutine.nombre} (de ${request.fromName})`,
+            fechaInicio: new Date().toISOString(),
+            isDefault: false,
+        };
+
+        // Write the copied routine to the target user's profile
+        const targetProfileRef = doc(db, 'users', request.targetUserId, 'profile', 'main');
+        await setDoc(targetProfileRef, {
+            rutina: routineCopy,
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
     },
 
     async declineRequest(requestId: string): Promise<void> {

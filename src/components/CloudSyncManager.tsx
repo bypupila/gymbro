@@ -163,9 +163,24 @@ export const CloudSyncManager: React.FC = () => {
                     partnerId={partnerDetails.id}
                     partnerName={partnerDetails.name}
                     partnerAlias={partnerDetails.alias}
-                    onClose={() => {
+                    onClose={async () => {
                         setShowRoutineCopyModal(false);
                         setLinkSetupPendingPartnerId(null);
+
+                        // Also clear from Firestore to prevent modal loop on reload
+                        if (userId) {
+                            try {
+                                const { doc, updateDoc } = await import('firebase/firestore');
+                                const { db } = await import('@/config/firebase');
+                                const profileRef = doc(db, 'users', userId, 'profile', 'main');
+                                await updateDoc(profileRef, {
+                                    linkSetupPendingPartnerId: null,
+                                    updatedAt: new Date().toISOString()
+                                });
+                            } catch (e) {
+                                console.error('Error clearing pending partner ID:', e);
+                            }
+                        }
                     }}
                 />
             )}
