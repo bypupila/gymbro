@@ -4,21 +4,38 @@ import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { setUserId, setLinkRequests } = useUserStore();
+    const { setUserId, setLinkRequests, addPartner } = useUserStore();
 
     useEffect(() => {
+        let unsubscribeLinkRequests: (() => void) | null = null;
+        let unsubscribeAcceptedLinks: (() => void) | null = null;
+
         // Firebase Auth Listener
         const unsubscribeAuth = authService.onAuthChange((user) => {
+            if (unsubscribeLinkRequests) {
+                unsubscribeLinkRequests();
+                unsubscribeLinkRequests = null;
+            }
+            if (unsubscribeAcceptedLinks) {
+                unsubscribeAcceptedLinks();
+                unsubscribeAcceptedLinks = null;
+            }
+
             if (user) {
                 setUserId(user.uid);
 
                 // Setup listener for link requests
-                const unsubscribeLinkRequests = firebaseService.onLinkRequestsChange(user.uid, (requests) => {
+                unsubscribeLinkRequests = firebaseService.onLinkRequestsChange(user.uid, (requests) => {
                     setLinkRequests(requests);
                 });
 
-                // Return the cleanup function for the link requests listener
-                return () => unsubscribeLinkRequests();
+                // Setup listener for accepted links (fallback client-sync if backend trigger is delayed)
+                unsubscribeAcceptedLinks = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
+                    partners.forEach((partner) => {
+                        void firebaseService.upsertOwnPartner(user.uid, partner);
+                        addPartner(partner);
+                    });
+                });
             } else {
                 setUserId(null);
                 setLinkRequests([]); // Clear requests on logout
@@ -26,13 +43,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         return () => {
-            // This will be called on component unmount
-            // It might be a simple unsubscribe, or if the inner function returns a cleanup, it will be called
-            if (typeof unsubscribeAuth === 'function') {
-                unsubscribeAuth();
+            if (unsubscribeLinkRequests) {
+                unsubscribeLinkRequests();
             }
+            if (unsubscribeAcceptedLinks) {
+                unsubscribeAcceptedLinks();
+            }
+            unsubscribeAuth();
         };
-    }, [setUserId, setLinkRequests]);
+    }, [addPartner, setLinkRequests, setUserId]);
 
     // Data syncing is now handled by CloudSyncManager
     // leaving AuthProvider responsible only for Auth State

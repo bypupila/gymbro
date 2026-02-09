@@ -52,7 +52,7 @@ export const DualTrainingPage: React.FC = () => {
                 return;
             }
 
-            await firebaseService.sendLinkRequest(userId, perfil.alias, user.id);
+            await firebaseService.sendLinkRequest(userId, perfil.alias, user.id, user.alias || user.name);
             toast.success(`Solicitud enviada a ${user.name || user.alias}`);
             setAliasInput('');
         } catch (error: unknown) {
@@ -253,6 +253,26 @@ export const DualTrainingPage: React.FC = () => {
                                     <span style={styles.userName}>{perfil.pareja?.nombre || 'Partner vinculado'}</span>
                                     <span style={styles.userStatus}>Vinculado (legacy)</span>
                                 </div>
+                                <button
+                                    onClick={() => handleUnlink({
+                                        id: perfil.partnerId!,
+                                        alias: perfil.pareja?.nombre || 'partner',
+                                        nombre: perfil.pareja?.nombre || 'Partner',
+                                    })}
+                                    style={{
+                                        background: `${Colors.error}15`,
+                                        border: `1px solid ${Colors.error}30`,
+                                        borderRadius: '8px',
+                                        padding: '6px 8px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                    }}
+                                    title="Desvincular partner"
+                                >
+                                    <UserX size={14} color={Colors.error} />
+                                </button>
                             </div>
                         </>
                     ) : null}

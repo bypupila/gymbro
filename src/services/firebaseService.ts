@@ -11,8 +11,10 @@ export interface LinkRequest {
     requesterId: string;
     requesterAlias: string;
     recipientId: string;
+    recipientAlias?: string;
     status: 'pending' | 'accepted' | 'declined';
     createdAt: string;
+    resolvedAt?: string;
 }
 
 export interface RelationshipAction {
@@ -386,7 +388,7 @@ export const firebaseService = {
 
     // ========== ACCOUNT LINKING ==========
 
-    async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string): Promise<void> {
+    async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string, recipientAlias?: string): Promise<void> {
         const requestsRef = collection(db, 'linkRequests');
 
         const [directPending, reciprocalPending, acceptedDirect, acceptedReciprocal] = await Promise.all([
@@ -436,6 +438,7 @@ export const firebaseService = {
             requesterId,
             requesterAlias,
             recipientId,
+            recipientAlias: recipientAlias || '',
             status: 'pending',
             createdAt: new Date().toISOString(),
         });
@@ -454,11 +457,95 @@ export const firebaseService = {
         });
     },
 
+    onAcceptedLinkRequestsChange(userId: string, callback: (partners: PartnerInfo[]) => void) {
+        const requestsRef = collection(db, 'linkRequests');
+        const sentQ = query(requestsRef, where('requesterId', '==', userId), where('status', '==', 'accepted'));
+        const receivedQ = query(requestsRef, where('recipientId', '==', userId), where('status', '==', 'accepted'));
+        const ACCEPTANCE_WINDOW_MS = 10 * 60 * 1000;
+        const isRecentAcceptance = (resolvedAt?: string) => {
+            if (!resolvedAt) return false;
+            const resolvedAtMs = Date.parse(resolvedAt);
+            if (!Number.isFinite(resolvedAtMs)) return false;
+            return (Date.now() - resolvedAtMs) <= ACCEPTANCE_WINDOW_MS;
+        };
+
+        let sentPartners: PartnerInfo[] = [];
+        let receivedPartners: PartnerInfo[] = [];
+
+        const emit = () => {
+            const map = new Map<string, PartnerInfo>();
+            [...sentPartners, ...receivedPartners].forEach((p) => map.set(p.id, p));
+            callback(Array.from(map.values()));
+        };
+
+        const unsubscribeSent = onSnapshot(sentQ, (snapshot) => {
+            sentPartners = snapshot.docs.map((docSnap) => {
+                const data = docSnap.data() as LinkRequest;
+                if (!isRecentAcceptance(data.resolvedAt)) return null;
+                const alias = data.recipientAlias || data.recipientId;
+                return {
+                    id: data.recipientId,
+                    alias,
+                    nombre: alias,
+                } as PartnerInfo;
+            }).filter((partner): partner is PartnerInfo => partner !== null);
+            emit();
+        });
+
+        const unsubscribeReceived = onSnapshot(receivedQ, (snapshot) => {
+            receivedPartners = snapshot.docs.map((docSnap) => {
+                const data = docSnap.data() as LinkRequest;
+                if (!isRecentAcceptance(data.resolvedAt)) return null;
+                return {
+                    id: data.requesterId,
+                    alias: data.requesterAlias,
+                    nombre: data.requesterAlias,
+                } as PartnerInfo;
+            }).filter((partner): partner is PartnerInfo => partner !== null);
+            emit();
+        });
+
+        return () => {
+            unsubscribeSent();
+            unsubscribeReceived();
+        };
+    },
+
+    async upsertOwnPartner(userId: string, partner: PartnerInfo): Promise<boolean> {
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const profileSnap = await getDoc(profileRef);
+        if (!profileSnap.exists()) return false;
+
+        const profileData = profileSnap.data();
+        const currentPartners = (profileData.partners || []) as PartnerInfo[];
+        const alreadyExists = currentPartners.some((p) => p.id === partner.id);
+        if (alreadyExists) return false;
+
+        const mergedPartners = [...currentPartners, partner];
+        const mergedPartnerIds = Array.from(new Set([...(profileData.partnerIds || []), partner.id]));
+
+        await setDoc(profileRef, {
+            partnerId: profileData.partnerId || partner.id,
+            activePartnerId: profileData.activePartnerId || partner.id,
+            linkSetupPendingPartnerId: partner.id,
+            partners: mergedPartners,
+            partnerIds: mergedPartnerIds,
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
+
+        return true;
+    },
+
     async acceptLinkRequest(request: LinkRequest): Promise<void> {
         const requestRef = doc(db, 'linkRequests', request.id);
         await updateDoc(requestRef, {
             status: 'accepted',
             resolvedAt: new Date().toISOString(),
+        });
+        await this.upsertOwnPartner(request.recipientId, {
+            id: request.requesterId,
+            alias: request.requesterAlias,
+            nombre: request.requesterAlias,
         });
     },
 

@@ -7,7 +7,7 @@ import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
     Bell, Calendar, Heart, RefreshCw, Shield, Users,
-    CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, Image as ImageIcon
+    CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, UserX, Image as ImageIcon
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -26,11 +26,19 @@ interface FirebaseAuthError {
 
 export const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
-    const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales, deleteRoutineFromHistory } = useUserStore();
+    const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales, deleteRoutineFromHistory, removePartner } = useUserStore();
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
     const partners = perfil.partners || [];
     const activePartner = partners.find((p) => p.id === perfil.activePartnerId) || partners[0] || null;
+    const legacyLinkedPartner = !activePartner && perfil.partnerId
+        ? {
+            id: perfil.partnerId,
+            alias: partnerInfo?.nombre || 'partner',
+            nombre: partnerInfo?.nombre || 'Partner',
+        }
+        : null;
+    const linkedPartner = activePartner || legacyLinkedPartner;
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(userInfo);
@@ -86,7 +94,7 @@ export const ProfilePage: React.FC = () => {
         if (!foundUser || !userId || !perfil.alias) return;
 
         try {
-            await firebaseService.sendLinkRequest(userId, perfil.alias, foundUser.id);
+            await firebaseService.sendLinkRequest(userId, perfil.alias, foundUser.id, foundUser.alias || foundUser.name);
             setSearchStatus('request_sent');
             toast.success(`Solicitud enviada a ${foundUser.name}`);
             // Optionally close modal after a delay
@@ -101,6 +109,44 @@ export const ProfilePage: React.FC = () => {
             toast.error('Error al enviar la solicitud.');
             setSearchStatus('error');
         }
+    };
+
+    const handleUnlinkCurrentPartner = (partnerToUnlink: { id: string; nombre: string; alias?: string }) => {
+        if (!userId) return;
+
+        toast((t) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>Desvincular a {partnerToUnlink.nombre}?</span>
+                <span style={{ fontSize: '12px', color: '#aaa' }}>
+                    Podran volver a vincularse despues.
+                </span>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={async () => {
+                            try {
+                                await firebaseService.unlinkPartner(userId, partnerToUnlink);
+                                removePartner(partnerToUnlink.id);
+                                toast.success(`${partnerToUnlink.nombre} desvinculado`);
+                            } catch (error) {
+                                console.error('Error unlinking partner:', error);
+                                toast.error('No se pudo desvincular.');
+                            } finally {
+                                toast.dismiss(t.id);
+                            }
+                        }}
+                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
+                    >
+                        Desvincular
+                    </button>
+                </div>
+            </div>
+        ), { duration: 5000 });
     };
 
 
@@ -468,18 +514,25 @@ export const ProfilePage: React.FC = () => {
 
             {/* Partner Section */}
             <h3 style={styles.sectionTitle}>Mi Pareja Gymbro</h3>
-            {activePartner || partnerInfo ? (
+            {linkedPartner ? (
                 <Card style={styles.partnerCard}>
                     <div style={styles.partnerInfo}>
                         <img
-                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${partnerInfo.nombre}`}
+                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${linkedPartner.nombre || 'Partner'}`}
                             alt="Partner"
                             style={styles.partnerAvatar}
                         />
                         <div style={{ flex: 1 }}>
-                            <p style={styles.partnerName}>{activePartner?.nombre || partnerInfo?.nombre}</p>
+                            <p style={styles.partnerName}>{linkedPartner.nombre}</p>
                             <p style={styles.partnerStatus}>Sincronizados</p>
                         </div>
+                        <button
+                            style={styles.unlinkPartnerBtn}
+                            onClick={() => handleUnlinkCurrentPartner(linkedPartner)}
+                            title="Desvincular partner"
+                        >
+                            <UserX size={16} color={Colors.error} />
+                        </button>
                         <div style={styles.coupleStreak}>
                             <Heart size={16} color={Colors.error} fill={Colors.error} />
                             <span style={styles.coupleStreakText}>0</span>
@@ -870,6 +923,17 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '13px',
         color: Colors.textSecondary,
         margin: '4px 0 0 0',
+    },
+    unlinkPartnerBtn: {
+        width: '36px',
+        height: '36px',
+        borderRadius: '10px',
+        border: `1px solid ${Colors.error}40`,
+        background: `${Colors.error}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
     },
     coupleStreak: {
         display: 'flex',
