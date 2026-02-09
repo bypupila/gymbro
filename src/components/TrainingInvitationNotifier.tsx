@@ -3,16 +3,23 @@
 // Listens for incoming training invitations via Firestore
 // =====================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useUserStore } from '@/stores/userStore';
-import { trainingInvitationService, TrainingInvitation } from '@/services/trainingInvitationService';
+import {
+    trainingInvitationService,
+    TrainingInvitation,
+    InvitationExercisePayload
+} from '@/services/trainingInvitationService';
 import Colors from '@/styles/colors';
 import { Check, X, Dumbbell, Clock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { liveSessionService } from '@/services/liveSessionService';
 
 export const TrainingInvitationNotifier: React.FC = () => {
-    const { userId, perfil } = useUserStore();
+    const { userId, startSession } = useUserStore();
+    const navigate = useNavigate();
     const [invitations, setInvitations] = useState<TrainingInvitation[]>([]);
 
     useEffect(() => {
@@ -28,11 +35,61 @@ export const TrainingInvitationNotifier: React.FC = () => {
         return () => unsubscribe();
     }, [userId]);
 
-    if (invitations.length === 0) return null;
-
     const handleAccept = async (invitation: TrainingInvitation) => {
         try {
             await trainingInvitationService.acceptInvitation(invitation.id);
+
+            const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${invitation.fromUserId}`;
+            const routineExercises = (invitation.exercises || []).map((ex: InvitationExercisePayload) => ({
+                id: ex.id,
+                nombre: ex.nombre,
+                series: ex.targetSeries || ex.series || 1,
+                repeticiones: ex.targetReps || ex.repeticiones || '10',
+                segundos: ex.sets?.[0]?.duration || 0,
+                descanso: ex.sets?.[0]?.rest || 60,
+                categoria: ex.categoria || 'maquina',
+                isOptional: ex.isOptional || false,
+            }));
+            const trackingExercises = routineExercises.map((ex) => ({
+                id: ex.id,
+                nombre: ex.nombre,
+                targetSeries: ex.series,
+                targetReps: ex.repeticiones,
+                categoria: ex.categoria,
+                isOptional: ex.isOptional,
+                isCompleted: false,
+                sets: Array.from({ length: ex.series }, () => ({
+                    completed: false,
+                    skipped: false,
+                    weight: 0,
+                    reps: parseInt(ex.repeticiones) || 10,
+                    duration: ex.segundos || 0,
+                    rest: ex.descanso || 60
+                }))
+            }));
+
+            if (userId) {
+                await liveSessionService.joinLiveSession(
+                    liveSessionId,
+                    userId,
+                    trackingExercises
+                );
+            }
+
+            startSession(
+                invitation.dayName || 'Entrenamiento',
+                routineExercises,
+                invitation.routineName || 'Rutina',
+                'linked',
+                undefined,
+                undefined,
+                undefined,
+                { id: invitation.fromUserId, alias: invitation.fromName, nombre: invitation.fromName },
+                invitation.trackingDate,
+                liveSessionId
+            );
+
+            navigate('/train');
             toast.success(`Invitacion aceptada! ${invitation.fromName} y tu van a entrenar`);
             setInvitations(prev => prev.filter(i => i.id !== invitation.id));
         } catch (error) {
@@ -40,6 +97,77 @@ export const TrainingInvitationNotifier: React.FC = () => {
             toast.error('No se pudo aceptar la invitacion.');
         }
     };
+
+    const acceptFromDeepLink = useCallback(async (invitation: TrainingInvitation) => {
+        await trainingInvitationService.acceptInvitation(invitation.id);
+
+        const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${invitation.fromUserId}`;
+        const routineExercises = (invitation.exercises || []).map((ex: InvitationExercisePayload) => ({
+            id: ex.id,
+            nombre: ex.nombre,
+            series: ex.targetSeries || ex.series || 1,
+            repeticiones: ex.targetReps || ex.repeticiones || '10',
+            segundos: ex.sets?.[0]?.duration || 0,
+            descanso: ex.sets?.[0]?.rest || 60,
+            categoria: ex.categoria || 'maquina',
+            isOptional: ex.isOptional || false,
+        }));
+        const trackingExercises = routineExercises.map((ex) => ({
+            id: ex.id,
+            nombre: ex.nombre,
+            targetSeries: ex.series,
+            targetReps: ex.repeticiones,
+            categoria: ex.categoria,
+            isOptional: ex.isOptional,
+            isCompleted: false,
+            sets: Array.from({ length: ex.series }, () => ({
+                completed: false,
+                skipped: false,
+                weight: 0,
+                reps: parseInt(ex.repeticiones) || 10,
+                duration: ex.segundos || 0,
+                rest: ex.descanso || 60
+            }))
+        }));
+
+        if (userId) {
+            await liveSessionService.joinLiveSession(liveSessionId, userId, trackingExercises);
+        }
+
+        startSession(
+            invitation.dayName || 'Entrenamiento',
+            routineExercises,
+            invitation.routineName || 'Rutina',
+            'linked',
+            undefined,
+            undefined,
+            undefined,
+            { id: invitation.fromUserId, alias: invitation.fromName, nombre: invitation.fromName },
+            invitation.trackingDate,
+            liveSessionId
+        );
+
+        navigate('/train');
+        toast.success(`Invitacion aceptada! ${invitation.fromName} y tu van a entrenar`);
+    }, [navigate, startSession, userId]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const invitationId = params.get('acceptInvitation');
+        if (!invitationId || invitations.length === 0) return;
+
+        const invitation = invitations.find((inv) => inv.id === invitationId);
+        if (!invitation) return;
+
+        void acceptFromDeepLink(invitation).finally(() => {
+            params.delete('acceptInvitation');
+            const query = params.toString();
+            const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+            window.history.replaceState({}, '', nextUrl);
+        });
+    }, [acceptFromDeepLink, invitations]);
+
+    if (invitations.length === 0) return null;
 
     const handleDecline = async (invitation: TrainingInvitation) => {
         try {

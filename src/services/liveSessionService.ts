@@ -3,14 +3,12 @@
 // =====================================================
 
 import { 
-    collection, 
     doc, 
     setDoc, 
     getDoc, 
     onSnapshot, 
     updateDoc, 
-    serverTimestamp,
-    Timestamp 
+    serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { ExerciseTracking } from '../stores/userStore';
@@ -28,7 +26,7 @@ export interface LiveSessionMetadata {
 export interface LiveSessionParticipant {
     userId: string;
     exercises: ExerciseTracking[];
-    lastUpdate: any; // Firestore Timestamp
+    lastUpdate: unknown; // Firestore Timestamp
     isOnline: boolean;
     currentExerciseId?: string | null;
 }
@@ -77,9 +75,10 @@ export const liveSessionService = {
             dayName: string;
             routineName: string;
             exercises: ExerciseTracking[];
-        }
+        },
+        providedSessionId?: string
     ): Promise<string> {
-        const sessionId = `session_${Date.now()}_${userId}`;
+        const sessionId = providedSessionId || `session_${Date.now()}_${userId}`;
         
         // Create session metadata
         const sessionRef = doc(db, 'liveSessions', sessionId);
@@ -252,7 +251,8 @@ export const liveSessionService = {
     /**
      * Check if partner has an active session
      */
-    async getPartnerActiveSession(partnerId: string): Promise<string | null> {
+    async getPartnerActiveSession(_partnerId: string): Promise<string | null> {
+        void _partnerId;
         // Query active sessions where partner is a participant
         // For simplicity, we store the active session ID in the user's profile
         // or we can query the liveSessions collection

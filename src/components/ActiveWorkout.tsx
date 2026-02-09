@@ -26,6 +26,7 @@ import { getExerciseVideo, getExerciseImage } from '@/data/exerciseMedia';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MoodCheckin } from './MoodCheckin';
 import { toast } from 'react-hot-toast';
+import { liveSessionService } from '@/services/liveSessionService';
 
 interface ActiveWorkoutProps {
     onFinish: () => void;
@@ -111,21 +112,35 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     // Linked Session: Real-time sync with partner
     useEffect(() => {
-        if (!activeSession || activeSession.sessionMode !== 'linked' || !activeSession.selectedPartnerId) {
+        if (!activeSession || activeSession.sessionMode !== 'linked' || !activeSession.selectedPartnerId || !activeSession.liveSessionId) {
             return;
         }
 
-        // TODO: Implement live session sync
-        // 1. Create or join live session
-        // 2. Listen to partner's exercises updates
-        // 3. Debounce and send local exercise updates
-        
-        // For now, just show the widget
+        const { userId } = useUserStore.getState();
+        if (!userId) return;
+
         setShowPartnerWidget(true);
 
+        void liveSessionService.setParticipantOnlineStatus(activeSession.liveSessionId, userId, true).catch(() => undefined);
+
+        const unsubscribePartner = liveSessionService.onPartnerExercisesChange(
+            activeSession.liveSessionId,
+            activeSession.selectedPartnerId,
+            (participant) => {
+                if (!participant) {
+                    setPartnerExercises(null);
+                    setPartnerCurrentExercise(null);
+                    return;
+                }
+                setPartnerExercises(participant.exercises || null);
+                setPartnerCurrentExercise(participant.currentExerciseId || null);
+            }
+        );
+
         return () => {
-            // Cleanup: mark as offline when component unmounts
+            unsubscribePartner();
             setShowPartnerWidget(false);
+            void liveSessionService.setParticipantOnlineStatus(activeSession.liveSessionId!, userId, false).catch(() => undefined);
         };
     }, [activeSession]);
 

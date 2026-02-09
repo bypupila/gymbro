@@ -5,9 +5,26 @@
 
 import {
     doc, collection, addDoc, query,
-    getDocs, onSnapshot, where, updateDoc, deleteDoc, Timestamp, orderBy, limit
+    getDocs, onSnapshot, where, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+
+export interface InvitationExercisePayload {
+    id: string;
+    nombre: string;
+    series?: number;
+    targetSeries?: number;
+    repeticiones?: string;
+    targetReps?: string;
+    segundos?: number;
+    descanso?: number;
+    categoria?: 'calentamiento' | 'maquina';
+    isOptional?: boolean;
+    sets?: Array<{
+        duration?: number;
+        rest?: number;
+    }>;
+}
 
 export interface TrainingInvitation {
     id: string;
@@ -18,6 +35,10 @@ export interface TrainingInvitation {
     status: 'pending' | 'accepted' | 'declined' | 'expired';
     sessionMode: 'shared' | 'linked';
     routineName: string;
+    dayName?: string;
+    exercises?: InvitationExercisePayload[];
+    trackingDate?: string;
+    liveSessionId?: string;
     createdAt: string;
     expiresAt: string; // Auto-expire after 5 minutes
 }
@@ -33,7 +54,13 @@ export const trainingInvitationService = {
         toUserId: string,
         toName: string,
         sessionMode: 'shared' | 'linked',
-        routineName: string
+        routineName: string,
+        payload?: {
+            dayName?: string;
+            exercises?: InvitationExercisePayload[];
+            trackingDate?: string;
+            liveSessionId?: string;
+        }
     ): Promise<string> {
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 min expiry
@@ -47,6 +74,10 @@ export const trainingInvitationService = {
             status: 'pending',
             sessionMode,
             routineName,
+            dayName: payload?.dayName || '',
+            exercises: payload?.exercises || [],
+            trackingDate: payload?.trackingDate || '',
+            liveSessionId: payload?.liveSessionId || '',
             createdAt: now.toISOString(),
             expiresAt: expiresAt.toISOString(),
         });

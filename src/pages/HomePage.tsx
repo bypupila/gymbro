@@ -5,7 +5,7 @@
 import { RoutineUpload } from '@/components/RoutineUpload';
 import { useUserStore, EjercicioRutina, PartnerInfo } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Play, Plus, FileText, Zap, Battery, BatteryLow, BatteryMedium, BatteryFull, Flame, ChevronLeft, Loader, Calendar } from 'lucide-react';
+import { Play, Plus, FileText, Zap, Battery, BatteryLow, BatteryMedium, BatteryFull, Flame, ChevronLeft, Calendar } from 'lucide-react';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
@@ -13,6 +13,7 @@ import { SyncStatus } from '@/components/SyncStatus';
 import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
 import { MoodStats } from '@/components/MoodStats';
 import { trainingInvitationService } from '@/services/trainingInvitationService';
+import { liveSessionService } from '@/services/liveSessionService';
 import { toast } from 'react-hot-toast';
 
 export const HomePage: React.FC = () => {
@@ -28,6 +29,8 @@ export const HomePage: React.FC = () => {
     const [tempSessionData, setTempSessionData] = useState<{ day: string, exercises: EjercicioRutina[], name: string } | null>(null);
     const [tempMood, setTempMood] = useState<number | undefined>(undefined);
     const [selectedPartner, setSelectedPartner] = useState<PartnerInfo | null>(null);
+    const [pendingInvitationId, setPendingInvitationId] = useState<string | null>(null);
+    const [isWaitingForAccept, setIsWaitingForAccept] = useState(false);
 
     // Day picker state
     const [showDayPickerModal, setShowDayPickerModal] = useState(false);
@@ -58,6 +61,29 @@ export const HomePage: React.FC = () => {
 
     const dayNamesShort = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
     const dayNamesFull = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
+
+    const cancelPendingInvitation = useCallback(async () => {
+        if (pendingInvitationId) {
+            try {
+                await trainingInvitationService.cancelInvitation(pendingInvitationId);
+            } catch {
+                // Ignore cleanup errors
+            }
+        }
+        setIsWaitingForAccept(false);
+        setPendingInvitationId(null);
+    }, [pendingInvitationId, setIsWaitingForAccept, setPendingInvitationId]);
+
+    const resetModeModal = useCallback(() => {
+        void cancelPendingInvitation();
+        setShowModeModal(false);
+        setTempSessionData(null);
+        setTempMood(undefined);
+        setSelectedPartner(null);
+        setSelectedTrackingDate(undefined);
+        setModeStep('choose');
+        setIsWaitingForAccept(false);
+    }, [cancelPendingInvitation, setShowModeModal, setTempSessionData, setTempMood, setSelectedPartner, setSelectedTrackingDate, setModeStep, setIsWaitingForAccept]);
 
     const handleInitiateSession = (day: string, exercises: EjercicioRutina[], name: string) => {
         setTempSessionData({ day, exercises, name });
@@ -100,9 +126,6 @@ export const HomePage: React.FC = () => {
         setModeStep('selectMode');
     };
 
-    const [pendingInvitationId, setPendingInvitationId] = useState<string | null>(null);
-    const [isWaitingForAccept, setIsWaitingForAccept] = useState(false);
-
     const handleModeConfirm = async (mode: 'shared' | 'linked') => {
         if (!tempSessionData || tempMood === undefined || !selectedPartner) return;
 
@@ -115,6 +138,7 @@ export const HomePage: React.FC = () => {
             try {
                 const { userId, perfil } = useUserStore.getState();
                 if (!userId) return;
+                const liveSessionId = `session_${Date.now()}_${userId}`;
 
                 const invitationId = await trainingInvitationService.sendInvitation(
                     userId,
@@ -122,7 +146,13 @@ export const HomePage: React.FC = () => {
                     selectedPartner.id,
                     selectedPartner.nombre,
                     mode,
-                    tempSessionData.name
+                    tempSessionData.name,
+                    {
+                        dayName: tempSessionData.day,
+                        exercises: tempSessionData.exercises,
+                        trackingDate: selectedTrackingDate,
+                        liveSessionId,
+                    }
                 );
                 setPendingInvitationId(invitationId);
                 setIsWaitingForAccept(true);
@@ -146,7 +176,50 @@ export const HomePage: React.FC = () => {
                 if (invitation.status === 'accepted') {
                     // Partner accepted! Start the session
                     if (tempSessionData && tempMood !== undefined && selectedPartner) {
-                        startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, 'linked', tempMood, undefined, undefined, selectedPartner, selectedTrackingDate);
+                        const { userId } = useUserStore.getState();
+                        const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${userId}`;
+
+                        if (userId) {
+                            void liveSessionService.createLiveSession(
+                                userId,
+                                selectedPartner.id,
+                                {
+                                    dayName: tempSessionData.day,
+                                    routineName: tempSessionData.name,
+                                    exercises: tempSessionData.exercises.map((ex) => ({
+                                        id: ex.id,
+                                        nombre: ex.nombre,
+                                        targetSeries: ex.series,
+                                        targetReps: ex.repeticiones,
+                                        categoria: ex.categoria,
+                                        isOptional: ex.isOptional,
+                                        isCompleted: false,
+                                        sets: Array.from({ length: ex.series }, () => ({
+                                            completed: false,
+                                            skipped: false,
+                                            weight: 0,
+                                            reps: parseInt(ex.repeticiones) || 10,
+                                            duration: ex.segundos || 0,
+                                            rest: ex.descanso || 60
+                                        }))
+                                    }))
+                                },
+                                liveSessionId
+                            );
+                        }
+
+                        startSession(
+                            tempSessionData.day,
+                            tempSessionData.exercises,
+                            tempSessionData.name,
+                            'linked',
+                            tempMood,
+                            undefined,
+                            undefined,
+                            selectedPartner,
+                            selectedTrackingDate,
+                            liveSessionId
+                        );
                         toast.success(`${selectedPartner.nombre} acepto! Entrenamiento iniciado`);
                     }
                     resetModeModal();
@@ -163,34 +236,7 @@ export const HomePage: React.FC = () => {
         );
 
         return () => unsubscribe();
-    }, [pendingInvitationId, isWaitingForAccept]);
-
-    const cancelPendingInvitation = async () => {
-        if (pendingInvitationId) {
-            try {
-                await trainingInvitationService.cancelInvitation(pendingInvitationId);
-            } catch (e) {
-                // Ignore cleanup errors
-            }
-        }
-        setIsWaitingForAccept(false);
-        setPendingInvitationId(null);
-    };
-
-    const resetModeModal = () => {
-        cancelPendingInvitation();
-        setShowModeModal(false);
-        setTempSessionData(null);
-        setTempMood(undefined);
-        setSelectedPartner(null);
-        setSelectedTrackingDate(undefined);
-        setModeStep('choose');
-        setIsWaitingForAccept(false);
-    };
-
-
-
-
+    }, [pendingInvitationId, isWaitingForAccept, resetModeModal, selectedPartner, selectedTrackingDate, startSession, tempMood, tempSessionData]);
 
     const nombreUsuario = perfil.usuario.nombre || 'Daniel';
     const fechaHoyRaw = new Date().toLocaleDateString('es-ES', {

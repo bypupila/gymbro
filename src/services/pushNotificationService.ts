@@ -5,10 +5,29 @@
 // =====================================================
 
 import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
-import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { firebaseApp, db } from '../config/firebase';
 
 let messagingInstance: ReturnType<typeof getMessaging> | null = null;
+
+async function ensureMessagingServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (!('serviceWorker' in navigator)) {
+        return null;
+    }
+
+    const scope = '/firebase-cloud-messaging-push-scope';
+    const existing = await navigator.serviceWorker.getRegistration(scope);
+    if (existing) {
+        return existing;
+    }
+
+    try {
+        return await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope });
+    } catch (error) {
+        console.warn('Unable to register firebase-messaging-sw.js:', error);
+        return null;
+    }
+}
 
 /**
  * Check if FCM is supported in this browser
@@ -61,9 +80,14 @@ export async function requestNotificationPermission(userId: string): Promise<str
         }
 
         // Get FCM token
+        const swRegistration = await ensureMessagingServiceWorker();
+        if (!swRegistration) {
+            return null;
+        }
+
         const token = await getToken(messaging, {
             vapidKey,
-            serviceWorkerRegistration: await navigator.serviceWorker.getRegistration(),
+            serviceWorkerRegistration: swRegistration,
         });
 
         if (token) {

@@ -205,6 +205,7 @@ export interface ActiveSession {
     selectedPartnerId?: string;
     selectedPartnerName?: string;
     trackingDate?: string; // YYYY-MM-DD - which day to mark as completed (defaults to today)
+    liveSessionId?: string;
 }
 
 interface UserStore {
@@ -226,7 +227,7 @@ interface UserStore {
     agregarEntrenamiento: (entrenamiento: EntrenamientoRealizado) => void;
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
-    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, sessionMode?: 'solo' | 'shared' | 'linked', preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string, selectedPartner?: PartnerInfo, trackingDate?: string) => void;
+    startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, sessionMode?: 'solo' | 'shared' | 'linked', preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string, selectedPartner?: PartnerInfo, trackingDate?: string, liveSessionId?: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>, isPartner?: boolean) => void;
     skipSet: (exerciseId: string, setIndex: number, isPartner?: boolean) => void;
     replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
@@ -395,7 +396,7 @@ export const useUserStore = create<UserStore>()(
                 return { entrena: false, grupoMuscular: 'Descanso' as GrupoMuscular, hora: '', dia: diaNombre };
             },
 
-            startSession: (dayName, exercises, routineName, sessionMode, preWorkoutMood, preWorkoutEnergy, preWorkoutNote, selectedPartner, trackingDate) => {
+            startSession: (dayName, exercises, routineName, sessionMode, preWorkoutMood, preWorkoutEnergy, preWorkoutNote, selectedPartner, trackingDate, liveSessionId) => {
                 const { perfil } = get();
                 
                 // Determine session mode
@@ -439,6 +440,7 @@ export const useUserStore = create<UserStore>()(
                         selectedPartnerId: selectedPartner?.id,
                         selectedPartnerName: selectedPartner?.nombre,
                         trackingDate: trackingDate,
+                        liveSessionId,
                     }
                 });
             },
@@ -470,8 +472,8 @@ export const useUserStore = create<UserStore>()(
                 });
 
                 // If it's a linked session and this is the local user's update, send granular update to Firestore
-                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
-                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`; // Assuming sessionId format
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId && state.activeSession.liveSessionId) {
+                    const sessionId = state.activeSession.liveSessionId;
                     const updatePayload: GranularLiveUpdate = {
                         type: 'SET_UPDATE',
                         exerciseId,
@@ -511,8 +513,8 @@ export const useUserStore = create<UserStore>()(
                 });
 
                 // If it's a linked session and this is the local user's update, send granular update to Firestore
-                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
-                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`;
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId && state.activeSession.liveSessionId) {
+                    const sessionId = state.activeSession.liveSessionId;
                     const updatePayload: GranularLiveUpdate = {
                         type: 'SET_UPDATE',
                         exerciseId,
@@ -616,8 +618,8 @@ export const useUserStore = create<UserStore>()(
                 });
 
                 // If it's a linked session and this is the local user's update, send granular update to Firestore
-                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
-                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`; // Assuming sessionId format
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId && state.activeSession.liveSessionId) {
+                    const sessionId = state.activeSession.liveSessionId;
                     const updatePayload: GranularLiveUpdate = {
                         type: 'EXERCISE_COMPLETED',
                         exerciseId,
@@ -657,8 +659,8 @@ export const useUserStore = create<UserStore>()(
                 });
 
                 // If it's a linked session and this is the local user's update, send granular update to Firestore
-                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId) {
-                    const sessionId = `session_${state.activeSession.startTime.split('T')[0]}_${state.userId}`;
+                if (!isPartner && state.activeSession.sessionMode === 'linked' && state.userId && state.activeSession.selectedPartnerId && state.activeSession.liveSessionId) {
+                    const sessionId = state.activeSession.liveSessionId;
                     const updatePayload: GranularLiveUpdate = {
                         type: 'EXERCISE_SKIPPED',
                         exerciseId,
