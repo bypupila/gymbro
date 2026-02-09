@@ -139,6 +139,7 @@ export interface PerfilCompleto {
     onboardingCompletado: boolean;
     partnerId?: string; // Legacy single partner - kept for backward compat
     partners?: PartnerInfo[]; // New: multiple partners
+    partnerIds?: string[]; // Fast membership checks for security rules
     alias?: string; // Add this
     role?: 'admin' | 'user'; // Rol del usuario
     weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de d?as entrenados { '2026-01-29': 'completed' }
@@ -272,6 +273,7 @@ export const useUserStore = create<UserStore>()(
                 onboardingCompletado: false,
                 actividadesExtras: [],
                 catalogoExtras: [],
+                partnerIds: [],
             },
             activeSession: null,
             isSyncing: false,
@@ -283,19 +285,39 @@ export const useUserStore = create<UserStore>()(
             setLastSyncError: (error) => set({ lastSyncError: error }),
             setLinkRequests: (requests) => set({ linkRequests: requests }),
             setPartnerId: (id) => set((state) => ({
-                perfil: { ...state.perfil, partnerId: id }
+                perfil: {
+                    ...state.perfil,
+                    partnerId: id,
+                    partnerIds: id ? Array.from(new Set([...(state.perfil.partnerIds || []), id])) : (state.perfil.partnerIds || [])
+                }
             })),
             setPartners: (partners) => set((state) => ({
-                perfil: { ...state.perfil, partners }
+                perfil: {
+                    ...state.perfil,
+                    partners,
+                    partnerIds: partners.map((p) => p.id)
+                }
             })),
             addPartner: (partner) => set((state) => {
                 const current = state.perfil.partners || [];
                 if (current.some(p => p.id === partner.id)) return state;
-                return { perfil: { ...state.perfil, partners: [...current, partner] } };
+                return {
+                    perfil: {
+                        ...state.perfil,
+                        partners: [...current, partner],
+                        partnerIds: Array.from(new Set([...(state.perfil.partnerIds || []), partner.id]))
+                    }
+                };
             }),
             removePartner: (partnerId) => set((state) => {
                 const current = state.perfil.partners || [];
-                return { perfil: { ...state.perfil, partners: current.filter(p => p.id !== partnerId) } };
+                return {
+                    perfil: {
+                        ...state.perfil,
+                        partners: current.filter(p => p.id !== partnerId),
+                        partnerIds: (state.perfil.partnerIds || []).filter((id) => id !== partnerId)
+                    }
+                };
             }),
 
             setDatosPersonales: (datos) => set((state) => ({
@@ -798,6 +820,7 @@ export const useUserStore = create<UserStore>()(
                     onboardingCompletado: false,
                     actividadesExtras: [],
                     catalogoExtras: [],
+                    partnerIds: [],
                 }
             }),
 
@@ -813,6 +836,7 @@ export const useUserStore = create<UserStore>()(
                     onboardingCompletado: false,
                     actividadesExtras: [],
                     catalogoExtras: [],
+                    partnerIds: [],
                 },
                 activeSession: null
             }),

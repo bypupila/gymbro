@@ -167,6 +167,23 @@ export const TrainingInvitationNotifier: React.FC = () => {
         });
     }, [acceptFromDeepLink, invitations]);
 
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const invitationId = params.get('declineInvitation');
+        if (!invitationId || !userId) return;
+
+        void trainingInvitationService.declineInvitation(invitationId)
+            .catch((error) => {
+                console.error('Error declining invitation from deep link:', error);
+            })
+            .finally(() => {
+                params.delete('declineInvitation');
+                const query = params.toString();
+                const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+                window.history.replaceState({}, '', nextUrl);
+            });
+    }, [userId]);
+
     if (invitations.length === 0) return null;
 
     const handleDecline = async (invitation: TrainingInvitation) => {

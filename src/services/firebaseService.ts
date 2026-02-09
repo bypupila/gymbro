@@ -3,7 +3,7 @@ import {
     orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc, arrayUnion, arrayRemove
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, EjercicioRutina, PartnerInfo } from '../stores/userStore';
+import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
 import { EjercicioBase } from '../data/exerciseDatabase';
 
 export interface LinkRequest {
@@ -37,6 +37,7 @@ export const firebaseService = {
             onboardingCompletado: profile.onboardingCompletado,
             partnerId: profile.partnerId || null,
             partners: profile.partners || [],
+            partnerIds: profile.partnerIds || [],
             weeklyTracking: profile.weeklyTracking || {},
             catalogoExtras: profile.catalogoExtras || [],
             defaultRoutineId: profile.defaultRoutineId || null, // Save the default routine ID
@@ -85,6 +86,7 @@ export const firebaseService = {
             onboardingCompletado: data.onboardingCompletado,
             partnerId: data.partnerId,
             partners: data.partners || [],
+            partnerIds: data.partnerIds || [],
             alias: userData.displayName || '',
             role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
             weeklyTracking: data.weeklyTracking || {},
@@ -135,6 +137,7 @@ export const firebaseService = {
                 onboardingCompletado: data.onboardingCompletado,
                 partnerId: data.partnerId,
                 partners: data.partners || [],
+                partnerIds: data.partnerIds || [],
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
                 weeklyTracking: data.weeklyTracking || {},
@@ -383,6 +386,7 @@ export const firebaseService = {
         // Add recipient to requester's partners array
         batch.update(requesterProfileRef, {
             partnerId: request.recipientId, // backward compat
+            partnerIds: arrayUnion(request.recipientId),
             partners: arrayUnion({
                 id: request.recipientId,
                 alias: recipientName,
@@ -394,6 +398,7 @@ export const firebaseService = {
         const recipientProfileRef = doc(db, 'users', request.recipientId, 'profile', 'main');
         batch.update(recipientProfileRef, {
             partnerId: request.requesterId, // backward compat
+            partnerIds: arrayUnion(request.requesterId),
             partners: arrayUnion({
                 id: request.requesterId,
                 alias: request.requesterAlias,
@@ -415,6 +420,7 @@ export const firebaseService = {
         // Remove partner from user's partners array
         const userProfileRef = doc(db, 'users', userId, 'profile', 'main');
         batch.update(userProfileRef, {
+            partnerIds: arrayRemove(partnerToRemove.id),
             partners: arrayRemove(partnerToRemove)
         });
 
@@ -427,6 +433,7 @@ export const firebaseService = {
             const entryToRemove = partnerPartners.find(p => p.id === userId);
             if (entryToRemove) {
                 batch.update(partnerProfileRef, {
+                    partnerIds: arrayRemove(userId),
                     partners: arrayRemove(entryToRemove)
                 });
             }
@@ -498,6 +505,7 @@ export const firebaseService = {
                     onboardingCompletado: true,
                     actividadesExtras: [],
                     catalogoExtras: [],
+                    partnerIds: [],
                     defaultRoutineId: undefined, // No default initially
                 };
                 await this.saveProfile(targetId, newProfile);

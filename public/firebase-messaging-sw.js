@@ -60,8 +60,10 @@ self.addEventListener('notificationclick', (event) => {
             clients.openWindow(`/?acceptInvitation=${data.invitationId}`)
         );
     } else if (event.action === 'decline' && data?.invitationId) {
-        // Just close - the invitation will expire or user can decline in-app
-        return;
+        // Open app and pass decline info so it can be processed server-side
+        event.waitUntil(
+            clients.openWindow(`/?declineInvitation=${data.invitationId}`)
+        );
     } else {
         // Default: open the app
         event.waitUntil(

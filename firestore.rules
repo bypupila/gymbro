@@ -10,67 +10,64 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isPartnerOf(userId) {
+      let profile = get(/databases/$(database)/documents/users/$(userId)/profile/main).data;
+      return isAuthenticated() && (
+        profile.partnerId == request.auth.uid ||
+        (profile.partnerIds != null && request.auth.uid in profile.partnerIds)
+      );
+    }
 
-    // Usuarios pueden leer/escribir su perfil, y los partners pueden leer.
+    // Profile: owner write/read, partners read.
     match /users/{userId}/profile/{document=**} {
-      allow read: if isOwner(userId) || isAuthenticated();
-      // Permitir escritura al dueño O si es una actualizacion de partnerId/partners durante el linkeo
+      allow read: if isOwner(userId) || isPartnerOf(userId);
+      // Allow link updates on main profile for partner fields only.
       allow write: if isOwner(userId) || (
-        isAuthenticated() && 
+        isAuthenticated() &&
         document == 'main' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId', 'partners'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId', 'partners', 'partnerIds'])
       );
     }
 
-    // Historial de entrenamientos
+    // Workout history
     match /users/{userId}/workoutHistory/{workoutId} {
-      allow read: if isOwner(userId) || (
-        isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(userId)/profile/main).data.partnerId == request.auth.uid
-      );
+      allow read: if isOwner(userId) || isPartnerOf(userId);
       allow write: if isOwner(userId);
-      // Permitir a la pareja agregar workouts
-      allow create: if isAuthenticated() &&
-                       get(/databases/$(database)/documents/users/$(userId)/profile/main).data.partnerId == request.auth.uid;
+      // Allow partner to create mirrored workout entries.
+      allow create: if isPartnerOf(userId);
     }
 
-    // Historial de rutinas
+    // Routine history
     match /users/{userId}/routineHistory/{routineId} {
-      allow read: if isOwner(userId) || (
-        isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(userId)/profile/main).data.partnerId == request.auth.uid
-      );
+      allow read: if isOwner(userId) || isPartnerOf(userId);
       allow write: if isOwner(userId);
     }
 
-    // Actividades extras
+    // Extra activities
     match /users/{userId}/extraActivities/{activityId} {
-      allow read: if isOwner(userId) || (
-        isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(userId)/profile/main).data.partnerId == request.auth.uid
-      );
+      allow read: if isOwner(userId) || isPartnerOf(userId);
       allow write: if isOwner(userId);
     }
 
-    // Alias lookup: Todos pueden leer, usuarios autenticados pueden crear su propio alias
+    // Alias lookup
     match /userAliases/{alias} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
-    // Metadata de usuario
+    // User metadata
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow write: if isOwner(userId);
     }
 
-    // FCM Tokens - users manage their own tokens
+    // FCM tokens
     match /users/{userId}/fcmTokens/{tokenId} {
       allow read, write: if isOwner(userId);
     }
 
-    // Catálogo de Ejercicios: Todos pueden leer, solo admin puede escribir
+    // Exercise catalog
     match /exercises/{exerciseId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && (
@@ -79,61 +76,47 @@ service cloud.firestore {
       );
     }
 
-    // Solicitudes de vinculación de cuentas
+    // Link requests
     match /linkRequests/{requestId} {
-      // Permite leer si eres el que envía o el que recibe
       allow read: if isAuthenticated() && (
         resource.data.requesterId == request.auth.uid ||
         resource.data.recipientId == request.auth.uid
       );
-      // Permite crear si eres el que envía la solicitud
       allow create: if isAuthenticated() && request.resource.data.requesterId == request.auth.uid;
-      // Permite actualizar (aceptar/rechazar) solo si eres el que recibe
       allow update: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
-      // No se permite borrar para mantener historial (o permitir si es necesario limpieza)
-      allow delete: if false; 
+      allow delete: if false;
     }
 
-    // Sesiones en vivo (Live Training Sessions)
+    // Live sessions
     match /liveSessions/{sessionId} {
-      // Leer metadata si eres uno de los participantes
       allow read: if isAuthenticated() && (
         request.auth.uid in resource.data.participants
       );
-      // Crear sesión si eres el creador
-      allow create: if isAuthenticated() && 
-                       request.resource.data.createdBy == request.auth.uid;
-      // Actualizar sesión (completar/cancelar) si eres participante
-      allow update: if isAuthenticated() && 
-                       request.auth.uid in resource.data.participants;
-      
-      // Subcollection: participants data
+      allow create: if isAuthenticated() &&
+        request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuthenticated() &&
+        request.auth.uid in resource.data.participants;
+
       match /participants/{userId} {
-        // Leer datos del participante si eres parte de la sesión
         allow read: if isAuthenticated() && (
           request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants
         );
-        // Escribir solo tus propios datos
-        allow write: if isAuthenticated() && 
-                        request.auth.uid == userId &&
-                        request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants;
+        allow write: if isAuthenticated() &&
+          request.auth.uid == userId &&
+          request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants;
       }
     }
 
-    // Training Invitations (in-app + push notifications)
+    // Training invitations
     match /trainingInvitations/{invitationId} {
-      // Read: sender or recipient
       allow read: if isAuthenticated() && (
         resource.data.fromUserId == request.auth.uid ||
         resource.data.toUserId == request.auth.uid
       );
-      // Create: only the sender
-      allow create: if isAuthenticated() && 
-                       request.resource.data.fromUserId == request.auth.uid;
-      // Update: only the recipient (to accept/decline)
-      allow update: if isAuthenticated() && 
-                       resource.data.toUserId == request.auth.uid;
-      // Delete: sender or recipient
+      allow create: if isAuthenticated() &&
+        request.resource.data.fromUserId == request.auth.uid;
+      allow update: if isAuthenticated() &&
+        resource.data.toUserId == request.auth.uid;
       allow delete: if isAuthenticated() && (
         resource.data.fromUserId == request.auth.uid ||
         resource.data.toUserId == request.auth.uid
@@ -141,4 +124,3 @@ service cloud.firestore {
     }
   }
 }
-
