@@ -4,7 +4,7 @@ import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { setUserId, setLinkRequests, addPartner } = useUserStore();
+    const { setUserId, setLinkRequests, setPartners } = useUserStore();
 
     useEffect(() => {
         let unsubscribeLinkRequests: (() => void) | null = null;
@@ -31,14 +31,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 // Setup listener for accepted links (fallback client-sync if backend trigger is delayed)
                 unsubscribeAcceptedLinks = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
-                    partners.forEach((partner) => {
-                        void firebaseService.upsertOwnPartner(user.uid, partner);
-                        addPartner(partner);
-                    });
+                    setPartners(partners);
                 });
             } else {
                 setUserId(null);
                 setLinkRequests([]); // Clear requests on logout
+                setPartners([]);
             }
         });
 
@@ -51,7 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             unsubscribeAuth();
         };
-    }, [addPartner, setLinkRequests, setUserId]);
+    }, [setLinkRequests, setPartners, setUserId]);
 
     // Data syncing is now handled by CloudSyncManager
     // leaving AuthProvider responsible only for Auth State

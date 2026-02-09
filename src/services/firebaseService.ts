@@ -459,55 +459,117 @@ export const firebaseService = {
 
     onAcceptedLinkRequestsChange(userId: string, callback: (partners: PartnerInfo[]) => void) {
         const requestsRef = collection(db, 'linkRequests');
+        const actionsRef = collection(db, 'relationshipActions');
         const sentQ = query(requestsRef, where('requesterId', '==', userId), where('status', '==', 'accepted'));
         const receivedQ = query(requestsRef, where('recipientId', '==', userId), where('status', '==', 'accepted'));
-        const ACCEPTANCE_WINDOW_MS = 10 * 60 * 1000;
-        const isRecentAcceptance = (resolvedAt?: string) => {
-            if (!resolvedAt) return false;
-            const resolvedAtMs = Date.parse(resolvedAt);
-            if (!Number.isFinite(resolvedAtMs)) return false;
-            return (Date.now() - resolvedAtMs) <= ACCEPTANCE_WINDOW_MS;
+        const unlinkBySourceQ = query(actionsRef, where('sourceUserId', '==', userId), where('actionType', '==', 'UNLINK'));
+        const unlinkByTargetQ = query(actionsRef, where('targetUserId', '==', userId), where('actionType', '==', 'UNLINK'));
+        const parseTimestamp = (value?: string) => {
+            if (!value) return 0;
+            const ms = Date.parse(value);
+            return Number.isFinite(ms) ? ms : 0;
+        };
+        const latestById = <T>(items: T[], idGetter: (item: T) => string, timeGetter: (item: T) => number) => {
+            const map = new Map<string, T>();
+            items.forEach((item) => {
+                const id = idGetter(item);
+                const current = map.get(id);
+                if (!current || timeGetter(item) >= timeGetter(current)) {
+                    map.set(id, item);
+                }
+            });
+            return map;
         };
 
-        let sentPartners: PartnerInfo[] = [];
-        let receivedPartners: PartnerInfo[] = [];
+        type AcceptedPartner = { partner: PartnerInfo; acceptedAtMs: number };
+        type UnlinkEvent = { partnerId: string; createdAtMs: number };
+
+        let sentPartners: AcceptedPartner[] = [];
+        let receivedPartners: AcceptedPartner[] = [];
+        let unlinksBySource: UnlinkEvent[] = [];
+        let unlinksByTarget: UnlinkEvent[] = [];
 
         const emit = () => {
-            const map = new Map<string, PartnerInfo>();
-            [...sentPartners, ...receivedPartners].forEach((p) => map.set(p.id, p));
-            callback(Array.from(map.values()));
+            const accepted = latestById(
+                [...sentPartners, ...receivedPartners],
+                (item) => item.partner.id,
+                (item) => item.acceptedAtMs
+            );
+            const unlinkedAtByPartner = latestById(
+                [...unlinksBySource, ...unlinksByTarget],
+                (item) => item.partnerId,
+                (item) => item.createdAtMs
+            );
+
+            const activePartners = Array.from(accepted.values())
+                .filter((item) => {
+                    const unlinkEvent = unlinkedAtByPartner.get(item.partner.id);
+                    return !unlinkEvent || item.acceptedAtMs > unlinkEvent.createdAtMs;
+                })
+                .sort((a, b) => b.acceptedAtMs - a.acceptedAtMs)
+                .map((item) => item.partner);
+
+            callback(activePartners);
         };
 
         const unsubscribeSent = onSnapshot(sentQ, (snapshot) => {
             sentPartners = snapshot.docs.map((docSnap) => {
                 const data = docSnap.data() as LinkRequest;
-                if (!isRecentAcceptance(data.resolvedAt)) return null;
                 const alias = data.recipientAlias || data.recipientId;
                 return {
-                    id: data.recipientId,
-                    alias,
-                    nombre: alias,
-                } as PartnerInfo;
-            }).filter((partner): partner is PartnerInfo => partner !== null);
+                    partner: {
+                        id: data.recipientId,
+                        alias,
+                        nombre: alias,
+                    },
+                    acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
+                } as AcceptedPartner;
+            });
             emit();
         });
 
         const unsubscribeReceived = onSnapshot(receivedQ, (snapshot) => {
             receivedPartners = snapshot.docs.map((docSnap) => {
                 const data = docSnap.data() as LinkRequest;
-                if (!isRecentAcceptance(data.resolvedAt)) return null;
                 return {
-                    id: data.requesterId,
-                    alias: data.requesterAlias,
-                    nombre: data.requesterAlias,
-                } as PartnerInfo;
-            }).filter((partner): partner is PartnerInfo => partner !== null);
+                    partner: {
+                        id: data.requesterId,
+                        alias: data.requesterAlias,
+                        nombre: data.requesterAlias,
+                    },
+                    acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
+                } as AcceptedPartner;
+            });
+            emit();
+        });
+
+        const unsubscribeUnlinkBySource = onSnapshot(unlinkBySourceQ, (snapshot) => {
+            unlinksBySource = snapshot.docs.map((docSnap) => {
+                const data = docSnap.data() as RelationshipAction;
+                return {
+                    partnerId: data.targetUserId,
+                    createdAtMs: parseTimestamp(data.createdAt),
+                };
+            });
+            emit();
+        });
+
+        const unsubscribeUnlinkByTarget = onSnapshot(unlinkByTargetQ, (snapshot) => {
+            unlinksByTarget = snapshot.docs.map((docSnap) => {
+                const data = docSnap.data() as RelationshipAction;
+                return {
+                    partnerId: data.sourceUserId,
+                    createdAtMs: parseTimestamp(data.createdAt),
+                };
+            });
             emit();
         });
 
         return () => {
             unsubscribeSent();
             unsubscribeReceived();
+            unsubscribeUnlinkBySource();
+            unsubscribeUnlinkByTarget();
         };
     },
 

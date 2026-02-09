@@ -325,16 +325,31 @@ export const useUserStore = create<UserStore>()(
                     activePartnerId: id
                 }
             })),
-            setPartners: (partners) => set((state) => ({
-                perfil: {
-                    ...state.perfil,
-                    partners,
-                    partnerIds: partners.map((p) => p.id),
-                    activePartnerId: state.perfil.activePartnerId && partners.some((p) => p.id === state.perfil.activePartnerId)
-                        ? state.perfil.activePartnerId
-                        : (partners[0]?.id || null)
-                }
-            })),
+            setPartners: (partners) => set((state) => {
+                const nextActivePartnerId = state.perfil.activePartnerId && partners.some((p) => p.id === state.perfil.activePartnerId)
+                    ? state.perfil.activePartnerId
+                    : (partners[0]?.id || null);
+                const nextRoutineSync = state.perfil.routineSync?.partnerId && !partners.some((p) => p.id === state.perfil.routineSync?.partnerId)
+                    ? {
+                        enabled: false,
+                        partnerId: null,
+                        mode: 'bidirectional' as const,
+                        syncId: null,
+                        updatedAt: new Date().toISOString(),
+                    }
+                    : state.perfil.routineSync;
+
+                return {
+                    perfil: {
+                        ...state.perfil,
+                        partners,
+                        partnerIds: partners.map((p) => p.id),
+                        partnerId: partners[0]?.id || null,
+                        activePartnerId: nextActivePartnerId,
+                        routineSync: nextRoutineSync,
+                    }
+                };
+            }),
             addPartner: (partner) => set((state) => {
                 const current = state.perfil.partners || [];
                 if (current.some(p => p.id === partner.id)) return state;
@@ -342,6 +357,7 @@ export const useUserStore = create<UserStore>()(
                     perfil: {
                         ...state.perfil,
                         partners: [...current, partner],
+                        partnerId: state.perfil.partnerId || partner.id,
                         partnerIds: Array.from(new Set([...(state.perfil.partnerIds || []), partner.id])),
                         activePartnerId: state.perfil.activePartnerId || partner.id,
                         linkSetupPendingPartnerId: partner.id
@@ -365,6 +381,7 @@ export const useUserStore = create<UserStore>()(
                     perfil: {
                         ...state.perfil,
                         partners: nextPartners,
+                        partnerId: nextPartners[0]?.id || null,
                         partnerIds: (state.perfil.partnerIds || []).filter((id) => id !== partnerId),
                         activePartnerId: nextActivePartnerId,
                         routineSync: nextRoutineSync
