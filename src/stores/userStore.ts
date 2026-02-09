@@ -344,7 +344,7 @@ export const useUserStore = create<UserStore>()(
                         ...state.perfil,
                         partners,
                         partnerIds: partners.map((p) => p.id),
-                        partnerId: partners[0]?.id || null,
+                        partnerId: partners[0]?.id || undefined,
                         activePartnerId: nextActivePartnerId,
                         routineSync: nextRoutineSync,
                     }
@@ -381,7 +381,7 @@ export const useUserStore = create<UserStore>()(
                     perfil: {
                         ...state.perfil,
                         partners: nextPartners,
-                        partnerId: nextPartners[0]?.id || null,
+                        partnerId: nextPartners[0]?.id || undefined,
                         partnerIds: (state.perfil.partnerIds || []).filter((id) => id !== partnerId),
                         activePartnerId: nextActivePartnerId,
                         routineSync: nextRoutineSync,
