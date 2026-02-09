@@ -1,6 +1,6 @@
-// =====================================================
+﻿// =====================================================
 // GymBro PWA - Routine Detail Page
-// Gesti�n completa de rutinas: ver, editar, eliminar
+// Gestión completa de rutinas: ver, editar, eliminar
 // =====================================================
 
 import { Card } from '@/components/Card';
@@ -31,6 +31,7 @@ import { useNavigate } from 'react-router-dom';
 import { RoutineUpload } from '@/components/RoutineUpload';
 import { reorganizeRoutine } from '@/services/geminiService';
 import { firebaseService } from '@/services/firebaseService';
+import { routineRequestService } from '@/services/routineRequestService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -38,10 +39,10 @@ import { toast } from 'react-hot-toast';
 const DAY_STYLE: Record<string, { color: string, bg: string }> = {
     'Lunes': { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.05)' },
     'Martes': { color: '#FF2D55', bg: 'rgba(255, 45, 85, 0.05)' },
-    'Mi�rcoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
+    'Miércoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
     'Jueves': { color: '#5856D6', bg: 'rgba(88, 86, 214, 0.05)' },
     'Viernes': { color: '#34C759', bg: 'rgba(52, 199, 89, 0.05)' },
-    'S�bado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
+    'Sábado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
     'Domingo': { color: '#FF3B30', bg: 'rgba(255, 59, 48, 0.05)' },
     'default': { color: Colors.primary, bg: 'rgba(0, 230, 153, 0.05)' }
 };
@@ -980,13 +981,13 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                 <span style={{
                                     ...styles.checkboxLabel,
                                     color: editedExercise.isOptional ? Colors.text : Colors.textTertiary
-                                }}>{editedExercise.isOptional ? 'S�' : 'No'}</span>
+                                }}>{editedExercise.isOptional ? 'Sí' : 'No'}</span>
                             </div>
                         </div>
                     </div>
                     <div style={styles.editRow}>
                         <div style={{ ...styles.editField, flex: 1 }}>
-                            <label style={styles.editLabel}>D�as (Multiselecci�n)</label>
+                            <label style={styles.editLabel}>Días (Multiselección)</label>
                             <div style={styles.dayChipsRow}>
                                 {availableDays.map(day => {
                                     const isSelected = localSelectedDays.includes(day);
@@ -1026,7 +1027,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                     </div>
                     <div style={styles.editRow}>
                         <div style={styles.editField}>
-                            <label style={styles.editLabel}>Categor�a</label>
+                            <label style={styles.editLabel}>Categoría</label>
                             <select
                                 value={editedExercise.categoria}
                                 onChange={(e) => setEditedExercise({
@@ -1140,10 +1141,10 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     }}
                                 />
                                 {videoUrl && (
-                                    <div style={styles.playOverlay}>▶</div>
+                                    <div style={styles.playOverlay}>â¶</div>
                                 )}
                                 {ejercicio.categoria === 'calentamiento' && (
-                                    <div style={styles.calentamientoBadge}>🔥</div>
+                                    <div style={styles.calentamientoBadge}>ð¥</div>
                                 )}
                             </>
                         );
@@ -1203,7 +1204,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     {ejercicio.segundos ? `${ejercicio.segundos} seg` : ''}
                                 </span>
                                 <span style={styles.detailChip}>
-                                    {ejercicio.descanso}s 💤
+                                    {ejercicio.descanso}s ð¤
                                 </span>
                             </div>
                         </div>
@@ -1272,7 +1273,7 @@ const DraggableExerciseCard = (props: ExerciseCardProps) => {
 
 export const RoutineDetailPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, setRutina } = useUserStore();
+    const { perfil, setRutina, userId } = useUserStore();
     const rutina = perfil.rutina;
 
     const [editingExercise, setEditingExercise] = useState<string | null>(null);
@@ -1302,16 +1303,31 @@ export const RoutineDetailPage: React.FC = () => {
     const [isSharing, setIsSharing] = useState(false);
 
     const handleShareRoutine = async () => {
-        if (!shareAlias.trim() || !rutina) return;
+        if (!shareAlias.trim() || !rutina || !userId) return;
         setIsSharing(true);
-        const result = await firebaseService.shareRoutine(shareAlias.trim(), rutina);
-        setIsSharing(false);
-        if (result.success) {
-            toast.success(result.message);
+        try {
+            const target = await firebaseService.findUserByAlias(shareAlias.trim());
+            if (!target || target.id === target.alias) {
+                toast.error('Usuario no encontrado');
+                return;
+            }
+
+            await routineRequestService.createRequest({
+                fromUserId: userId,
+                fromName: perfil.usuario.nombre || perfil.alias || 'GymBro',
+                toUserId: target.id,
+                toName: target.name,
+                sourceUserId: userId,
+                targetUserId: target.id,
+                type: 'copy_my_routine_to_partner',
+                syncAfterAccept: false,
+            });
+
+            toast.success('Solicitud enviada');
             setShowShareModal(false);
             setShareAlias('');
-        } else {
-            toast.error(result.message);
+        } finally {
+            setIsSharing(false);
         }
     };
 
@@ -1336,7 +1352,7 @@ export const RoutineDetailPage: React.FC = () => {
                 ejercicios: cleanupRoutineExercises(result.exercises),
                 nombre: result.routineName || rutina.nombre
             });
-            toast.success("�Rutina organizada con �xito por la IA!");
+            toast.success("¡Rutina organizada con éxito por la IA!");
         } catch (error) {
             console.error(error);
             toast.error("No se pudo organizar la rutina con IA.");
@@ -1405,7 +1421,7 @@ export const RoutineDetailPage: React.FC = () => {
                     <div style={{ width: 40 }} />
                 </div>
                 <div style={styles.emptyState}>
-                    <div style={styles.emptyIcon}>📋</div>
+                    <div style={styles.emptyIcon}>ð</div>
                     <h2 style={styles.emptyTitle}>Sin rutina activa</h2>
                     <p style={styles.emptyText}>Crea tu primera rutina para empezar a entrenar</p>
                     <button style={styles.createButton} onClick={() => navigate('/')}>
@@ -1437,7 +1453,7 @@ export const RoutineDetailPage: React.FC = () => {
 
         toast((t) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600 }}>�Eliminar este ejercicio?</span>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar este ejercicio?</span>
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                     <button
                         onClick={() => toast.dismiss(t.id)}
@@ -1565,7 +1581,7 @@ export const RoutineDetailPage: React.FC = () => {
             {/* Routine Info Card */}
             <Card style={styles.infoCard}>
                 <div style={styles.routineName}>
-                    <span style={styles.routineIcon}>💪</span>
+                    <span style={styles.routineIcon}>ðª</span>
                     <h2 style={styles.routineTitle}>{rutina.nombre}</h2>
                 </div>
 
@@ -1580,12 +1596,12 @@ export const RoutineDetailPage: React.FC = () => {
                             {routineInfo.expirada ? (
                                 <>
                                     <span style={{ ...styles.expirationTitle, color: Colors.error }}>Rutina Expirada</span>
-                                    <span style={styles.expirationSubtitle}>Finaliz� el {formatDate(routineInfo.fechaFin)}</span>
+                                    <span style={styles.expirationSubtitle}>Finalizó el {formatDate(routineInfo.fechaFin)}</span>
                                 </>
                             ) : (
                                 <>
-                                    <span style={{ ...styles.expirationTitle, color: routineInfo.proximaACaducar ? Colors.warning : Colors.success }}>{routineInfo.diasRestantes} d�as restantes</span>
-                                    <span style={styles.expirationSubtitle}>V�lida hasta {formatDate(routineInfo.fechaFin)}</span>
+                                    <span style={{ ...styles.expirationTitle, color: routineInfo.proximaACaducar ? Colors.warning : Colors.success }}>{routineInfo.diasRestantes} días restantes</span>
+                                    <span style={styles.expirationSubtitle}>Válida hasta {formatDate(routineInfo.fechaFin)}</span>
                                 </>
                             )}
                         </div>
@@ -1616,7 +1632,7 @@ export const RoutineDetailPage: React.FC = () => {
 
                 {rutina.analizadaPorIA && (
                     <div style={{ ...styles.durationRow, marginTop: '8px' }}>
-                        <span style={styles.aiTag}>🤖 IA</span>
+                        <span style={styles.aiTag}>ð¤ IA</span>
                     </div>
                 )}
             </Card>
@@ -1657,7 +1673,7 @@ export const RoutineDetailPage: React.FC = () => {
             <div style={styles.exercisesHeader}>
                 <h3 style={styles.sectionTitle}>Ejercicios ({rutina.ejercicios.length})</h3>
                 <button style={styles.addExerciseBtn} onClick={() => setShowAddExerciseModal(true)}>
-                    <Plus size={18} /> A�adir
+                    <Plus size={18} /> Añadir
                 </button>
             </div>
 
@@ -1792,9 +1808,9 @@ export const RoutineDetailPage: React.FC = () => {
                 showDeleteModal && (
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
-                            <div style={styles.modalIcon}>⚠️</div>
-                            <h3 style={styles.modalTitle}>�Eliminar Rutina?</h3>
-                            <p style={styles.modalText}>Esta acci�n eliminar� permanentemente tu rutina &quot;{rutina.nombre}&quot; y todos sus ejercicios.</p>
+                            <div style={styles.modalIcon}>â ï¸</div>
+                            <h3 style={styles.modalTitle}>¿Eliminar Rutina?</h3>
+                            <p style={styles.modalText}>Esta acción eliminará permanentemente tu rutina &quot;{rutina.nombre}&quot; y todos sus ejercicios.</p>
                             <div style={styles.modalActions}>
                                 <button style={styles.modalCancelBtn} onClick={() => setShowDeleteModal(false)}>Cancelar</button>
                                 <button style={styles.modalDeleteBtn} onClick={handleDeleteRoutine}><Trash2 size={18} /> Eliminar</button>
@@ -1809,13 +1825,13 @@ export const RoutineDetailPage: React.FC = () => {
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>A�adir Ejercicio</h3>
+                                <h3 style={styles.modalTitle}>Añadir Ejercicio</h3>
                                 <button style={styles.closeModalBtn} onClick={() => setShowAddExerciseModal(false)}><X size={24} /></button>
                             </div>
                             <div style={styles.addForm}>
                                 <div style={styles.formRow}>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>D�a</label>
+                                        <label style={styles.formLabel}>Día</label>
                                         <select
                                             value={newExercise.dia}
                                             onChange={(e) => setNewExercise({ ...newExercise, dia: e.target.value })}
@@ -1848,7 +1864,7 @@ export const RoutineDetailPage: React.FC = () => {
                                 </div>
                                 <div style={styles.formRow}>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>Categor�a</label>
+                                        <label style={styles.formLabel}>Categoría</label>
                                         <select value={newExercise.categoria} onChange={(e) => setNewExercise({ ...newExercise, categoria: e.target.value as 'calentamiento' | 'maquina' })} style={styles.formInput}>
                                             <option value="maquina">Rutina Principal</option>
                                             <option value="calentamiento">Calentamiento</option>
@@ -1863,7 +1879,7 @@ export const RoutineDetailPage: React.FC = () => {
                                         </select>
                                     </div>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>M�sculo</label>
+                                        <label style={styles.formLabel}>Músculo</label>
                                         <select value={newExercise.grupoMuscular || ''} onChange={(e) => setNewExercise({ ...newExercise, grupoMuscular: e.target.value })} style={styles.formInput}>
                                             <option value="">Sin asignar</option>
                                             {Object.entries(GRUPOS_MUSCULARES)
@@ -1874,9 +1890,9 @@ export const RoutineDetailPage: React.FC = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> A�adir Ejercicio</button>
+                                <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> Añadir Ejercicio</button>
                                 <div style={styles.divider}><span style={styles.dividerText}>o</span></div>
-                                <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>📚 Seleccionar de la Base de Datos</button>
+                                <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>ð Seleccionar de la Base de Datos</button>
                             </div>
                         </div>
                     </div>

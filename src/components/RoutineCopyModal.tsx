@@ -1,7 +1,6 @@
-// src/components/RoutineCopyModal.tsx
-import React, { useState } from 'react';
+ï»¿import React, { useState } from 'react';
 import { useUserStore } from '@/stores/userStore';
-import { firebaseService } from '@/services/firebaseService';
+import { routineRequestService } from '@/services/routineRequestService';
 import { Card } from './Card';
 import Colors from '@/styles/colors';
 import { Copy, X, Loader2 } from 'lucide-react';
@@ -15,42 +14,53 @@ interface Props {
 }
 
 export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, partnerId, onClose }) => {
-    const { perfil, setRutina } = useUserStore();
+    void partnerAlias;
+    const { perfil, userId } = useUserStore();
     const [isLoading, setIsLoading] = useState<null | 'mine' | 'theirs'>(null);
 
     const handleCopyMyRoutine = async () => {
+        if (!userId) return;
         if (!perfil.rutina) {
             toast.error('No tienes una rutina activa para compartir.');
             return;
         }
         setIsLoading('mine');
         try {
-            const result = await firebaseService.shareRoutine(partnerAlias, perfil.rutina);
-            if (result.success) {
-                toast.success(`Tu rutina ha sido enviada a ${partnerName}.`);
-                onClose();
-            } else {
-                toast.error(result.message);
-            }
+            await routineRequestService.createRequest({
+                fromUserId: userId,
+                fromName: perfil.usuario.nombre || perfil.alias || 'GymBro',
+                toUserId: partnerId,
+                toName: partnerName,
+                sourceUserId: userId,
+                targetUserId: partnerId,
+                type: 'copy_my_routine_to_partner',
+                syncAfterAccept: true,
+            });
+            toast.success(`Se envio solicitud a ${partnerName}.`);
+            onClose();
         } finally {
             setIsLoading(null);
         }
     };
 
     const handleCopyTheirRoutine = async () => {
+        if (!userId) return;
         setIsLoading('theirs');
         try {
-            const partnerRoutine = await firebaseService.getPartnerRoutine(partnerId);
-            if (partnerRoutine) {
-                // The setRutina function from the store will handle archiving the old one
-                setRutina(partnerRoutine);
-                toast.success(`Has copiado la rutina de ${partnerName}.`);
-                onClose();
-            } else {
-                toast.error(`${partnerName} no tiene una rutina activa para copiar.`);
-            }
+            await routineRequestService.createRequest({
+                fromUserId: userId,
+                fromName: perfil.usuario.nombre || perfil.alias || 'GymBro',
+                toUserId: partnerId,
+                toName: partnerName,
+                sourceUserId: partnerId,
+                targetUserId: userId,
+                type: 'copy_partner_routine_to_me',
+                syncAfterAccept: true,
+            });
+            toast.success(`Se envio solicitud a ${partnerName}.`);
+            onClose();
         } catch (error) {
-            toast.error('No se pudo obtener la rutina de tu pareja.');
+            toast.error('No se pudo crear la solicitud de rutina.');
             console.error(error);
         } finally {
             setIsLoading(null);
@@ -61,11 +71,11 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
         <div style={styles.overlay}>
             <Card style={styles.modal}>
                 <div style={styles.header}>
-                    <h3 style={styles.title}>¡Vinculación Exitosa!</h3>
+                    <h3 style={styles.title}>Vinculacion exitosa</h3>
                     <button onClick={onClose} style={styles.closeButton}><X size={20} /></button>
                 </div>
                 <p style={styles.text}>
-                    Ahora estás vinculado con <span style={styles.partnerName}>{partnerName}</span>. ¿Quieres compartir una rutina?
+                    Ahora estas vinculado con <span style={styles.partnerName}>{partnerName}</span>. Elige si quieres solicitar una copia inicial de rutina.
                 </p>
                 <div style={styles.buttonGroup}>
                     <button
@@ -74,7 +84,7 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
                         disabled={!perfil.rutina || !!isLoading}
                     >
                         {isLoading === 'mine' ? <Loader2 className="animate-spin" /> : <Copy />}
-                        <span>Enviar mi rutina a {partnerName}</span>
+                        <span>Solicitar enviar mi rutina a {partnerName}</span>
                     </button>
                     <button
                         style={{ ...styles.actionButton, background: Colors.success }}
@@ -82,7 +92,7 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
                         disabled={!!isLoading}
                     >
                         {isLoading === 'theirs' ? <Loader2 className="animate-spin" /> : <Copy />}
-                        <span>Copiar la rutina de {partnerName}</span>
+                        <span>Solicitar copiar la rutina de {partnerName}</span>
                     </button>
                 </div>
                 <button style={styles.skipButton} onClick={onClose}>
@@ -164,4 +174,3 @@ const styles: Record<string, React.CSSProperties> = {
         cursor: 'pointer',
     },
 };
-

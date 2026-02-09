@@ -16,11 +16,13 @@ import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { liveSessionService } from '@/services/liveSessionService';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 export const TrainingInvitationNotifier: React.FC = () => {
     const { userId, startSession } = useUserStore();
     const navigate = useNavigate();
     const [invitations, setInvitations] = useState<TrainingInvitation[]>([]);
+    const isMobile = useMediaQuery('(max-width: 640px)');
 
     useEffect(() => {
         if (!userId) return;
@@ -39,7 +41,11 @@ export const TrainingInvitationNotifier: React.FC = () => {
         try {
             await trainingInvitationService.acceptInvitation(invitation.id);
 
-            const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${invitation.fromUserId}`;
+            const liveSessionId = invitation.liveSessionId;
+            if (!liveSessionId) {
+                toast.error('La sesion aun no esta lista. Intenta de nuevo en unos segundos.');
+                return;
+            }
             const routineExercises = (invitation.exercises || []).map((ex: InvitationExercisePayload) => ({
                 id: ex.id,
                 nombre: ex.nombre,
@@ -69,11 +75,24 @@ export const TrainingInvitationNotifier: React.FC = () => {
             }));
 
             if (userId) {
-                await liveSessionService.joinLiveSession(
-                    liveSessionId,
-                    userId,
-                    trackingExercises
-                );
+                let lastError: unknown = null;
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    try {
+                        await liveSessionService.joinLiveSession(
+                            liveSessionId,
+                            userId,
+                            trackingExercises
+                        );
+                        lastError = null;
+                        break;
+                    } catch (error) {
+                        lastError = error;
+                        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+                    }
+                }
+                if (lastError) {
+                    throw lastError;
+                }
             }
 
             startSession(
@@ -94,14 +113,18 @@ export const TrainingInvitationNotifier: React.FC = () => {
             setInvitations(prev => prev.filter(i => i.id !== invitation.id));
         } catch (error) {
             console.error('Error accepting invitation:', error);
-            toast.error('No se pudo aceptar la invitacion.');
+            toast.error('No se pudo aceptar. Revisa conexion y vuelve a intentar.');
         }
     };
 
     const acceptFromDeepLink = useCallback(async (invitation: TrainingInvitation) => {
         await trainingInvitationService.acceptInvitation(invitation.id);
 
-        const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${invitation.fromUserId}`;
+        const liveSessionId = invitation.liveSessionId;
+        if (!liveSessionId) {
+            toast.error('La sesion aun no esta disponible para unirse.');
+            return;
+        }
         const routineExercises = (invitation.exercises || []).map((ex: InvitationExercisePayload) => ({
             id: ex.id,
             nombre: ex.nombre,
@@ -131,7 +154,20 @@ export const TrainingInvitationNotifier: React.FC = () => {
         }));
 
         if (userId) {
-            await liveSessionService.joinLiveSession(liveSessionId, userId, trackingExercises);
+            let lastError: unknown = null;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                try {
+                    await liveSessionService.joinLiveSession(liveSessionId, userId, trackingExercises);
+                    lastError = null;
+                    break;
+                } catch (error) {
+                    lastError = error;
+                    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+                }
+            }
+            if (lastError) {
+                throw lastError;
+            }
         }
 
         startSession(
@@ -154,18 +190,27 @@ export const TrainingInvitationNotifier: React.FC = () => {
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const invitationId = params.get('acceptInvitation');
-        if (!invitationId || invitations.length === 0) return;
+        if (!invitationId) return;
 
-        const invitation = invitations.find((inv) => inv.id === invitationId);
-        if (!invitation) return;
+        const fromState = invitations.find((inv) => inv.id === invitationId);
+        const run = async () => {
+            if (fromState) {
+                await acceptFromDeepLink(fromState);
+                return;
+            }
+            const remote = await trainingInvitationService.getInvitationById(invitationId);
+            if (remote && remote.status === 'pending' && remote.toUserId === userId) {
+                await acceptFromDeepLink(remote);
+            }
+        };
 
-        void acceptFromDeepLink(invitation).finally(() => {
+        void run().finally(() => {
             params.delete('acceptInvitation');
             const query = params.toString();
             const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
             window.history.replaceState({}, '', nextUrl);
         });
-    }, [acceptFromDeepLink, invitations]);
+    }, [acceptFromDeepLink, invitations, userId]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -204,9 +249,9 @@ export const TrainingInvitationNotifier: React.FC = () => {
                     initial={{ opacity: 0, y: -20, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    style={styles.overlay}
+                    style={styles.overlay(isMobile)}
                 >
-                    <div style={styles.card}>
+                    <div style={styles.card(isMobile)}>
                         <div style={styles.iconContainer}>
                             <Dumbbell size={28} color={Colors.primary} />
                         </div>
@@ -230,7 +275,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
                             </div>
                         </div>
 
-                        <div style={styles.actions}>
+                        <div style={styles.actions(isMobile)}>
                             <button style={styles.declineBtn} onClick={() => handleDecline(inv)}>
                                 <X size={20} />
                             </button>
@@ -269,26 +314,26 @@ const ExpiryTimer: React.FC<{ expiresAt: string }> = ({ expiresAt }) => {
     return <span style={{ fontSize: '11px', color: Colors.textTertiary }}>{remaining}</span>;
 };
 
-const styles: Record<string, React.CSSProperties> = {
-    overlay: {
+const styles = {
+    overlay: (isMobile: boolean): React.CSSProperties => ({
         position: 'fixed',
-        top: '20px',
+        top: `calc(env(safe-area-inset-top, 0px) + ${isMobile ? '8px' : '20px'})`,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 9999,
-        width: '90%',
+        width: isMobile ? '96%' : '90%',
         maxWidth: '400px',
-    },
-    card: {
+    }),
+    card: (isMobile: boolean): React.CSSProperties => ({
         display: 'flex',
         alignItems: 'flex-start',
         gap: '12px',
-        padding: '16px',
+        padding: isMobile ? '12px' : '16px',
         background: Colors.surface,
         border: `2px solid ${Colors.primary}`,
         borderRadius: '16px',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-    },
+    }),
     iconContainer: {
         width: '48px',
         height: '48px',
@@ -342,12 +387,12 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '4px',
         marginTop: '4px',
     },
-    actions: {
+    actions: (isMobile: boolean): React.CSSProperties => ({
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: isMobile ? 'row' : 'column',
         gap: '8px',
         flexShrink: 0,
-    },
+    }),
     acceptBtn: {
         width: '40px',
         height: '40px',

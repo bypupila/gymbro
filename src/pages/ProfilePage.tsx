@@ -1,4 +1,4 @@
-// =====================================================
+﻿// =====================================================
 // GymBro PWA - Profile Page
 // =====================================================
 
@@ -29,6 +29,8 @@ export const ProfilePage: React.FC = () => {
     const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales, deleteRoutineFromHistory } = useUserStore();
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
+    const partners = perfil.partners || [];
+    const activePartner = partners.find((p) => p.id === perfil.activePartnerId) || partners[0] || null;
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(userInfo);
@@ -154,7 +156,7 @@ export const ProfilePage: React.FC = () => {
         const currentAlias = (perfil.alias || '').toLowerCase();
 
         try {
-            // 1. Validar alias si cambi�
+            // 1. Validar alias si cambió
             if (cleanAlias !== currentAlias) {
                 if (cleanAlias.length < 3) {
                     setAliasError('El alias debe tener al menos 3 caracteres.');
@@ -164,7 +166,7 @@ export const ProfilePage: React.FC = () => {
                 // 1. Validar disponibilidad
                 const available = await firebaseService.isAliasAvailable(cleanAlias, userId);
                 if (!available) {
-                    setAliasError('Este alias ya est� registrado. Elige otro.');
+                    setAliasError('Este alias ya está registrado. Elige otro.');
                     setIsSaving(false);
                     return;
                 }
@@ -179,7 +181,7 @@ export const ProfilePage: React.FC = () => {
                     } catch (authError: FirebaseAuthError) {
                         console.error("Auth Email Update Error:", authError);
                         if (authError.code === 'auth/requires-recent-login') {
-                            setAliasError('Por seguridad, debes cerrar sesi�n y volver a entrar para cambiar tu alias de login.');
+                            setAliasError('Por seguridad, debes cerrar sesión y volver a entrar para cambiar tu alias de login.');
                             setIsSaving(false);
                             return;
                         }
@@ -202,7 +204,7 @@ export const ProfilePage: React.FC = () => {
         } catch (error: FirebaseAuthError) {
             console.error("Error saving profile:", error);
             setAliasError(error.message === 'ALIAS_TAKEN'
-                ? 'Este alias ya est� registrado.'
+                ? 'Este alias ya está registrado.'
                 : 'Error al conectar con la base de datos.');
         } finally {
             setIsSaving(false);
@@ -220,8 +222,8 @@ export const ProfilePage: React.FC = () => {
         { icon: Heart, label: 'Mis Rutinas Activas', color: '#3B82F6', action: () => navigate('/routine') },
         { icon: Calendar, label: 'Configurar Horario', color: '#8B5CF6', action: () => navigate('/profile/schedule') },
 
-        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('Pr�ximamente 🚧', { icon: '🔔' }) },
-        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('Pr�ximamente 🚧', { icon: '🛡️' }) },
+        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('Próximamente ð§', { icon: 'ð' }) },
+        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('Próximamente ð§', { icon: 'ð¡ï¸' }) },
     ];
 
     return (
@@ -274,7 +276,7 @@ export const ProfilePage: React.FC = () => {
                         />
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <p style={styles.userLevel}>
-                                {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                                {userInfo.nivel.toUpperCase()} â¢ {userInfo.objetivo.replace('_', ' ').toUpperCase()}
                             </p>
                         </div>
                         <div style={{
@@ -308,7 +310,7 @@ export const ProfilePage: React.FC = () => {
                         <h2 style={styles.userName}>{userInfo.nombre || 'GymBro'}</h2>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <p style={styles.userLevel}>
-                                {userInfo.nivel.toUpperCase()} • {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                                {userInfo.nivel.toUpperCase()} â¢ {userInfo.objetivo.replace('_', ' ').toUpperCase()}
                             </p>
                             {isSyncing ? (
                                 <Loader2 size={14} color={Colors.primary} className="animate-spin" />
@@ -346,7 +348,7 @@ export const ProfilePage: React.FC = () => {
 
             {/* Personal Info Section */}
             <div style={styles.sectionHeader}>
-                <h3 style={styles.sectionTitle}>Informaci�n Personal</h3>
+                <h3 style={styles.sectionTitle}>Información Personal</h3>
             </div>
 
             <Card style={styles.infoCard}>
@@ -401,7 +403,7 @@ export const ProfilePage: React.FC = () => {
                                 style={styles.editSelect}
                                 value={editData.objetivo}
                                                                     onChange={(e) => setEditData({ ...editData, objetivo: e.target.value as ObjetivoFitness })}                            >
-                                <option value="ganar_musculo">Ganar M�sculo</option>
+                                <option value="ganar_musculo">Ganar Músculo</option>
                                 <option value="perder_grasa">Perder Grasa</option>
                                 <option value="mantener">Mantenerme</option>
                                 <option value="fuerza">Ganar Fuerza</option>
@@ -437,7 +439,7 @@ export const ProfilePage: React.FC = () => {
                     <div style={styles.viewGrid}>
                         <div style={styles.viewItem}>
                             <span style={styles.viewLabel}>EDAD</span>
-                            <span style={styles.viewValue}>{userInfo.edad || '--'} a�os</span>
+                            <span style={styles.viewValue}>{userInfo.edad || '--'} años</span>
                         </div>
                         <div style={styles.viewItem}>
                             <span style={styles.viewLabel}>PESO</span>
@@ -466,7 +468,7 @@ export const ProfilePage: React.FC = () => {
 
             {/* Partner Section */}
             <h3 style={styles.sectionTitle}>Mi Pareja Gymbro</h3>
-            {partnerInfo ? (
+            {activePartner || partnerInfo ? (
                 <Card style={styles.partnerCard}>
                     <div style={styles.partnerInfo}>
                         <img
@@ -475,7 +477,7 @@ export const ProfilePage: React.FC = () => {
                             style={styles.partnerAvatar}
                         />
                         <div style={{ flex: 1 }}>
-                            <p style={styles.partnerName}>{partnerInfo.nombre}</p>
+                            <p style={styles.partnerName}>{activePartner?.nombre || partnerInfo?.nombre}</p>
                             <p style={styles.partnerStatus}>Sincronizados</p>
                         </div>
                         <div style={styles.coupleStreak}>
@@ -505,14 +507,14 @@ export const ProfilePage: React.FC = () => {
                                         <div style={{ flex: 1 }}>
                                             <p style={styles.historyName}>{r.nombre.split(' - ')[1] || r.nombre}</p>
                                             <p style={styles.historyDate}>
-                                                {new Date(r.fechaInicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} • {r.ejercicios.length} ejercicios
+                                                {new Date(r.fechaInicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} â¢ {r.ejercicios.length} ejercicios
                                             </p>
                                         </div>
                                         <button
                                             onClick={() => {
                                                 toast((t) => (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>�Eliminar esta rutina del historial?</span>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta rutina del historial?</span>
                                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                             <button
                                                                 onClick={() => toast.dismiss(t.id)}
@@ -562,7 +564,7 @@ export const ProfilePage: React.FC = () => {
                     <div style={{ ...styles.menuIcon, background: Colors.textSecondary }}>
                         <LogOut size={20} color="#FFF" />
                     </div>
-                    <span style={styles.menuText}>Cerrar Sesi�n (Cambiar Usuario)</span>
+                    <span style={styles.menuText}>Cerrar Sesión (Cambiar Usuario)</span>
                 </button>
 
                 <button style={{ ...styles.menuItem, marginTop: '8px' }} onClick={handleReset}>
@@ -580,10 +582,10 @@ export const ProfilePage: React.FC = () => {
                 showResetConfirm && (
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
-                            <div style={styles.modalIcon}>⚠️</div>
-                            <h3 style={styles.modalTitle}>�Reiniciar App?</h3>
+                            <div style={styles.modalIcon}>â ï¸</div>
+                            <h3 style={styles.modalTitle}>¿Reiniciar App?</h3>
                             <p style={styles.modalText}>
-                                Esto borrar� todos tus datos: perfil, rutinas e historial. Esta acci�n no se puede deshacer.
+                                Esto borrará todos tus datos: perfil, rutinas e historial. Esta acción no se puede deshacer.
                             </p>
                             <div style={styles.modalActions}>
                                 <button style={styles.modalCancelBtn} onClick={() => setShowResetConfirm(false)}>
@@ -615,7 +617,7 @@ export const ProfilePage: React.FC = () => {
                             </button>
                         </div>
                         <p style={styles.modalText}>
-                            Introduce el alias de tu pareja para enviarle una solicitud de vinculaci�n.
+                            Introduce el alias de tu pareja para enviarle una solicitud de vinculación.
                         </p>
                         <div style={styles.partnerSearchContainer}>
                             <input
@@ -652,13 +654,13 @@ export const ProfilePage: React.FC = () => {
                         )}
 
                         {searchStatus === 'not_found' && (
-                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e int�ntalo de nuevo.</p>
+                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e inténtalo de nuevo.</p>
                         )}
                         {searchStatus === 'error' && (
-                            <p style={styles.searchStatusTextError}>Hubo un error. Int�ntalo m�s tarde.</p>
+                            <p style={styles.searchStatusTextError}>Hubo un error. Inténtalo más tarde.</p>
                         )}
                         {searchStatus === 'request_sent' && (
-                            <p style={styles.searchStatusTextSuccess}>�Solicitud enviada! Esperando respuesta.</p>
+                            <p style={styles.searchStatusTextSuccess}>¡Solicitud enviada! Esperando respuesta.</p>
                         )}
                     </div>
                 </div>

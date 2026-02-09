@@ -5,7 +5,7 @@
 
 import {
     doc, collection, addDoc, query,
-    getDocs, onSnapshot, where, updateDoc, deleteDoc
+    getDoc, getDocs, onSnapshot, where, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
@@ -83,6 +83,19 @@ export const trainingInvitationService = {
         });
 
         return docRef.id;
+    },
+
+    /**
+     * Get a single invitation by id
+     */
+    async getInvitationById(invitationId: string): Promise<TrainingInvitation | null> {
+        const invitationRef = doc(db, 'trainingInvitations', invitationId);
+        const snap = await getDoc(invitationRef);
+        if (!snap.exists()) return null;
+        return {
+            id: snap.id,
+            ...snap.data(),
+        } as TrainingInvitation;
     },
 
     /**

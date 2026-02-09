@@ -65,6 +65,10 @@ export const HomePage: React.FC = () => {
     const cancelPendingInvitation = useCallback(async () => {
         if (pendingInvitationId) {
             try {
+                const pendingInvitation = await trainingInvitationService.getInvitationById(pendingInvitationId);
+                if (pendingInvitation?.liveSessionId) {
+                    await liveSessionService.cancelSession(pendingInvitation.liveSessionId);
+                }
                 await trainingInvitationService.cancelInvitation(pendingInvitationId);
             } catch {
                 // Ignore cleanup errors
@@ -128,6 +132,7 @@ export const HomePage: React.FC = () => {
 
     const handleModeConfirm = async (mode: 'shared' | 'linked') => {
         if (!tempSessionData || tempMood === undefined || !selectedPartner) return;
+        let preparedLiveSessionId: string | null = null;
 
         if (mode === 'shared') {
             // Shared mode: start immediately, both on same device
@@ -139,6 +144,34 @@ export const HomePage: React.FC = () => {
                 const { userId, perfil } = useUserStore.getState();
                 if (!userId) return;
                 const liveSessionId = `session_${Date.now()}_${userId}`;
+                preparedLiveSessionId = liveSessionId;
+
+                await liveSessionService.createLiveSession(
+                    userId,
+                    selectedPartner.id,
+                    {
+                        dayName: tempSessionData.day,
+                        routineName: tempSessionData.name,
+                        exercises: tempSessionData.exercises.map((ex) => ({
+                            id: ex.id,
+                            nombre: ex.nombre,
+                            targetSeries: ex.series,
+                            targetReps: ex.repeticiones,
+                            categoria: ex.categoria,
+                            isOptional: ex.isOptional,
+                            isCompleted: false,
+                            sets: Array.from({ length: ex.series }, () => ({
+                                completed: false,
+                                skipped: false,
+                                weight: 0,
+                                reps: parseInt(ex.repeticiones) || 10,
+                                duration: ex.segundos || 0,
+                                rest: ex.descanso || 60
+                            }))
+                        }))
+                    },
+                    liveSessionId
+                );
 
                 const invitationId = await trainingInvitationService.sendInvitation(
                     userId,
@@ -160,6 +193,9 @@ export const HomePage: React.FC = () => {
             } catch (error) {
                 console.error('Error sending invitation:', error);
                 toast.error('No se pudo enviar la invitacion');
+                if (preparedLiveSessionId) {
+                    void liveSessionService.cancelSession(preparedLiveSessionId).catch(() => undefined);
+                }
             }
         }
     };
@@ -179,35 +215,6 @@ export const HomePage: React.FC = () => {
                         const { userId } = useUserStore.getState();
                         const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${userId}`;
 
-                        if (userId) {
-                            void liveSessionService.createLiveSession(
-                                userId,
-                                selectedPartner.id,
-                                {
-                                    dayName: tempSessionData.day,
-                                    routineName: tempSessionData.name,
-                                    exercises: tempSessionData.exercises.map((ex) => ({
-                                        id: ex.id,
-                                        nombre: ex.nombre,
-                                        targetSeries: ex.series,
-                                        targetReps: ex.repeticiones,
-                                        categoria: ex.categoria,
-                                        isOptional: ex.isOptional,
-                                        isCompleted: false,
-                                        sets: Array.from({ length: ex.series }, () => ({
-                                            completed: false,
-                                            skipped: false,
-                                            weight: 0,
-                                            reps: parseInt(ex.repeticiones) || 10,
-                                            duration: ex.segundos || 0,
-                                            rest: ex.descanso || 60
-                                        }))
-                                    }))
-                                },
-                                liveSessionId
-                            );
-                        }
-
                         startSession(
                             tempSessionData.day,
                             tempSessionData.exercises,
@@ -224,10 +231,16 @@ export const HomePage: React.FC = () => {
                     }
                     resetModeModal();
                 } else if (invitation.status === 'declined') {
+                    if (invitation.liveSessionId) {
+                        void liveSessionService.cancelSession(invitation.liveSessionId).catch(() => undefined);
+                    }
                     toast.error(`${selectedPartner?.nombre || 'Partner'} rechazo la invitacion`);
                     setIsWaitingForAccept(false);
                     setPendingInvitationId(null);
                 } else if (invitation.status === 'expired') {
+                    if (invitation.liveSessionId) {
+                        void liveSessionService.cancelSession(invitation.liveSessionId).catch(() => undefined);
+                    }
                     toast.error('La invitacion expiro');
                     setIsWaitingForAccept(false);
                     setPendingInvitationId(null);

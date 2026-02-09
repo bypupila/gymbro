@@ -21,12 +21,7 @@ service cloud.firestore {
     // Profile: owner write/read, partners read.
     match /users/{userId}/profile/{document=**} {
       allow read: if isOwner(userId) || isPartnerOf(userId);
-      // Allow link updates on main profile for partner fields only.
-      allow write: if isOwner(userId) || (
-        isAuthenticated() &&
-        document == 'main' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId', 'partners', 'partnerIds'])
-      );
+      allow write: if isOwner(userId);
     }
 
     // Workout history
@@ -83,7 +78,51 @@ service cloud.firestore {
         resource.data.recipientId == request.auth.uid
       );
       allow create: if isAuthenticated() && request.resource.data.requesterId == request.auth.uid;
-      allow update: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (
+          resource.data.recipientId == request.auth.uid &&
+          request.resource.data.status in ['accepted', 'declined']
+        ) ||
+        (
+          resource.data.requesterId == request.auth.uid &&
+          request.resource.data.status == 'cancelled'
+        )
+      );
+      allow delete: if false;
+    }
+
+    // Relationship actions (unlink / break sync)
+    match /relationshipActions/{actionId} {
+      allow read: if isAuthenticated() && (
+        resource.data.sourceUserId == request.auth.uid ||
+        resource.data.targetUserId == request.auth.uid
+      );
+      allow create: if isAuthenticated() &&
+        request.resource.data.initiatedBy == request.auth.uid &&
+        request.resource.data.sourceUserId == request.auth.uid &&
+        request.resource.data.actionType in ['UNLINK', 'BREAK_SYNC'];
+      allow update, delete: if false;
+    }
+
+    // Routine copy/sync requests
+    match /routineRequests/{requestId} {
+      allow read: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
+      allow create: if isAuthenticated() &&
+        request.resource.data.fromUserId == request.auth.uid &&
+        request.resource.data.toUserId != request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (
+          resource.data.toUserId == request.auth.uid &&
+          request.resource.data.status in ['accepted', 'declined']
+        ) ||
+        (
+          resource.data.fromUserId == request.auth.uid &&
+          request.resource.data.status == 'cancelled'
+        )
+      );
       allow delete: if false;
     }
 

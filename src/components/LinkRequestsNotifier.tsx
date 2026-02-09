@@ -1,5 +1,4 @@
-// src/components/LinkRequestsNotifier.tsx
-import React from 'react';
+ï»¿import React from 'react';
 import { useUserStore } from '@/stores/userStore';
 import { firebaseService, LinkRequest } from '@/services/firebaseService';
 import { Card } from './Card';
@@ -8,7 +7,7 @@ import { Check, X, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export const LinkRequestsNotifier: React.FC = () => {
-    const { linkRequests, setLinkRequests, perfil, addPartner } = useUserStore();
+    const { linkRequests, addPartner } = useUserStore();
 
     if (linkRequests.length === 0) {
         return null;
@@ -16,9 +15,7 @@ export const LinkRequestsNotifier: React.FC = () => {
 
     const handleAccept = async (request: LinkRequest) => {
         try {
-            const myName = perfil.alias || perfil.usuario.nombre || 'GymBro';
-            await firebaseService.acceptLinkRequest(request, myName);
-            // Also update local store with the new partner
+            await firebaseService.acceptLinkRequest(request);
             addPartner({
                 id: request.requesterId,
                 alias: request.requesterAlias,
@@ -35,7 +32,6 @@ export const LinkRequestsNotifier: React.FC = () => {
         try {
             await firebaseService.declineLinkRequest(request.id);
             toast.success('Solicitud rechazada.');
-            // The listener will update the store, removing the declined request
         } catch (error) {
             console.error('Error declining request:', error);
             toast.error('No se pudo rechazar la solicitud.');
@@ -44,7 +40,7 @@ export const LinkRequestsNotifier: React.FC = () => {
 
     return (
         <div style={styles.container}>
-            <h3 style={styles.title}>Solicitudes de Vinculación</h3>
+            <h3 style={styles.title}>Solicitudes de Vinculacion</h3>
             {linkRequests.map((req) => (
                 <Card key={req.id} style={styles.requestCard}>
                     <div style={styles.requesterInfo}>
@@ -54,10 +50,10 @@ export const LinkRequestsNotifier: React.FC = () => {
                         </p>
                     </div>
                     <div style={styles.actions}>
-                        <button style={{...styles.button, ...styles.declineButton}} onClick={() => handleDecline(req)}>
+                        <button style={{ ...styles.button, ...styles.declineButton }} onClick={() => handleDecline(req)}>
                             <X size={16} />
                         </button>
-                        <button style={{...styles.button, ...styles.acceptButton}} onClick={() => handleAccept(req)}>
+                        <button style={{ ...styles.button, ...styles.acceptButton }} onClick={() => handleAccept(req)}>
                             <Check size={16} />
                         </button>
                     </div>
@@ -119,4 +115,3 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.error,
     },
 };
-

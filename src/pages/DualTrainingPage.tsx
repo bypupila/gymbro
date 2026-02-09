@@ -14,13 +14,15 @@ import { firebaseService } from '@/services/firebaseService';
 
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, userId, removePartner } = useUserStore();
+    const { perfil, userId, removePartner, setActivePartnerId, setRoutineSync } = useUserStore();
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [aliasInput, setAliasInput] = React.useState('');
     const [connectError, setConnectError] = React.useState('');
 
     const partners = perfil.partners || [];
+    const activePartnerId = perfil.activePartnerId || partners[0]?.id || null;
     const hasPartners = partners.length > 0 || !!perfil.partnerId;
+    const isSyncEnabled = Boolean(perfil.routineSync?.enabled && perfil.routineSync?.partnerId);
 
     const handleConnect = async () => {
         if (!aliasInput.trim()) return;
@@ -85,7 +87,7 @@ export const DualTrainingPage: React.FC = () => {
                                     toast.success(`${partner.nombre} desvinculado`);
                                 }
                                 toast.dismiss(t.id);
-                            } catch (error) {
+                            } catch {
                                 toast.error('Error al desvincular');
                             }
                         }}
@@ -96,6 +98,23 @@ export const DualTrainingPage: React.FC = () => {
                 </div>
             </div>
         ), { duration: 5000 });
+    };
+
+    const handleBreakSync = async () => {
+        if (!userId || !perfil.routineSync?.partnerId) return;
+        try {
+            await firebaseService.breakRoutineSync(userId, perfil.routineSync.partnerId);
+            setRoutineSync({
+                enabled: false,
+                partnerId: null,
+                mode: 'bidirectional',
+                syncId: null,
+                updatedAt: new Date().toISOString(),
+            });
+            toast.success('Sincronizacion desactivada');
+        } catch {
+            toast.error('No se pudo desactivar la sincronizacion');
+        }
     };
 
     return (
@@ -132,6 +151,23 @@ export const DualTrainingPage: React.FC = () => {
                                 : "Conecta con tus partners para entrenar juntos y motivarse mutuamente."
                             }
                         </p>
+                        {isSyncEnabled && (
+                            <button
+                                onClick={handleBreakSync}
+                                style={{
+                                    marginTop: '10px',
+                                    borderRadius: '8px',
+                                    padding: '8px 12px',
+                                    border: `1px solid ${Colors.warning}`,
+                                    color: Colors.warning,
+                                    background: `${Colors.warning}15`,
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                }}
+                            >
+                                Romper sincronizacion
+                            </button>
+                        )}
                     </div>
                 </div>
             </Card>
@@ -173,9 +209,14 @@ export const DualTrainingPage: React.FC = () => {
                                         />
                                         <div style={{ ...styles.statusDot, background: Colors.textTertiary }} />
                                     </div>
-                                    <div style={styles.userInfo}>
+                                    <div
+                                        style={{ ...styles.userInfo, cursor: 'pointer' }}
+                                        onClick={() => setActivePartnerId(partner.id)}
+                                    >
                                         <span style={styles.userName}>{partner.nombre}</span>
-                                        <span style={styles.userStatus}>@{partner.alias}</span>
+                                        <span style={styles.userStatus}>
+                                            @{partner.alias}{activePartnerId === partner.id ? ' • Activo' : ''}
+                                        </span>
                                     </div>
                                     <button
                                         onClick={() => handleUnlink(partner)}

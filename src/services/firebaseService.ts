@@ -1,6 +1,6 @@
 import {
     doc, setDoc, getDoc, collection, addDoc, query,
-    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc, arrayUnion, arrayRemove
+    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
@@ -12,6 +12,16 @@ export interface LinkRequest {
     requesterAlias: string;
     recipientId: string;
     status: 'pending' | 'accepted' | 'declined';
+    createdAt: string;
+}
+
+export interface RelationshipAction {
+    id: string;
+    actionType: 'UNLINK' | 'BREAK_SYNC';
+    initiatedBy: string;
+    sourceUserId: string;
+    targetUserId: string;
+    status: 'pending' | 'processed' | 'failed';
     createdAt: string;
 }
 
@@ -38,6 +48,15 @@ export const firebaseService = {
             partnerId: profile.partnerId || null,
             partners: profile.partners || [],
             partnerIds: profile.partnerIds || [],
+            activePartnerId: profile.activePartnerId || null,
+            routineSync: profile.routineSync || {
+                enabled: false,
+                partnerId: null,
+                mode: 'bidirectional',
+                syncId: null,
+                updatedAt: new Date().toISOString(),
+            },
+            linkSetupPendingPartnerId: profile.linkSetupPendingPartnerId || null,
             weeklyTracking: profile.weeklyTracking || {},
             catalogoExtras: profile.catalogoExtras || [],
             defaultRoutineId: profile.defaultRoutineId || null, // Save the default routine ID
@@ -87,6 +106,15 @@ export const firebaseService = {
             partnerId: data.partnerId,
             partners: data.partners || [],
             partnerIds: data.partnerIds || [],
+            activePartnerId: data.activePartnerId || null,
+            routineSync: data.routineSync || {
+                enabled: false,
+                partnerId: null,
+                mode: 'bidirectional',
+                syncId: null,
+                updatedAt: new Date().toISOString(),
+            },
+            linkSetupPendingPartnerId: data.linkSetupPendingPartnerId || null,
             alias: userData.displayName || '',
             role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
             weeklyTracking: data.weeklyTracking || {},
@@ -138,6 +166,15 @@ export const firebaseService = {
                 partnerId: data.partnerId,
                 partners: data.partners || [],
                 partnerIds: data.partnerIds || [],
+                activePartnerId: data.activePartnerId || null,
+                routineSync: data.routineSync || {
+                    enabled: false,
+                    partnerId: null,
+                    mode: 'bidirectional',
+                    syncId: null,
+                    updatedAt: new Date().toISOString(),
+                },
+                linkSetupPendingPartnerId: data.linkSetupPendingPartnerId || null,
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
                 weeklyTracking: data.weeklyTracking || {},
@@ -351,6 +388,50 @@ export const firebaseService = {
 
     async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string): Promise<void> {
         const requestsRef = collection(db, 'linkRequests');
+
+        const [directPending, reciprocalPending, acceptedDirect, acceptedReciprocal] = await Promise.all([
+            getDocs(query(
+                requestsRef,
+                where('requesterId', '==', requesterId),
+                where('recipientId', '==', recipientId),
+                where('status', '==', 'pending')
+            )),
+            getDocs(query(
+                requestsRef,
+                where('requesterId', '==', recipientId),
+                where('recipientId', '==', requesterId),
+                where('status', '==', 'pending')
+            )),
+            getDocs(query(
+                requestsRef,
+                where('requesterId', '==', requesterId),
+                where('recipientId', '==', recipientId),
+                where('status', '==', 'accepted')
+            )),
+            getDocs(query(
+                requestsRef,
+                where('requesterId', '==', recipientId),
+                where('recipientId', '==', requesterId),
+                where('status', '==', 'accepted')
+            ))
+        ]);
+
+        if (!acceptedDirect.empty || !acceptedReciprocal.empty) {
+            throw new Error('ALREADY_LINKED');
+        }
+
+        if (!directPending.empty) {
+            return;
+        }
+
+        if (!reciprocalPending.empty) {
+            await updateDoc(reciprocalPending.docs[0].ref, {
+                status: 'accepted',
+                resolvedAt: new Date().toISOString(),
+            });
+            return;
+        }
+
         await addDoc(requestsRef, {
             requesterId,
             requesterAlias,
@@ -373,40 +454,12 @@ export const firebaseService = {
         });
     },
 
-    async acceptLinkRequest(request: LinkRequest, recipientName: string): Promise<void> {
-        const batch = writeBatch(db);
-
-        // 1. Update request status
+    async acceptLinkRequest(request: LinkRequest): Promise<void> {
         const requestRef = doc(db, 'linkRequests', request.id);
-        batch.update(requestRef, { status: 'accepted' });
-
-        // 2. Get requester's name from their profile
-        const requesterProfileRef = doc(db, 'users', request.requesterId, 'profile', 'main');
-        
-        // Add recipient to requester's partners array
-        batch.update(requesterProfileRef, {
-            partnerId: request.recipientId, // backward compat
-            partnerIds: arrayUnion(request.recipientId),
-            partners: arrayUnion({
-                id: request.recipientId,
-                alias: recipientName,
-                nombre: recipientName,
-            } as PartnerInfo)
+        await updateDoc(requestRef, {
+            status: 'accepted',
+            resolvedAt: new Date().toISOString(),
         });
-
-        // 3. Add requester to recipient's partners array
-        const recipientProfileRef = doc(db, 'users', request.recipientId, 'profile', 'main');
-        batch.update(recipientProfileRef, {
-            partnerId: request.requesterId, // backward compat
-            partnerIds: arrayUnion(request.requesterId),
-            partners: arrayUnion({
-                id: request.requesterId,
-                alias: request.requesterAlias,
-                nombre: request.requesterAlias,
-            } as PartnerInfo)
-        });
-
-        await batch.commit();
     },
 
     async declineLinkRequest(requestId: string): Promise<void> {
@@ -415,31 +468,25 @@ export const firebaseService = {
     },
 
     async unlinkPartner(userId: string, partnerToRemove: PartnerInfo): Promise<void> {
-        const batch = writeBatch(db);
-
-        // Remove partner from user's partners array
-        const userProfileRef = doc(db, 'users', userId, 'profile', 'main');
-        batch.update(userProfileRef, {
-            partnerIds: arrayRemove(partnerToRemove.id),
-            partners: arrayRemove(partnerToRemove)
+        await addDoc(collection(db, 'relationshipActions'), {
+            actionType: 'UNLINK',
+            initiatedBy: userId,
+            sourceUserId: userId,
+            targetUserId: partnerToRemove.id,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
         });
+    },
 
-        // Remove user from partner's partners array (need to find the entry first)
-        const partnerProfileRef = doc(db, 'users', partnerToRemove.id, 'profile', 'main');
-        const partnerProfileSnap = await getDoc(partnerProfileRef);
-        if (partnerProfileSnap.exists()) {
-            const partnerData = partnerProfileSnap.data();
-            const partnerPartners = (partnerData.partners || []) as PartnerInfo[];
-            const entryToRemove = partnerPartners.find(p => p.id === userId);
-            if (entryToRemove) {
-                batch.update(partnerProfileRef, {
-                    partnerIds: arrayRemove(userId),
-                    partners: arrayRemove(entryToRemove)
-                });
-            }
-        }
-
-        await batch.commit();
+    async breakRoutineSync(userId: string, partnerId: string): Promise<void> {
+        await addDoc(collection(db, 'relationshipActions'), {
+            actionType: 'BREAK_SYNC',
+            initiatedBy: userId,
+            sourceUserId: userId,
+            targetUserId: partnerId,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+        });
     },
 
     // ========== USER LOOKUP ==========

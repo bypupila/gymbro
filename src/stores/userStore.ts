@@ -63,6 +63,12 @@ export interface RutinaUsuario {
     fechaExpiracion?: string; // Cu?ndo deber?a cambiarse
     analizadaPorIA: boolean;
     isDefault?: boolean; // New: indicates if this is the default routine
+    syncMeta?: {
+        syncId: string;
+        version: number;
+        updatedBy: string;
+        updatedAt: string;
+    };
 }
 
 export interface Clarification {
@@ -140,6 +146,15 @@ export interface PerfilCompleto {
     partnerId?: string; // Legacy single partner - kept for backward compat
     partners?: PartnerInfo[]; // New: multiple partners
     partnerIds?: string[]; // Fast membership checks for security rules
+    activePartnerId?: string | null;
+    routineSync?: {
+        enabled: boolean;
+        partnerId: string | null;
+        mode: 'bidirectional';
+        syncId: string | null;
+        updatedAt: string;
+    };
+    linkSetupPendingPartnerId?: string | null;
     alias?: string; // Add this
     role?: 'admin' | 'user'; // Rol del usuario
     weeklyTracking?: Record<string, 'completed' | 'skipped' | boolean>; // Tracking de d?as entrenados { '2026-01-29': 'completed' }
@@ -239,9 +254,12 @@ interface UserStore {
     resetear: () => void;
     logout: () => void;
     setPartnerId: (id: string | undefined) => void;
+    setActivePartnerId: (id: string | null) => void;
     setPartners: (partners: PartnerInfo[]) => void;
     addPartner: (partner: PartnerInfo) => void;
     removePartner: (partnerId: string) => void;
+    setRoutineSync: (sync: PerfilCompleto['routineSync']) => void;
+    setLinkSetupPendingPartnerId: (partnerId: string | null) => void;
     setAlias: (alias: string) => void;
     setRole: (role: 'admin' | 'user') => void;
     deleteRoutineFromHistory: (index: number) => void;
@@ -274,6 +292,15 @@ export const useUserStore = create<UserStore>()(
                 actividadesExtras: [],
                 catalogoExtras: [],
                 partnerIds: [],
+                activePartnerId: null,
+                routineSync: {
+                    enabled: false,
+                    partnerId: null,
+                    mode: 'bidirectional',
+                    syncId: null,
+                    updatedAt: new Date().toISOString(),
+                },
+                linkSetupPendingPartnerId: null,
             },
             activeSession: null,
             isSyncing: false,
@@ -288,14 +315,24 @@ export const useUserStore = create<UserStore>()(
                 perfil: {
                     ...state.perfil,
                     partnerId: id,
+                    activePartnerId: id || state.perfil.activePartnerId || null,
                     partnerIds: id ? Array.from(new Set([...(state.perfil.partnerIds || []), id])) : (state.perfil.partnerIds || [])
+                }
+            })),
+            setActivePartnerId: (id) => set((state) => ({
+                perfil: {
+                    ...state.perfil,
+                    activePartnerId: id
                 }
             })),
             setPartners: (partners) => set((state) => ({
                 perfil: {
                     ...state.perfil,
                     partners,
-                    partnerIds: partners.map((p) => p.id)
+                    partnerIds: partners.map((p) => p.id),
+                    activePartnerId: state.perfil.activePartnerId && partners.some((p) => p.id === state.perfil.activePartnerId)
+                        ? state.perfil.activePartnerId
+                        : (partners[0]?.id || null)
                 }
             })),
             addPartner: (partner) => set((state) => {
@@ -305,20 +342,47 @@ export const useUserStore = create<UserStore>()(
                     perfil: {
                         ...state.perfil,
                         partners: [...current, partner],
-                        partnerIds: Array.from(new Set([...(state.perfil.partnerIds || []), partner.id]))
+                        partnerIds: Array.from(new Set([...(state.perfil.partnerIds || []), partner.id])),
+                        activePartnerId: state.perfil.activePartnerId || partner.id,
+                        linkSetupPendingPartnerId: partner.id
                     }
                 };
             }),
             removePartner: (partnerId) => set((state) => {
                 const current = state.perfil.partners || [];
+                const nextPartners = current.filter(p => p.id !== partnerId);
+                const nextActivePartnerId = state.perfil.activePartnerId === partnerId ? (nextPartners[0]?.id || null) : state.perfil.activePartnerId;
+                const nextRoutineSync = state.perfil.routineSync?.partnerId === partnerId
+                    ? {
+                        enabled: false,
+                        partnerId: null,
+                        mode: 'bidirectional' as const,
+                        syncId: null,
+                        updatedAt: new Date().toISOString(),
+                    }
+                    : state.perfil.routineSync;
                 return {
                     perfil: {
                         ...state.perfil,
-                        partners: current.filter(p => p.id !== partnerId),
-                        partnerIds: (state.perfil.partnerIds || []).filter((id) => id !== partnerId)
+                        partners: nextPartners,
+                        partnerIds: (state.perfil.partnerIds || []).filter((id) => id !== partnerId),
+                        activePartnerId: nextActivePartnerId,
+                        routineSync: nextRoutineSync
                     }
                 };
             }),
+            setRoutineSync: (routineSync) => set((state) => ({
+                perfil: {
+                    ...state.perfil,
+                    routineSync
+                }
+            })),
+            setLinkSetupPendingPartnerId: (partnerId) => set((state) => ({
+                perfil: {
+                    ...state.perfil,
+                    linkSetupPendingPartnerId: partnerId
+                }
+            })),
 
             setDatosPersonales: (datos) => set((state) => ({
                 perfil: {
@@ -339,6 +403,8 @@ export const useUserStore = create<UserStore>()(
                 const historialPrevio = [...state.perfil.historialRutinas];
                 const rutinaActual = state.perfil.rutina;
                 let updatedDefaultRoutineId = state.perfil.defaultRoutineId;
+                const syncState = state.perfil.routineSync;
+                const nowIso = new Date().toISOString();
 
                 // If there's an existing active routine, move it to history
                 if (rutinaActual) {
@@ -358,6 +424,16 @@ export const useUserStore = create<UserStore>()(
                     if (!newRutina.nombre.startsWith('Rutina V') && !newRutina.nombre.startsWith('Rutina Compartida')) {
                         const version = historialPrevio.length + 1; // Base version on current history size
                         newRutina.nombre = `Rutina V${version} - ${newRutina.nombre}`;
+                    }
+
+                    if (syncState?.enabled && syncState.syncId) {
+                        const currentVersion = rutinaActual?.syncMeta?.version || newRutina.syncMeta?.version || 0;
+                        newRutina.syncMeta = {
+                            syncId: syncState.syncId,
+                            version: currentVersion + 1,
+                            updatedBy: state.userId || 'unknown',
+                            updatedAt: nowIso,
+                        };
                     }
 
                     rutinaParaActivar = newRutina;
@@ -821,6 +897,15 @@ export const useUserStore = create<UserStore>()(
                     actividadesExtras: [],
                     catalogoExtras: [],
                     partnerIds: [],
+                    activePartnerId: null,
+                    routineSync: {
+                        enabled: false,
+                        partnerId: null,
+                        mode: 'bidirectional',
+                        syncId: null,
+                        updatedAt: new Date().toISOString(),
+                    },
+                    linkSetupPendingPartnerId: null,
                 }
             }),
 
@@ -837,6 +922,15 @@ export const useUserStore = create<UserStore>()(
                     actividadesExtras: [],
                     catalogoExtras: [],
                     partnerIds: [],
+                    activePartnerId: null,
+                    routineSync: {
+                        enabled: false,
+                        partnerId: null,
+                        mode: 'bidirectional',
+                        syncId: null,
+                        updatedAt: new Date().toISOString(),
+                    },
+                    linkSetupPendingPartnerId: null,
                 },
                 activeSession: null
             }),

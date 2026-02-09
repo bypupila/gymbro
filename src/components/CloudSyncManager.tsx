@@ -6,7 +6,7 @@ import { RoutineCopyModal } from './RoutineCopyModal';
 import { requestNotificationPermission, onForegroundMessage } from '../services/pushNotificationService';
 
 export const CloudSyncManager: React.FC = () => {
-    const { userId, perfil, setIsSyncing, setLastSyncError } = useUserStore();
+    const { userId, perfil, setIsSyncing, setLastSyncError, setLinkSetupPendingPartnerId } = useUserStore();
     const lastSavedData = useRef<string>('');
     const syncTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -16,7 +16,7 @@ export const CloudSyncManager: React.FC = () => {
     // State for routine copy modal
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
-    const prevPartnerId = useRef(perfil.partnerId);
+    const prevPartnerId = useRef(perfil.activePartnerId || perfil.partnerId);
 
 
     // Initial Fetch (On App Start or Login)
@@ -131,17 +131,19 @@ export const CloudSyncManager: React.FC = () => {
         return () => clearTimeout(timer);
     }, [userId, perfil.onboardingCompletado]);
 
-    // Effect to detect new partner link
+    // Effect to detect new partner link and trigger first-time setup modal
     useEffect(() => {
-        const currentPartnerId = perfil.partnerId;
+        const currentPartnerId = perfil.activePartnerId || perfil.partnerId;
         const previousPartnerId = prevPartnerId.current;
+        const pendingPartnerId = perfil.linkSetupPendingPartnerId;
+        const partnerIdToPrompt = pendingPartnerId || (currentPartnerId && currentPartnerId !== previousPartnerId ? currentPartnerId : null);
 
-        if (currentPartnerId && currentPartnerId !== previousPartnerId) {
+        if (partnerIdToPrompt) {
             const fetchPartnerDetails = async () => {
-                const partnerProfile = await firebaseService.getProfile(currentPartnerId);
+                const partnerProfile = await firebaseService.getProfile(partnerIdToPrompt);
                 if (partnerProfile && partnerProfile.alias) {
                     setPartnerDetails({
-                        id: currentPartnerId,
+                        id: partnerIdToPrompt,
                         name: partnerProfile.usuario.nombre,
                         alias: partnerProfile.alias,
                     });
@@ -152,7 +154,7 @@ export const CloudSyncManager: React.FC = () => {
         }
 
         prevPartnerId.current = currentPartnerId;
-    }, [perfil.partnerId]);
+    }, [perfil.activePartnerId, perfil.partnerId, perfil.linkSetupPendingPartnerId]);
 
     return (
         <>
@@ -161,7 +163,10 @@ export const CloudSyncManager: React.FC = () => {
                     partnerId={partnerDetails.id}
                     partnerName={partnerDetails.name}
                     partnerAlias={partnerDetails.alias}
-                    onClose={() => setShowRoutineCopyModal(false)}
+                    onClose={() => {
+                        setShowRoutineCopyModal(false);
+                        setLinkSetupPendingPartnerId(null);
+                    }}
                 />
             )}
         </>
