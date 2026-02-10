@@ -55,6 +55,7 @@ export const ProfilePage: React.FC = () => {
     const [partnerAliasInput, setPartnerAliasInput] = useState('');
     const [foundUser, setFoundUser] = useState<{ id: string; name: string; alias: string } | null>(null);
     const [searchStatus, setSearchStatus] = useState<'idle' | 'searching' | 'found' | 'not_found' | 'error' | 'request_sent'>('idle');
+    const [isSendingRequest, setIsSendingRequest] = useState(false);
 
 
     const handleSearchPartner = async () => {
@@ -83,8 +84,20 @@ export const ProfilePage: React.FC = () => {
     };
 
     const handleSendRequest = async () => {
-        if (!foundUser || !userId || !perfil.alias) return;
+        // Validación de datos necesarios
+        if (!foundUser || !userId || !perfil.alias) {
+            toast.error('Faltan datos necesarios para enviar la solicitud.');
+            return;
+        }
 
+        // Validación de auto-vinculación
+        if (userId === foundUser.id) {
+            toast.error('No puedes vincularte contigo mismo.');
+            setSearchStatus('error');
+            return;
+        }
+
+        setIsSendingRequest(true);
         try {
             await firebaseService.sendLinkRequest(userId, perfil.alias, foundUser.id, foundUser.alias || foundUser.name);
             setSearchStatus('request_sent');
@@ -98,17 +111,34 @@ export const ProfilePage: React.FC = () => {
             }, 2000);
         } catch (error) {
             console.error("Error sending link request:", error);
-            const message = error instanceof Error ? error.message : '';
-            if (message === 'ALREADY_HAS_PARTNER') {
+
+            // Capturar tanto message como code de Firestore
+            const errorMessage = error instanceof Error ? error.message : '';
+            const errorCode = (error as any)?.code;
+
+            console.log('[handleSendRequest] Error details:', { errorCode, errorMessage, error });
+
+            // Manejar errores específicos
+            if (errorMessage === 'ALREADY_HAS_PARTNER') {
                 toast.error('Ya tienes un partner activo.');
-            } else if (message === 'RECIPIENT_ALREADY_HAS_PARTNER') {
+            } else if (errorMessage === 'RECIPIENT_ALREADY_HAS_PARTNER') {
                 toast.error('Ese usuario ya tiene un partner activo.');
-            } else if (message === 'ALREADY_LINKED') {
-                toast.error('Ya estan vinculados.');
+            } else if (errorMessage === 'ALREADY_LINKED') {
+                toast.error('Ya están vinculados.');
+            } else if (errorMessage === 'PROFILE_NOT_FOUND') {
+                toast.error('No se pudo encontrar el perfil del usuario.');
+            } else if (errorCode === 'permission-denied') {
+                toast.error('No tienes permisos. Verifica tu sesión y vuelve a intentar.');
+            } else if (errorCode === 'unavailable') {
+                toast.error('Error de conexión. Verifica tu internet.');
             } else {
-                toast.error('Error al enviar la solicitud.');
+                // Mostrar error más detallado para debugging
+                const detailedError = errorMessage || errorCode || 'Desconocido';
+                toast.error(`Error al enviar la solicitud: ${detailedError}`);
             }
             setSearchStatus('error');
+        } finally {
+            setIsSendingRequest(false);
         }
     };
 
@@ -701,8 +731,16 @@ export const ProfilePage: React.FC = () => {
                                     <p style={styles.foundUserName}>{foundUser.name}</p>
                                     <p style={styles.foundUserAlias}>@{foundUser.alias}</p>
                                 </div>
-                                <button style={styles.sendRequestBtn} onClick={handleSendRequest}>
-                                    Enviar Solicitud
+                                <button
+                                    style={{
+                                        ...styles.sendRequestBtn,
+                                        opacity: isSendingRequest ? 0.6 : 1,
+                                        cursor: isSendingRequest ? 'not-allowed' : 'pointer'
+                                    }}
+                                    onClick={handleSendRequest}
+                                    disabled={isSendingRequest}
+                                >
+                                    {isSendingRequest ? 'Enviando...' : 'Enviar Solicitud'}
                                 </button>
                             </div>
                         )}

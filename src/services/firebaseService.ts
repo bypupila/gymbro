@@ -405,18 +405,55 @@ export const firebaseService = {
     // ========== ACCOUNT LINKING ==========
 
     async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string, recipientAlias?: string): Promise<void> {
+        console.log('[sendLinkRequest] Iniciando', { requesterId, requesterAlias, recipientId, recipientAlias });
+
+        // Validación defensiva
+        if (!requesterId || typeof requesterId !== 'string') {
+            console.error('[sendLinkRequest] ID de requester inválido:', requesterId);
+            throw new Error('INVALID_REQUESTER_ID');
+        }
+        if (!recipientId || typeof recipientId !== 'string') {
+            console.error('[sendLinkRequest] ID de recipient inválido:', recipientId);
+            throw new Error('INVALID_RECIPIENT_ID');
+        }
+        if (!requesterAlias || typeof requesterAlias !== 'string') {
+            console.error('[sendLinkRequest] Alias de requester inválido:', requesterAlias);
+            throw new Error('INVALID_REQUESTER_ALIAS');
+        }
+        if (requesterId === recipientId) {
+            console.error('[sendLinkRequest] Intento de auto-vinculación');
+            throw new Error('CANNOT_LINK_SELF');
+        }
+
         const requestsRef = collection(db, 'linkRequests');
-        const [requesterProfileSnap, recipientProfileSnap] = await Promise.all([
-            getDoc(doc(db, 'users', requesterId, 'profile', 'main')),
-            getDoc(doc(db, 'users', recipientId, 'profile', 'main')),
-        ]);
+
+        // PASO 1: Obtener perfiles
+        let requesterProfileSnap, recipientProfileSnap;
+        try {
+            [requesterProfileSnap, recipientProfileSnap] = await Promise.all([
+                getDoc(doc(db, 'users', requesterId, 'profile', 'main')),
+                getDoc(doc(db, 'users', recipientId, 'profile', 'main')),
+            ]);
+            console.log('[sendLinkRequest] Perfiles obtenidos', {
+                requesterExists: requesterProfileSnap.exists(),
+                recipientExists: recipientProfileSnap.exists()
+            });
+        } catch (error) {
+            console.error('[sendLinkRequest] Error obteniendo perfiles:', error);
+            throw error;
+        }
 
         if (!requesterProfileSnap.exists() || !recipientProfileSnap.exists()) {
+            console.error('[sendLinkRequest] Perfil no encontrado', {
+                requesterExists: requesterProfileSnap.exists(),
+                recipientExists: recipientProfileSnap.exists()
+            });
             throw new Error('PROFILE_NOT_FOUND');
         }
         const requesterProfile = requesterProfileSnap.data();
         const recipientProfile = recipientProfileSnap.data();
 
+        // PASO 2: Validar estado de vinculación
         const requesterLinkedId =
             requesterProfile.activePartnerId ||
             requesterProfile.partnerId ||
@@ -430,86 +467,128 @@ export const firebaseService = {
             recipientProfile.partners?.[0]?.id ||
             null;
 
+        console.log('[sendLinkRequest] Estado de vinculación', {
+            requesterLinkedId,
+            recipientLinkedId
+        });
+
         if (requesterLinkedId && requesterLinkedId !== recipientId) {
+            console.error('[sendLinkRequest] Requester ya tiene partner:', requesterLinkedId);
             throw new Error('ALREADY_HAS_PARTNER');
         }
         if (recipientLinkedId && recipientLinkedId !== requesterId) {
+            console.error('[sendLinkRequest] Recipient ya tiene partner:', recipientLinkedId);
             throw new Error('RECIPIENT_ALREADY_HAS_PARTNER');
         }
         if (requesterLinkedId === recipientId && recipientLinkedId === requesterId) {
+            console.error('[sendLinkRequest] Ya están vinculados');
             throw new Error('ALREADY_LINKED');
         }
 
-        const [directPending, reciprocalPending, acceptedDirect, acceptedReciprocal] = await Promise.all([
-            getDocs(query(
-                requestsRef,
-                where('requesterId', '==', requesterId),
-                where('recipientId', '==', recipientId),
-                where('status', '==', 'pending')
-            )),
-            getDocs(query(
-                requestsRef,
-                where('requesterId', '==', recipientId),
-                where('recipientId', '==', requesterId),
-                where('status', '==', 'pending')
-            )),
-            getDocs(query(
-                requestsRef,
-                where('requesterId', '==', requesterId),
-                where('recipientId', '==', recipientId),
-                where('status', '==', 'accepted')
-            )),
-            getDocs(query(
-                requestsRef,
-                where('requesterId', '==', recipientId),
-                where('recipientId', '==', requesterId),
-                where('status', '==', 'accepted')
-            ))
-        ]);
+        // PASO 3: Verificar requests existentes
+        let directPending, reciprocalPending, acceptedDirect, acceptedReciprocal;
+        try {
+            console.log('[sendLinkRequest] Verificando requests existentes...');
+            [directPending, reciprocalPending, acceptedDirect, acceptedReciprocal] = await Promise.all([
+                getDocs(query(
+                    requestsRef,
+                    where('requesterId', '==', requesterId),
+                    where('recipientId', '==', recipientId),
+                    where('status', '==', 'pending')
+                )),
+                getDocs(query(
+                    requestsRef,
+                    where('requesterId', '==', recipientId),
+                    where('recipientId', '==', requesterId),
+                    where('status', '==', 'pending')
+                )),
+                getDocs(query(
+                    requestsRef,
+                    where('requesterId', '==', requesterId),
+                    where('recipientId', '==', recipientId),
+                    where('status', '==', 'accepted')
+                )),
+                getDocs(query(
+                    requestsRef,
+                    where('requesterId', '==', recipientId),
+                    where('recipientId', '==', requesterId),
+                    where('status', '==', 'accepted')
+                ))
+            ]);
+            console.log('[sendLinkRequest] Requests verificadas', {
+                directPending: !directPending.empty,
+                reciprocalPending: !reciprocalPending.empty,
+                acceptedDirect: !acceptedDirect.empty,
+                acceptedReciprocal: !acceptedReciprocal.empty
+            });
+        } catch (error) {
+            console.error('[sendLinkRequest] Error verificando requests:', error);
+            throw error;
+        }
 
         if (!acceptedDirect.empty || !acceptedReciprocal.empty) {
+            console.error('[sendLinkRequest] Ya existe request aceptada');
             throw new Error('ALREADY_LINKED');
         }
 
         if (!directPending.empty) {
+            console.log('[sendLinkRequest] Ya existe request pendiente directa, no se crea duplicada');
             return;
         }
 
+        // PASO 4: Auto-aceptar si hay request recíproca
         if (!reciprocalPending.empty) {
+            console.log('[sendLinkRequest] Request recíproca encontrada, auto-aceptando...');
             const reciprocalDoc = reciprocalPending.docs[0];
             void reciprocalDoc.data() as LinkRequest;
 
-            // Update the reciprocal request status
-            await updateDoc(reciprocalDoc.ref, {
-                status: 'accepted',
-                resolvedAt: new Date().toISOString(),
-            });
+            try {
+                // Update the reciprocal request status
+                await updateDoc(reciprocalDoc.ref, {
+                    status: 'accepted',
+                    resolvedAt: new Date().toISOString(),
+                });
+                console.log('[sendLinkRequest] Request recíproca actualizada a accepted');
 
-            // Add partner info to both users' profiles
-            await Promise.all([
-                this.upsertOwnPartner(requesterId, {
-                    id: recipientId,
-                    alias: recipientAlias || recipientId,
-                    nombre: recipientAlias || recipientId,
-                }),
-                this.upsertOwnPartner(recipientId, {
-                    id: requesterId,
-                    alias: requesterAlias,
-                    nombre: requesterAlias,
-                })
-            ]);
+                // Add partner info to both users' profiles
+                await Promise.all([
+                    this.upsertOwnPartner(requesterId, {
+                        id: recipientId,
+                        alias: recipientAlias || recipientId,
+                        nombre: recipientAlias || recipientId,
+                    }),
+                    this.upsertOwnPartner(recipientId, {
+                        id: requesterId,
+                        alias: requesterAlias,
+                        nombre: requesterAlias,
+                    })
+                ]);
+                console.log('[sendLinkRequest] ✓ Partners vinculados exitosamente (auto-aceptación)');
+            } catch (error) {
+                console.error('[sendLinkRequest] Error en auto-aceptación:', error);
+                throw error;
+            }
 
             return;
         }
 
-        await addDoc(requestsRef, {
-            requesterId,
-            requesterAlias,
-            recipientId,
-            recipientAlias: recipientAlias || '',
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-        });
+        // PASO 5: Crear nueva request
+        try {
+            const linkRequestData = {
+                requesterId,
+                requesterAlias,
+                recipientId,
+                recipientAlias: recipientAlias || '',
+                status: 'pending' as const,
+                createdAt: new Date().toISOString(),
+            };
+            console.log('[sendLinkRequest] Creando documento de request:', linkRequestData);
+            await addDoc(requestsRef, linkRequestData);
+            console.log('[sendLinkRequest] ✓ Solicitud creada exitosamente');
+        } catch (error) {
+            console.error('[sendLinkRequest] Error al crear documento:', error);
+            throw error;
+        }
     },
 
     onLinkRequestsChange(userId: string, callback: (requests: LinkRequest[]) => void) {
@@ -594,6 +673,31 @@ export const firebaseService = {
                     acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
                 } as AcceptedPartner;
             });
+
+            // Auto-actualizar perfil del requester cuando detecta nueva request aceptada
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added' || change.type === 'modified') {
+                    const data = change.doc.data() as LinkRequest;
+                    if (data.status === 'accepted') {
+                        const alias = data.recipientAlias || data.recipientId;
+                        console.log('[onAcceptedLinkRequestsChange] Detectada request aceptada, actualizando perfil...', {
+                            recipientId: data.recipientId,
+                            alias
+                        });
+                        // Actualizar el perfil del requester (usuario actual) de forma asíncrona
+                        this.upsertOwnPartner(userId, {
+                            id: data.recipientId,
+                            alias,
+                            nombre: alias,
+                        }).then(() => {
+                            console.log('[onAcceptedLinkRequestsChange] ✓ Perfil del requester actualizado');
+                        }).catch((error) => {
+                            console.error('[onAcceptedLinkRequestsChange] Error actualizando perfil:', error);
+                        });
+                    }
+                }
+            });
+
             emit();
         });
 
@@ -669,27 +773,45 @@ export const firebaseService = {
     },
 
     async acceptLinkRequest(request: LinkRequest): Promise<void> {
+        console.log('[acceptLinkRequest] Iniciando aceptación', request);
+
+        // Obtener alias del recipient si no está presente
+        let recipientAlias = request.recipientAlias;
+        if (!recipientAlias) {
+            console.log('[acceptLinkRequest] recipientAlias no presente, obteniendo desde perfil...');
+            try {
+                const recipientUserDoc = await getDoc(doc(db, 'users', request.recipientId));
+                if (recipientUserDoc.exists()) {
+                    recipientAlias = recipientUserDoc.data()?.displayName || request.recipientId;
+                    console.log('[acceptLinkRequest] recipientAlias obtenido:', recipientAlias);
+                }
+            } catch (error) {
+                console.error('[acceptLinkRequest] Error obteniendo recipientAlias:', error);
+                recipientAlias = request.recipientId;
+            }
+        }
+
         const requestRef = doc(db, 'linkRequests', request.id);
         await updateDoc(requestRef, {
             status: 'accepted',
             resolvedAt: new Date().toISOString(),
+            recipientAlias: recipientAlias, // Guardar el alias para que el requester lo vea
         });
+        console.log('[acceptLinkRequest] Request actualizada a accepted');
 
-        // Add partner to BOTH users' profiles
-        await Promise.all([
-            // Add requester to recipient's profile
-            this.upsertOwnPartner(request.recipientId, {
+        // Solo actualizar el perfil del usuario que está aceptando (recipient)
+        // El requester actualizará su propio perfil cuando detecte la aceptación
+        try {
+            await this.upsertOwnPartner(request.recipientId, {
                 id: request.requesterId,
                 alias: request.requesterAlias,
                 nombre: request.requesterAlias,
-            }),
-            // Add recipient to requester's profile
-            this.upsertOwnPartner(request.requesterId, {
-                id: request.recipientId,
-                alias: request.recipientAlias || request.recipientId,
-                nombre: request.recipientAlias || request.recipientId,
-            })
-        ]);
+            });
+            console.log('[acceptLinkRequest] ✓ Partner agregado al perfil del recipient');
+        } catch (error) {
+            console.error('[acceptLinkRequest] Error actualizando perfil:', error);
+            throw error;
+        }
     },
 
     async declineLinkRequest(requestId: string): Promise<void> {
