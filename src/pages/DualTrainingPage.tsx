@@ -1,10 +1,10 @@
 // =====================================================
-// GymBro PWA - Dual Training Page (Multi-Partner)
+// GymBro PWA - Dual Training Page (Single Partner)
 // =====================================================
 
 import React from 'react';
 import Colors from '@/styles/colors';
-import { ChevronLeft, Users, Zap, Heart, ShieldCheck, Share2, UserX, UserPlus } from 'lucide-react';
+import { ChevronLeft, Users, Zap, Heart, ShieldCheck, Share2, UserX, UserPlus, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
 import { useUserStore, PartnerInfo } from '@/stores/userStore';
@@ -30,13 +30,17 @@ export const DualTrainingPage: React.FC = () => {
             setConnectError('Configura tu alias primero en tu perfil.');
             return;
         }
+        if (hasPartners) {
+            setConnectError('Solo puedes tener un partner activo. Desvincula primero.');
+            return;
+        }
         setIsConnecting(true);
         setConnectError('');
 
         try {
             const user = await firebaseService.findUserByAlias(aliasInput.trim());
 
-            if (!user || user.id === user.alias) {
+            if (!user) {
                 setConnectError('Alias no encontrado');
                 return;
             }
@@ -57,8 +61,16 @@ export const DualTrainingPage: React.FC = () => {
             setAliasInput('');
         } catch (error: unknown) {
             console.error(error);
-            const errorMessage = error instanceof Error ? error.message : "Error al conectar";
-            setConnectError(errorMessage);
+            const errorMessage = error instanceof Error ? error.message : 'Error al conectar';
+            if (errorMessage === 'ALREADY_HAS_PARTNER') {
+                setConnectError('Ya tienes un partner activo.');
+            } else if (errorMessage === 'RECIPIENT_ALREADY_HAS_PARTNER') {
+                setConnectError('Ese usuario ya tiene un partner activo.');
+            } else if (errorMessage === 'ALREADY_LINKED') {
+                setConnectError('Ya estan vinculados.');
+            } else {
+                setConnectError(errorMessage);
+            }
         } finally {
             setIsConnecting(false);
         }
@@ -107,13 +119,23 @@ export const DualTrainingPage: React.FC = () => {
             setRoutineSync({
                 enabled: false,
                 partnerId: null,
-                mode: 'bidirectional',
+                mode: 'manual',
                 syncId: null,
                 updatedAt: new Date().toISOString(),
             });
             toast.success('Sincronizacion desactivada');
         } catch {
             toast.error('No se pudo desactivar la sincronizacion');
+        }
+    };
+
+    const handleSyncNow = async () => {
+        if (!userId || !perfil.routineSync?.partnerId) return;
+        try {
+            await firebaseService.syncRoutineNow(userId, perfil.routineSync.partnerId);
+            toast.success('Sincronizacion manual solicitada');
+        } catch {
+            toast.error('No se pudo sincronizar ahora');
         }
     };
 
@@ -125,7 +147,7 @@ export const DualTrainingPage: React.FC = () => {
                     <ChevronLeft size={24} color={Colors.text} />
                 </button>
                 <div style={styles.headerTitleContainer}>
-                    <p style={styles.headerLabel}>SOCIAL SYNERGY</p>
+                    <p style={styles.headerLabel}>SOCIAL SYNC</p>
                     <h1 style={styles.headerTitle}>Entrenamiento Dual</h1>
                 </div>
                 <button style={styles.actionBtn}>
@@ -147,26 +169,45 @@ export const DualTrainingPage: React.FC = () => {
                         <h2 style={styles.synergyTitle}>Tu Red de Entrenamiento</h2>
                         <p style={styles.synergyDesc}>
                             {hasPartners
-                                ? `Tienes ${partners.length} partner${partners.length !== 1 ? 's' : ''} vinculado${partners.length !== 1 ? 's' : ''}. Elige con quien entrenar al iniciar tu sesion.`
-                                : "Conecta con tus partners para entrenar juntos y motivarse mutuamente."
+                                ? 'Tienes un partner vinculado. Puedes entrenar juntos y sincronizar rutina manualmente.'
+                                : 'Conecta con un partner para entrenar juntos y motivarse mutuamente.'
                             }
                         </p>
                         {isSyncEnabled && (
-                            <button
-                                onClick={handleBreakSync}
-                                style={{
-                                    marginTop: '10px',
-                                    borderRadius: '8px',
-                                    padding: '8px 12px',
-                                    border: `1px solid ${Colors.warning}`,
-                                    color: Colors.warning,
-                                    background: `${Colors.warning}15`,
-                                    fontSize: '12px',
-                                    fontWeight: 700,
-                                }}
-                            >
-                                Romper sincronizacion
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={handleSyncNow}
+                                    style={{
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        border: `1px solid ${Colors.primary}`,
+                                        color: Colors.primary,
+                                        background: `${Colors.primary}15`,
+                                        fontSize: '12px',
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                    }}
+                                >
+                                    <RefreshCw size={12} />
+                                    Sincronizar ahora
+                                </button>
+                                <button
+                                    onClick={handleBreakSync}
+                                    style={{
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        border: `1px solid ${Colors.warning}`,
+                                        color: Colors.warning,
+                                        background: `${Colors.warning}15`,
+                                        fontSize: '12px',
+                                        fontWeight: 700,
+                                    }}
+                                >
+                                    Romper sincronizacion
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -215,7 +256,7 @@ export const DualTrainingPage: React.FC = () => {
                                     >
                                         <span style={styles.userName}>{partner.nombre}</span>
                                         <span style={styles.userStatus}>
-                                            @{partner.alias}{activePartnerId === partner.id ? ' • Activo' : ''}
+                                            @{partner.alias}{activePartnerId === partner.id ? ' - Activo' : ''}
                                         </span>
                                     </div>
                                     <button
@@ -299,6 +340,7 @@ export const DualTrainingPage: React.FC = () => {
                                 value={aliasInput}
                                 onChange={e => setAliasInput(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleConnect()}
+                                disabled={hasPartners}
                             />
                             <button
                                 style={{
@@ -310,11 +352,16 @@ export const DualTrainingPage: React.FC = () => {
                                     border: 'none'
                                 }}
                                 onClick={handleConnect}
-                                disabled={isConnecting}
+                                disabled={isConnecting || hasPartners}
                             >
                                 {isConnecting ? '...' : <Zap size={18} />}
                             </button>
                         </div>
+                        {hasPartners && (
+                            <p style={{ color: Colors.textTertiary, fontSize: '12px', marginTop: '8px' }}>
+                                Ya tienes un partner activo. Desvincula para vincular otro.
+                            </p>
+                        )}
                         {connectError && <p style={{ color: Colors.error, fontSize: '12px', marginTop: '8px' }}>{connectError}</p>}
                     </div>
                 </Card>
@@ -327,8 +374,8 @@ export const DualTrainingPage: React.FC = () => {
                         <Heart size={20} color={Colors.error} />
                     </div>
                     <div style={styles.featureContent}>
-                        <h4 style={styles.featureTitle}>Multiples Partners</h4>
-                        <p style={styles.featureDesc}>Vincularte con varias personas y elige con quien entrenar cada dia.</p>
+                        <h4 style={styles.featureTitle}>Vinculo 1 a 1</h4>
+                        <p style={styles.featureDesc}>Un partner activo para mantener el flujo simple y estable.</p>
                     </div>
                 </div>
                 <div style={styles.featureItem}>
@@ -336,8 +383,8 @@ export const DualTrainingPage: React.FC = () => {
                         <ShieldCheck size={20} color="#C026D3" />
                     </div>
                     <div style={styles.featureContent}>
-                        <h4 style={styles.featureTitle}>Dos Modos de Entrenamiento</h4>
-                        <p style={styles.featureDesc}>Mismo celular o cada quien el suyo con sincronizacion en tiempo real.</p>
+                        <h4 style={styles.featureTitle}>Sync Manual Eficiente</h4>
+                        <p style={styles.featureDesc}>Sincroniza la rutina cuando quieras, sin costo de tiempo real continuo.</p>
                     </div>
                 </div>
             </div>

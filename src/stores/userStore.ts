@@ -150,7 +150,7 @@ export interface PerfilCompleto {
     routineSync?: {
         enabled: boolean;
         partnerId: string | null;
-        mode: 'bidirectional';
+        mode: 'manual' | 'auto';
         syncId: string | null;
         updatedAt: string;
     };
@@ -202,6 +202,7 @@ export interface ExerciseTracking {
     targetReps: string;
     sets: SetTracking[];
     categoria?: 'calentamiento' | 'maquina'; // For separating warmup from main exercises
+    imagen?: string;
     isCompleted?: boolean;
     isOptional?: boolean;
     isSkipped?: boolean;
@@ -296,7 +297,7 @@ export const useUserStore = create<UserStore>()(
                 routineSync: {
                     enabled: false,
                     partnerId: null,
-                    mode: 'bidirectional',
+                    mode: 'manual',
                     syncId: null,
                     updatedAt: new Date().toISOString(),
                 },
@@ -316,7 +317,7 @@ export const useUserStore = create<UserStore>()(
                     ...state.perfil,
                     partnerId: id,
                     activePartnerId: id || state.perfil.activePartnerId || null,
-                    partnerIds: id ? Array.from(new Set([...(state.perfil.partnerIds || []), id])) : (state.perfil.partnerIds || [])
+                    partnerIds: id ? [id] : []
                 }
             })),
             setActivePartnerId: (id) => set((state) => ({
@@ -326,14 +327,15 @@ export const useUserStore = create<UserStore>()(
                 }
             })),
             setPartners: (partners) => set((state) => {
-                const nextActivePartnerId = state.perfil.activePartnerId && partners.some((p) => p.id === state.perfil.activePartnerId)
+                const normalizedPartners = partners.slice(0, 1);
+                const nextActivePartnerId = state.perfil.activePartnerId && normalizedPartners.some((p) => p.id === state.perfil.activePartnerId)
                     ? state.perfil.activePartnerId
-                    : (partners[0]?.id || null);
-                const nextRoutineSync = state.perfil.routineSync?.partnerId && !partners.some((p) => p.id === state.perfil.routineSync?.partnerId)
+                    : (normalizedPartners[0]?.id || null);
+                const nextRoutineSync = state.perfil.routineSync?.partnerId && !normalizedPartners.some((p) => p.id === state.perfil.routineSync?.partnerId)
                     ? {
                         enabled: false,
                         partnerId: null,
-                        mode: 'bidirectional' as const,
+                        mode: 'manual' as const,
                         syncId: null,
                         updatedAt: new Date().toISOString(),
                     }
@@ -342,24 +344,22 @@ export const useUserStore = create<UserStore>()(
                 return {
                     perfil: {
                         ...state.perfil,
-                        partners,
-                        partnerIds: partners.map((p) => p.id),
-                        partnerId: partners[0]?.id || undefined,
+                        partners: normalizedPartners,
+                        partnerIds: normalizedPartners.map((p) => p.id),
+                        partnerId: normalizedPartners[0]?.id || undefined,
                         activePartnerId: nextActivePartnerId,
                         routineSync: nextRoutineSync,
                     }
                 };
             }),
             addPartner: (partner) => set((state) => {
-                const current = state.perfil.partners || [];
-                if (current.some(p => p.id === partner.id)) return state;
                 return {
                     perfil: {
                         ...state.perfil,
-                        partners: [...current, partner],
-                        partnerId: state.perfil.partnerId || partner.id,
-                        partnerIds: Array.from(new Set([...(state.perfil.partnerIds || []), partner.id])),
-                        activePartnerId: state.perfil.activePartnerId || partner.id,
+                        partners: [partner],
+                        partnerId: partner.id,
+                        partnerIds: [partner.id],
+                        activePartnerId: partner.id,
                         linkSetupPendingPartnerId: partner.id
                     }
                 };
@@ -372,7 +372,7 @@ export const useUserStore = create<UserStore>()(
                     ? {
                         enabled: false,
                         partnerId: null,
-                        mode: 'bidirectional' as const,
+                        mode: 'manual' as const,
                         syncId: null,
                         updatedAt: new Date().toISOString(),
                     }
@@ -444,7 +444,7 @@ export const useUserStore = create<UserStore>()(
                         newRutina.nombre = `Rutina V${version} - ${newRutina.nombre}`;
                     }
 
-                    if (syncState?.enabled && syncState.syncId) {
+                    if (syncState?.enabled && syncState.syncId && syncState.mode === 'auto') {
                         const currentVersion = rutinaActual?.syncMeta?.version || newRutina.syncMeta?.version || 0;
                         newRutina.syncMeta = {
                             syncId: syncState.syncId,
@@ -526,6 +526,7 @@ export const useUserStore = create<UserStore>()(
                     targetSeries: ex.series,
                     targetReps: ex.repeticiones,
                     categoria: ex.categoria,
+                    imagen: ex.imagen,
                     isOptional: ex.isOptional,
                     isCompleted: false,
                     sets: Array.from({ length: ex.series }, () => ({
@@ -654,6 +655,7 @@ export const useUserStore = create<UserStore>()(
                         targetSeries: newExercise.series,
                         targetReps: newExercise.repeticiones,
                         categoria: newExercise.categoria,
+                        imagen: newExercise.imagen,
                         isCompleted: false,
                         sets: Array.from({ length: newExercise.series }, () => ({
                             completed: false,
@@ -677,6 +679,7 @@ export const useUserStore = create<UserStore>()(
                     targetSeries: newExercise.series,
                     targetReps: newExercise.repeticiones,
                     categoria: newExercise.categoria,
+                    imagen: newExercise.imagen,
                     isCompleted: false,
                     sets: Array.from({ length: newExercise.series }, () => ({
                         completed: false,
@@ -919,7 +922,7 @@ export const useUserStore = create<UserStore>()(
                     routineSync: {
                         enabled: false,
                         partnerId: null,
-                        mode: 'bidirectional',
+                        mode: 'manual',
                         syncId: null,
                         updatedAt: new Date().toISOString(),
                     },
@@ -944,7 +947,7 @@ export const useUserStore = create<UserStore>()(
                     routineSync: {
                         enabled: false,
                         partnerId: null,
-                        mode: 'bidirectional',
+                        mode: 'manual',
                         syncId: null,
                         updatedAt: new Date().toISOString(),
                     },

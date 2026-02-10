@@ -16,12 +16,6 @@ function getProfileRef(userId: string) {
     return db.collection('users').doc(userId).collection('profile').doc('main');
 }
 
-function uniqPartners(partners: PartnerInfo[]): PartnerInfo[] {
-    const map = new Map<string, PartnerInfo>();
-    partners.forEach((p) => map.set(p.id, p));
-    return Array.from(map.values());
-}
-
 async function sendDataPushToUser(
     userId: string,
     title: string,
@@ -124,40 +118,27 @@ export const onLinkRequestAccepted = functions.firestore
 
         if (!requesterProfileSnap.exists || !recipientProfileSnap.exists) return null;
 
-        const requesterProfile = requesterProfileSnap.data() || {};
-        const recipientProfile = recipientProfileSnap.data() || {};
         const requesterAlias = (requesterUserSnap.data()?.displayName as string) || after.requesterAlias || 'Partner';
         const recipientAlias = (recipientUserSnap.data()?.displayName as string) || 'Partner';
-
-        const requesterPartners = uniqPartners((requesterProfile.partners || []) as PartnerInfo[]);
-        const recipientPartners = uniqPartners((recipientProfile.partners || []) as PartnerInfo[]);
-
-        if (!requesterPartners.some((p) => p.id === recipientId)) {
-            requesterPartners.push({ id: recipientId, alias: recipientAlias, nombre: recipientAlias });
-        }
-        if (!recipientPartners.some((p) => p.id === requesterId)) {
-            recipientPartners.push({ id: requesterId, alias: requesterAlias, nombre: requesterAlias });
-        }
-
-        const requesterPartnerIds = Array.from(new Set([...(requesterProfile.partnerIds || []), recipientId]));
-        const recipientPartnerIds = Array.from(new Set([...(recipientProfile.partnerIds || []), requesterId]));
+        const requesterPartner = { id: recipientId, alias: recipientAlias, nombre: recipientAlias };
+        const recipientPartner = { id: requesterId, alias: requesterAlias, nombre: requesterAlias };
 
         const batch = db.batch();
         batch.set(getProfileRef(requesterId), {
             partnerId: recipientId,
-            activePartnerId: requesterProfile.activePartnerId || recipientId,
+            activePartnerId: recipientId,
             linkSetupPendingPartnerId: recipientId,
-            partnerIds: requesterPartnerIds,
-            partners: requesterPartners,
+            partnerIds: [recipientId],
+            partners: [requesterPartner],
             updatedAt: new Date().toISOString(),
         }, { merge: true });
 
         batch.set(getProfileRef(recipientId), {
             partnerId: requesterId,
-            activePartnerId: recipientProfile.activePartnerId || requesterId,
+            activePartnerId: requesterId,
             linkSetupPendingPartnerId: requesterId,
-            partnerIds: recipientPartnerIds,
-            partners: recipientPartners,
+            partnerIds: [requesterId],
+            partners: [recipientPartner],
             updatedAt: new Date().toISOString(),
         }, { merge: true });
 
@@ -173,7 +154,7 @@ export const onRelationshipActionCreated = functions.firestore
 
         const sourceUserId = action.sourceUserId as string;
         const targetUserId = action.targetUserId as string;
-        const actionType = action.actionType as 'UNLINK' | 'BREAK_SYNC';
+        const actionType = action.actionType as 'UNLINK' | 'BREAK_SYNC' | 'SYNC_NOW';
         if (!sourceUserId || !targetUserId) return null;
 
         const [sourceProfileSnap, targetProfileSnap] = await Promise.all([
@@ -205,7 +186,7 @@ export const onRelationshipActionCreated = functions.firestore
                 routineSync: {
                     enabled: false,
                     partnerId: null,
-                    mode: 'bidirectional',
+                    mode: 'manual',
                     syncId: null,
                     updatedAt: new Date().toISOString(),
                 },
@@ -222,7 +203,7 @@ export const onRelationshipActionCreated = functions.firestore
                 routineSync: {
                     enabled: false,
                     partnerId: null,
-                    mode: 'bidirectional',
+                    mode: 'manual',
                     syncId: null,
                     updatedAt: new Date().toISOString(),
                 },
@@ -234,7 +215,7 @@ export const onRelationshipActionCreated = functions.firestore
             const syncPayload = {
                 enabled: false,
                 partnerId: null,
-                mode: 'bidirectional',
+                mode: 'manual',
                 syncId: null,
                 updatedAt: new Date().toISOString(),
             };
@@ -247,6 +228,46 @@ export const onRelationshipActionCreated = functions.firestore
                 'Tu partner rompio la sincronizacion de rutina.',
                 { type: 'sync_break', sourceUserId }
             );
+        }
+
+        if (actionType === 'SYNC_NOW') {
+            const sourceSync = sourceProfile.routineSync || {};
+            const targetSync = targetProfile.routineSync || {};
+            const sourceRoutine = sourceProfile.rutina;
+
+            const canSyncNow =
+                Boolean(sourceRoutine) &&
+                Boolean(sourceSync.enabled) &&
+                Boolean(targetSync.enabled) &&
+                sourceSync.partnerId === targetUserId &&
+                targetSync.partnerId === sourceUserId &&
+                Boolean(sourceSync.syncId) &&
+                sourceSync.syncId === targetSync.syncId;
+
+            if (!canSyncNow) {
+                batch.set(snap.ref, {
+                    status: 'failed',
+                    processedAt: new Date().toISOString(),
+                    error: 'SYNC_NOT_ALLOWED',
+                }, { merge: true });
+                await batch.commit();
+                return null;
+            }
+
+            const syncedRoutine = {
+                ...sourceRoutine,
+                syncMeta: {
+                    syncId: sourceSync.syncId as string,
+                    version: Number(sourceRoutine.syncMeta?.version || 0) + 1,
+                    updatedBy: sourceUserId,
+                    updatedAt: new Date().toISOString(),
+                },
+            };
+
+            batch.set(getProfileRef(targetUserId), {
+                rutina: syncedRoutine,
+                updatedAt: new Date().toISOString(),
+            }, { merge: true });
         }
 
         batch.set(snap.ref, {
@@ -287,70 +308,111 @@ export const onRoutineRequestAccepted = functions.firestore
 
         if (!before || !after) return null;
         if (!(before.status === 'pending' && after.status === 'accepted')) return null;
+        if (after.applyStatus === 'applied') return null;
 
         const sourceUserId = after.sourceUserId as string;
         const targetUserId = after.targetUserId as string;
         const syncAfterAccept = Boolean(after.syncAfterAccept);
         if (!sourceUserId || !targetUserId) return null;
 
-        const [sourceProfileSnap, targetProfileSnap] = await Promise.all([
-            getProfileRef(sourceUserId).get(),
-            getProfileRef(targetUserId).get(),
-        ]);
+        const claimed = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(change.after.ref);
+            const data = snap.data() || {};
+            if (data.applyStatus === 'applied' || data.applyStatus === 'processing') return false;
+            tx.set(change.after.ref, {
+                applyStatus: 'processing',
+                applyStartedAt: new Date().toISOString(),
+            }, { merge: true });
+            return true;
+        });
 
-        if (!sourceProfileSnap.exists || !targetProfileSnap.exists) return null;
+        if (!claimed) return null;
 
-        const sourceProfile = sourceProfileSnap.data() || {};
-        const targetProfile = targetProfileSnap.data() || {};
-        const sourceRoutine = sourceProfile.rutina;
+        try {
+            const [sourceProfileSnap, targetProfileSnap] = await Promise.all([
+                getProfileRef(sourceUserId).get(),
+                getProfileRef(targetUserId).get(),
+            ]);
 
-        if (!sourceRoutine) {
-            await change.after.ref.set({ status: 'declined', resolvedAt: new Date().toISOString() }, { merge: true });
-            return null;
-        }
+            if (!sourceProfileSnap.exists || !targetProfileSnap.exists) {
+                await change.after.ref.set({
+                    applyStatus: 'failed',
+                    applyError: 'PROFILE_NOT_FOUND',
+                    appliedAt: new Date().toISOString(),
+                }, { merge: true });
+                return null;
+            }
 
-        const syncId = syncAfterAccept
-            ? ((sourceProfile.routineSync?.syncId as string) || `sync_${Date.now()}_${context.params.requestId}`)
-            : null;
+            const sourceProfile = sourceProfileSnap.data() || {};
+            const sourceRoutine = sourceProfile.rutina;
 
-        const syncedRoutine = {
-            ...sourceRoutine,
-            syncMeta: syncId
-                ? {
+            if (!sourceRoutine) {
+                await change.after.ref.set({
+                    status: 'declined',
+                    resolvedAt: new Date().toISOString(),
+                    applyStatus: 'failed',
+                    applyError: 'SOURCE_ROUTINE_NOT_FOUND',
+                    appliedAt: new Date().toISOString(),
+                }, { merge: true });
+                return null;
+            }
+
+            const syncId = syncAfterAccept
+                ? ((sourceProfile.routineSync?.syncId as string) || `sync_${Date.now()}_${context.params.requestId}`)
+                : null;
+
+            const syncedRoutine: Record<string, unknown> = {
+                ...sourceRoutine,
+                syncMeta: syncId
+                    ? {
+                        syncId,
+                        version: Number(sourceRoutine.syncMeta?.version || 1),
+                        updatedBy: sourceUserId,
+                        updatedAt: new Date().toISOString(),
+                    }
+                    : null,
+            };
+
+            const batch = db.batch();
+            batch.set(getProfileRef(targetUserId), {
+                rutina: syncedRoutine,
+                updatedAt: new Date().toISOString(),
+            }, { merge: true });
+
+            if (syncAfterAccept && syncId) {
+                const sourceSync = {
+                    enabled: true,
+                    partnerId: targetUserId,
+                    mode: 'manual',
                     syncId,
-                    version: Number(sourceRoutine.syncMeta?.version || 1),
-                    updatedBy: sourceUserId,
                     updatedAt: new Date().toISOString(),
-                }
-                : sourceRoutine.syncMeta,
-        };
+                };
+                const targetSync = {
+                    enabled: true,
+                    partnerId: sourceUserId,
+                    mode: 'manual',
+                    syncId,
+                    updatedAt: new Date().toISOString(),
+                };
+                batch.set(getProfileRef(sourceUserId), { routineSync: sourceSync }, { merge: true });
+                batch.set(getProfileRef(targetUserId), { routineSync: targetSync }, { merge: true });
+            }
 
-        const batch = db.batch();
-        batch.set(getProfileRef(targetUserId), {
-            rutina: syncedRoutine,
-            updatedAt: new Date().toISOString(),
-        }, { merge: true });
+            batch.set(change.after.ref, {
+                applyStatus: 'applied',
+                appliedAt: new Date().toISOString(),
+                applyError: null,
+            }, { merge: true });
 
-        if (syncAfterAccept && syncId) {
-            const sourceSync = {
-                enabled: true,
-                partnerId: targetUserId,
-                mode: 'bidirectional',
-                syncId,
-                updatedAt: new Date().toISOString(),
-            };
-            const targetSync = {
-                enabled: true,
-                partnerId: sourceUserId,
-                mode: 'bidirectional',
-                syncId,
-                updatedAt: new Date().toISOString(),
-            };
-            batch.set(getProfileRef(sourceUserId), { routineSync: sourceSync }, { merge: true });
-            batch.set(getProfileRef(targetUserId), { routineSync: targetSync }, { merge: true });
+            await batch.commit();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+            await change.after.ref.set({
+                applyStatus: 'failed',
+                applyError: message,
+                appliedAt: new Date().toISOString(),
+            }, { merge: true });
         }
-
-        await batch.commit();
         return null;
     });
 
@@ -366,7 +428,7 @@ export const onProfileRoutineChanged = functions.firestore
 
         const sourceRoutine = after.rutina;
         const sourceSync = after.routineSync;
-        if (!sourceRoutine || !sourceSync?.enabled) return null;
+        if (!sourceRoutine || !sourceSync?.enabled || sourceSync.mode !== 'auto') return null;
         if (!sourceRoutine.syncMeta || !sourceSync.syncId) return null;
         if (sourceRoutine.syncMeta.syncId !== sourceSync.syncId) return null;
         if (sourceRoutine.syncMeta.updatedBy !== userId) return null;
@@ -380,7 +442,7 @@ export const onProfileRoutineChanged = functions.firestore
 
         const partnerData = partnerSnap.data() || {};
         const partnerSync = partnerData.routineSync;
-        if (!partnerSync?.enabled || partnerSync.syncId !== sourceSync.syncId) return null;
+        if (!partnerSync?.enabled || partnerSync.mode !== 'auto' || partnerSync.syncId !== sourceSync.syncId) return null;
 
         const partnerVersion = Number(partnerData.rutina?.syncMeta?.version || 0);
         const sourceVersion = Number(sourceRoutine.syncMeta.version || 0);

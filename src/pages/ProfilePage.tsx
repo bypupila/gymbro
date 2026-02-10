@@ -69,21 +69,13 @@ export const ProfilePage: React.FC = () => {
         setFoundUser(null);
         try {
             const user = await firebaseService.findUserByAlias(partnerAliasInput.trim());
-            // The original findUserByAlias could return a fallback object with the alias as ID.
-            // We need to ensure a real user document was found. A simple way is to check if id and alias are different,
-            // or better, ensure getProfile for that ID returns a valid profile.
-            // For now, let's assume if an ID is returned and it's not the same as the alias, it's a valid user.
-            if (user && user.id !== user.alias) {
-                const userProfile = await firebaseService.getProfile(user.id);
-                if (userProfile) {
-                    setFoundUser(user);
-                    setSearchStatus('found');
-                } else {
-                    setSearchStatus('not_found');
-                }
-            } else {
+            if (!user) {
                 setSearchStatus('not_found');
+                return;
             }
+
+            setFoundUser(user);
+            setSearchStatus('found');
         } catch (error) {
             console.error("Error finding user:", error);
             setSearchStatus('error');
@@ -106,7 +98,16 @@ export const ProfilePage: React.FC = () => {
             }, 2000);
         } catch (error) {
             console.error("Error sending link request:", error);
-            toast.error('Error al enviar la solicitud.');
+            const message = error instanceof Error ? error.message : '';
+            if (message === 'ALREADY_HAS_PARTNER') {
+                toast.error('Ya tienes un partner activo.');
+            } else if (message === 'RECIPIENT_ALREADY_HAS_PARTNER') {
+                toast.error('Ese usuario ya tiene un partner activo.');
+            } else if (message === 'ALREADY_LINKED') {
+                toast.error('Ya estan vinculados.');
+            } else {
+                toast.error('Error al enviar la solicitud.');
+            }
             setSearchStatus('error');
         }
     };
@@ -268,8 +269,8 @@ export const ProfilePage: React.FC = () => {
         { icon: Heart, label: 'Mis Rutinas Activas', color: '#3B82F6', action: () => navigate('/routine') },
         { icon: Calendar, label: 'Configurar Horario', color: '#8B5CF6', action: () => navigate('/profile/schedule') },
 
-        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('Próximamente ð§', { icon: 'ð' }) },
-        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('Próximamente ð§', { icon: 'ð¡ï¸' }) },
+        { icon: Bell, label: 'Recordatorios de Gym', color: '#10B981', action: () => toast('Proximamente') },
+        { icon: Shield, label: 'Privacidad y Datos', color: '#F59E0B', action: () => toast('Proximamente') },
     ];
 
     return (
@@ -322,7 +323,7 @@ export const ProfilePage: React.FC = () => {
                         />
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <p style={styles.userLevel}>
-                                {userInfo.nivel.toUpperCase()} â¢ {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                                {userInfo.nivel.toUpperCase()} - {userInfo.objetivo.replace('_', ' ').toUpperCase()}
                             </p>
                         </div>
                         <div style={{
@@ -356,7 +357,7 @@ export const ProfilePage: React.FC = () => {
                         <h2 style={styles.userName}>{userInfo.nombre || 'GymBro'}</h2>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <p style={styles.userLevel}>
-                                {userInfo.nivel.toUpperCase()} â¢ {userInfo.objetivo.replace('_', ' ').toUpperCase()}
+                                {userInfo.nivel.toUpperCase()} - {userInfo.objetivo.replace('_', ' ').toUpperCase()}
                             </p>
                             {isSyncing ? (
                                 <Loader2 size={14} color={Colors.primary} className="animate-spin" />
@@ -560,7 +561,7 @@ export const ProfilePage: React.FC = () => {
                                         <div style={{ flex: 1 }}>
                                             <p style={styles.historyName}>{r.nombre.split(' - ')[1] || r.nombre}</p>
                                             <p style={styles.historyDate}>
-                                                {new Date(r.fechaInicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} â¢ {r.ejercicios.length} ejercicios
+                                                {new Date(r.fechaInicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} - {r.ejercicios.length} ejercicios
                                             </p>
                                         </div>
                                         <button
@@ -635,7 +636,7 @@ export const ProfilePage: React.FC = () => {
                 showResetConfirm && (
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
-                            <div style={styles.modalIcon}>â ï¸</div>
+                            <div style={styles.modalIcon}><AlertCircle size={24} color={Colors.warning} /></div>
                             <h3 style={styles.modalTitle}>¿Reiniciar App?</h3>
                             <p style={styles.modalText}>
                                 Esto borrará todos tus datos: perfil, rutinas e historial. Esta acción no se puede deshacer.

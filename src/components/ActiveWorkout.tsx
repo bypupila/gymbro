@@ -590,7 +590,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 {activeSession.exercises.filter(ex => ex.categoria === 'calentamiento').length > 0 && (
                     <>
                         <div style={styles.sectionHeader}>
-                            <span style={styles.sectionEmoji}>”¥</span>
+                            <span style={styles.sectionEmoji}>WU</span>
                             <div style={styles.sectionTextContainer}>
                                 <h3 style={styles.sectionTitle}>CALENTAMIENTO</h3>
                                 <p style={styles.sectionSubtitle}>Prepara tu cuerpo antes de empezar</p>
@@ -604,7 +604,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                 {/* Main Routine Section */}
                 <div style={styles.sectionHeader}>
-                    <span style={styles.sectionEmoji}>’ª</span>
+                    <span style={styles.sectionEmoji}>RP</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
                         <p style={styles.sectionSubtitle}>Dale al botón Play para comenzar cada ejercicio</p>
@@ -750,7 +750,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         ...styles.groupBadge,
                                                         background: GRUPOS_MUSCULARES[ex.grupoMuscular]?.color || Colors.surfaceLight
                                                     }}>
-                                                        {GRUPOS_MUSCULARES[ex.grupoMuscular]?.emoji}
+                                                        {GRUPOS_MUSCULARES[ex.grupoMuscular]?.nombre?.slice(0, 2) || '--'}
                                                     </div>
                                                     <div style={styles.exerciseInfo}>
                                                         <div style={styles.exerciseLabel}>{ex.nombre}</div>
@@ -807,7 +807,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 setShowMoodCheckin(true);
                                             }}
                                         >
-                                            <div style={styles.optionIcon}>“‹</div>
+                                            <div style={styles.optionIcon}><Check size={18} /></div>
                                             <div style={styles.optionText}>
                                                 <h4>Rutina Completa</h4>
                                                 <p>Guardar progreso y finalizar</p>
@@ -819,7 +819,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             style={styles.optionBtn}
                                             onClick={() => setCompletionType('extra')}
                                         >
-                                            <div style={styles.optionIcon}>ƒâ€â™‚ï¸</div>
+                                            <div style={styles.optionIcon}><Plus size={18} /></div>
                                             <div style={styles.optionText}>
                                                 <h4>Actividad Extra</h4>
                                                 <p>Agregar cardio, estiramiento, deporte...</p>
@@ -1296,7 +1296,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                         {sortedCategories.length > 0 ? (
                             sortedCategories.map(catKey => {
-                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: '’ª', color: Colors.text };
+                                const categoryInfo = GRUPOS_MUSCULARES[catKey as keyof typeof GRUPOS_MUSCULARES] || { nombre: catKey, emoji: '', color: Colors.text };
                                 return (
                                     <div key={catKey} style={{ marginBottom: '20px' }}>
                                         <div style={{
@@ -1304,7 +1304,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             padding: '8px 0', borderBottom: `2px solid ${categoryInfo.color}20`,
                                             marginBottom: '8px'
                                         }}>
-                                            <span style={{ fontSize: '18px' }}>{categoryInfo.emoji}</span>
                                             <span style={{ fontSize: '14px', fontWeight: 800, color: categoryInfo.color, textTransform: 'uppercase' }}>
                                                 {categoryInfo.nombre}
                                             </span>
@@ -1385,7 +1384,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             color: ex.sets.every(s => s.completed || s.skipped) ? Colors.textTertiary : Colors.text
                         }}>
                             {isResting ? 'Descanso' : `${globalIdx + 1}. ${ex.nombre}`}
-                            {ex.sets.every(s => s.completed || s.skipped) && ' âœ“'}
+                            {ex.sets.every(s => s.completed || s.skipped) && ' - OK'}
                             {ex.isOptional && (
                                 <span style={{
                                     fontSize: '10px',
@@ -1437,7 +1436,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             <div style={styles.setsContainer}>
                                 {(() => {
                                     const videoUrl = getExerciseVideo(ex.nombre);
-                                    const imageSrc = getExerciseImage(ex.nombre);
+                                    const imageSrc = ex.imagen || getExerciseImage(ex.nombre);
                                     return (
                                         <div style={styles.previewContainer}>
                                             <img
@@ -1450,7 +1449,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             />
                                             {videoUrl && (
                                                 <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={styles.playOverlay}>
-                                                    â–¶
+                                                    <Play size={18} color="#fff" fill="#fff" />
                                                 </a>
                                             )}
                                         </div>

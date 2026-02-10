@@ -25,6 +25,11 @@ import {
     Sparkles,
     Check,
     Share2,
+    Play,
+    Flame,
+    FileText,
+    Dumbbell,
+    BookOpen,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -153,7 +158,14 @@ const styles: Record<string, React.CSSProperties> = {
         textAlign: 'center',
     },
     emptyIcon: {
-        fontSize: '64px',
+        width: '72px',
+        height: '72px',
+        borderRadius: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `${Colors.primary}15`,
+        color: Colors.primary,
         marginBottom: '20px',
     },
     emptyTitle: {
@@ -191,7 +203,10 @@ const styles: Record<string, React.CSSProperties> = {
         marginBottom: '16px',
     },
     routineIcon: {
-        fontSize: '32px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: Colors.primary,
     },
     routineTitle: {
         fontSize: '20px',
@@ -336,6 +351,8 @@ const styles: Record<string, React.CSSProperties> = {
         borderRadius: '8px',
         fontSize: '12px',
         fontWeight: 600,
+        display: 'inline-flex',
+        alignItems: 'center',
     },
     exercisesHeader: {
         display: 'flex',
@@ -574,8 +591,8 @@ const styles: Record<string, React.CSSProperties> = {
         color: Colors.textSecondary,
     },
     modalIcon: {
-        fontSize: '48px',
-        textAlign: 'center',
+        display: 'flex',
+        justifyContent: 'center',
         marginBottom: '16px',
     },
     modalTitle: {
@@ -1070,7 +1087,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     .filter(([key]) => key !== 'calentamiento')
                                     .map(([key, value]) => (
                                         <option key={key} value={key}>
-                                            {value.emoji} {value.nombre}
+                                            {value.nombre}
                                         </option>
                                     ))}
                             </select>
@@ -1133,7 +1150,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                         const imageContent = (
                             <>
                                 <img
-                                    src={getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
+                                    src={ejercicio.imagen || getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
                                     alt={ejercicio.nombre}
                                     style={styles.exerciseImage}
                                     onError={(e) => {
@@ -1141,10 +1158,14 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     }}
                                 />
                                 {videoUrl && (
-                                    <div style={styles.playOverlay}>â¶</div>
+                                    <div style={styles.playOverlay}>
+                                        <Play size={20} color="#fff" fill="#fff" />
+                                    </div>
                                 )}
                                 {ejercicio.categoria === 'calentamiento' && (
-                                    <div style={styles.calentamientoBadge}>ð¥</div>
+                                    <div style={styles.calentamientoBadge}>
+                                        <Flame size={14} color="#fff" />
+                                    </div>
                                 )}
                             </>
                         );
@@ -1189,7 +1210,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                         gap: '4px',
                                         boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                                     }}>
-                                        {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.emoji} {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}
+                                        {GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}
                                     </span>
                                 )}
                             </div>
@@ -1204,7 +1225,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     {ejercicio.segundos ? `${ejercicio.segundos} seg` : ''}
                                 </span>
                                 <span style={styles.detailChip}>
-                                    {ejercicio.descanso}s ð¤
+                                    Descanso {ejercicio.descanso}s
                                 </span>
                             </div>
                         </div>
@@ -1307,7 +1328,7 @@ export const RoutineDetailPage: React.FC = () => {
         setIsSharing(true);
         try {
             const target = await firebaseService.findUserByAlias(shareAlias.trim());
-            if (!target || target.id === target.alias) {
+            if (!target) {
                 toast.error('Usuario no encontrado');
                 return;
             }
@@ -1421,7 +1442,7 @@ export const RoutineDetailPage: React.FC = () => {
                     <div style={{ width: 40 }} />
                 </div>
                 <div style={styles.emptyState}>
-                    <div style={styles.emptyIcon}>ð</div>
+                    <div style={styles.emptyIcon}><FileText size={28} /></div>
                     <h2 style={styles.emptyTitle}>Sin rutina activa</h2>
                     <p style={styles.emptyText}>Crea tu primera rutina para empezar a entrenar</p>
                     <button style={styles.createButton} onClick={() => navigate('/')}>
@@ -1581,7 +1602,7 @@ export const RoutineDetailPage: React.FC = () => {
             {/* Routine Info Card */}
             <Card style={styles.infoCard}>
                 <div style={styles.routineName}>
-                    <span style={styles.routineIcon}>ðª</span>
+                    <span style={styles.routineIcon}><Dumbbell size={16} /></span>
                     <h2 style={styles.routineTitle}>{rutina.nombre}</h2>
                 </div>
 
@@ -1632,7 +1653,7 @@ export const RoutineDetailPage: React.FC = () => {
 
                 {rutina.analizadaPorIA && (
                     <div style={{ ...styles.durationRow, marginTop: '8px' }}>
-                        <span style={styles.aiTag}>ð¤ IA</span>
+                        <span style={styles.aiTag}><Sparkles size={12} style={{ marginRight: '4px' }} /> IA</span>
                     </div>
                 )}
             </Card>
@@ -1764,7 +1785,6 @@ export const RoutineDetailPage: React.FC = () => {
                                                                 <div style={styles.muscleGroupHeader}>
                                                                     {ejercicio.grupoMuscular ? (
                                                                         <>
-                                                                            <span>{GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.emoji}</span>
                                                                             <span>{GRUPOS_MUSCULARES[ejercicio.grupoMuscular as GrupoMuscularEjercicio]?.nombre || ejercicio.grupoMuscular}</span>
                                                                         </>
                                                                     ) : (
@@ -1808,7 +1828,7 @@ export const RoutineDetailPage: React.FC = () => {
                 showDeleteModal && (
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
-                            <div style={styles.modalIcon}>â ï¸</div>
+                            <div style={styles.modalIcon}><AlertTriangle size={24} color={Colors.warning} /></div>
                             <h3 style={styles.modalTitle}>¿Eliminar Rutina?</h3>
                             <p style={styles.modalText}>Esta acción eliminará permanentemente tu rutina &quot;{rutina.nombre}&quot; y todos sus ejercicios.</p>
                             <div style={styles.modalActions}>
@@ -1885,14 +1905,17 @@ export const RoutineDetailPage: React.FC = () => {
                                             {Object.entries(GRUPOS_MUSCULARES)
                                                 .filter(([key]) => key !== 'calentamiento')
                                                 .map(([key, value]) => (
-                                                    <option key={key} value={key}>{value.emoji} {value.nombre}</option>
+                                                    <option key={key} value={key}>{value.nombre}</option>
                                                 ))}
                                         </select>
                                     </div>
                                 </div>
                                 <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> Añadir Ejercicio</button>
                                 <div style={styles.divider}><span style={styles.dividerText}>o</span></div>
-                                <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>ð Seleccionar de la Base de Datos</button>
+                                <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>
+                                    <BookOpen size={16} style={{ marginRight: '6px' }} />
+                                    Seleccionar de la Base de Datos
+                                </button>
                             </div>
                         </div>
                     </div>

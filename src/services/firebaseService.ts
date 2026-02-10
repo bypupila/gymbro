@@ -19,7 +19,7 @@ export interface LinkRequest {
 
 export interface RelationshipAction {
     id: string;
-    actionType: 'UNLINK' | 'BREAK_SYNC';
+    actionType: 'UNLINK' | 'BREAK_SYNC' | 'SYNC_NOW';
     initiatedBy: string;
     sourceUserId: string;
     targetUserId: string;
@@ -54,7 +54,7 @@ export const firebaseService = {
             routineSync: profile.routineSync || {
                 enabled: false,
                 partnerId: null,
-                mode: 'bidirectional',
+                mode: 'manual',
                 syncId: null,
                 updatedAt: new Date().toISOString(),
             },
@@ -109,13 +109,21 @@ export const firebaseService = {
             partners: data.partners || [],
             partnerIds: data.partnerIds || [],
             activePartnerId: data.activePartnerId || null,
-            routineSync: data.routineSync || {
-                enabled: false,
-                partnerId: null,
-                mode: 'bidirectional',
-                syncId: null,
-                updatedAt: new Date().toISOString(),
-            },
+            routineSync: data.routineSync
+                ? {
+                    enabled: Boolean(data.routineSync.enabled),
+                    partnerId: data.routineSync.partnerId || null,
+                    mode: data.routineSync.mode === 'auto' ? 'auto' : 'manual',
+                    syncId: data.routineSync.syncId || null,
+                    updatedAt: data.routineSync.updatedAt || new Date().toISOString(),
+                }
+                : {
+                    enabled: false,
+                    partnerId: null,
+                    mode: 'manual',
+                    syncId: null,
+                    updatedAt: new Date().toISOString(),
+                },
             linkSetupPendingPartnerId: data.linkSetupPendingPartnerId || null,
             alias: userData.displayName || '',
             role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
@@ -169,13 +177,21 @@ export const firebaseService = {
                 partners: data.partners || [],
                 partnerIds: data.partnerIds || [],
                 activePartnerId: data.activePartnerId || null,
-                routineSync: data.routineSync || {
-                    enabled: false,
-                    partnerId: null,
-                    mode: 'bidirectional',
-                    syncId: null,
-                    updatedAt: new Date().toISOString(),
-                },
+                routineSync: data.routineSync
+                    ? {
+                        enabled: Boolean(data.routineSync.enabled),
+                        partnerId: data.routineSync.partnerId || null,
+                        mode: data.routineSync.mode === 'auto' ? 'auto' : 'manual',
+                        syncId: data.routineSync.syncId || null,
+                        updatedAt: data.routineSync.updatedAt || new Date().toISOString(),
+                    }
+                    : {
+                        enabled: false,
+                        partnerId: null,
+                        mode: 'manual',
+                        syncId: null,
+                        updatedAt: new Date().toISOString(),
+                    },
                 linkSetupPendingPartnerId: data.linkSetupPendingPartnerId || null,
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
@@ -390,6 +406,39 @@ export const firebaseService = {
 
     async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string, recipientAlias?: string): Promise<void> {
         const requestsRef = collection(db, 'linkRequests');
+        const [requesterProfileSnap, recipientProfileSnap] = await Promise.all([
+            getDoc(doc(db, 'users', requesterId, 'profile', 'main')),
+            getDoc(doc(db, 'users', recipientId, 'profile', 'main')),
+        ]);
+
+        if (!requesterProfileSnap.exists() || !recipientProfileSnap.exists()) {
+            throw new Error('PROFILE_NOT_FOUND');
+        }
+        const requesterProfile = requesterProfileSnap.data();
+        const recipientProfile = recipientProfileSnap.data();
+
+        const requesterLinkedId =
+            requesterProfile.activePartnerId ||
+            requesterProfile.partnerId ||
+            requesterProfile.partnerIds?.[0] ||
+            requesterProfile.partners?.[0]?.id ||
+            null;
+        const recipientLinkedId =
+            recipientProfile.activePartnerId ||
+            recipientProfile.partnerId ||
+            recipientProfile.partnerIds?.[0] ||
+            recipientProfile.partners?.[0]?.id ||
+            null;
+
+        if (requesterLinkedId && requesterLinkedId !== recipientId) {
+            throw new Error('ALREADY_HAS_PARTNER');
+        }
+        if (recipientLinkedId && recipientLinkedId !== requesterId) {
+            throw new Error('RECIPIENT_ALREADY_HAS_PARTNER');
+        }
+        if (requesterLinkedId === recipientId && recipientLinkedId === requesterId) {
+            throw new Error('ALREADY_LINKED');
+        }
 
         const [directPending, reciprocalPending, acceptedDirect, acceptedReciprocal] = await Promise.all([
             getDocs(query(
@@ -428,7 +477,7 @@ export const firebaseService = {
 
         if (!reciprocalPending.empty) {
             const reciprocalDoc = reciprocalPending.docs[0];
-            const reciprocalData = reciprocalDoc.data() as LinkRequest;
+            void reciprocalDoc.data() as LinkRequest;
 
             // Update the reciprocal request status
             await updateDoc(reciprocalDoc.ref, {
@@ -526,7 +575,8 @@ export const firebaseService = {
                     return !unlinkEvent || item.acceptedAtMs > unlinkEvent.createdAtMs;
                 })
                 .sort((a, b) => b.acceptedAtMs - a.acceptedAtMs)
-                .map((item) => item.partner);
+                .map((item) => item.partner)
+                .slice(0, 1);
 
             callback(activePartners);
         };
@@ -598,23 +648,24 @@ export const firebaseService = {
         if (!profileSnap.exists()) return false;
 
         const profileData = profileSnap.data();
-        const currentPartners = (profileData.partners || []) as PartnerInfo[];
-        const alreadyExists = currentPartners.some((p) => p.id === partner.id);
-        if (alreadyExists) return false;
+        const alreadyExclusive =
+            profileData.activePartnerId === partner.id &&
+            Array.isArray(profileData.partners) &&
+            profileData.partners.length === 1;
 
-        const mergedPartners = [...currentPartners, partner];
-        const mergedPartnerIds = Array.from(new Set([...(profileData.partnerIds || []), partner.id]));
+        const mergedPartners = [partner];
+        const mergedPartnerIds = [partner.id];
 
         await setDoc(profileRef, {
-            partnerId: profileData.partnerId || partner.id,
-            activePartnerId: profileData.activePartnerId || partner.id,
+            partnerId: partner.id,
+            activePartnerId: partner.id,
             linkSetupPendingPartnerId: partner.id,
             partners: mergedPartners,
             partnerIds: mergedPartnerIds,
             updatedAt: new Date().toISOString(),
         }, { merge: true });
 
-        return true;
+        return !alreadyExclusive;
     },
 
     async acceptLinkRequest(request: LinkRequest): Promise<void> {
@@ -647,8 +698,6 @@ export const firebaseService = {
     },
 
     async unlinkPartner(userId: string, partnerToRemove: PartnerInfo): Promise<void> {
-        const { deleteField } = await import('firebase/firestore');
-
         await addDoc(collection(db, 'relationshipActions'), {
             actionType: 'UNLINK',
             initiatedBy: userId,
@@ -705,6 +754,17 @@ export const firebaseService = {
         });
     },
 
+    async syncRoutineNow(userId: string, partnerId: string): Promise<void> {
+        await addDoc(collection(db, 'relationshipActions'), {
+            actionType: 'SYNC_NOW',
+            initiatedBy: userId,
+            sourceUserId: userId,
+            targetUserId: partnerId,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+        });
+    },
+
     // ========== USER LOOKUP ==========
 
     async findUserByAlias(alias: string): Promise<{ id: string; name: string; alias: string } | null> {
@@ -713,15 +773,19 @@ export const firebaseService = {
         const aliasSnap = await getDoc(aliasRef);
 
         if (!aliasSnap.exists()) {
-            // Si no existe, retornar el alias como posible ID (fallback behavior from original plan?)
-            // Actually plan says: "Si no existe, retornar el alias como posible ID"
-            return { id: cleanAlias, name: cleanAlias, alias: cleanAlias };
+            return null;
         }
 
         const data = aliasSnap.data();
+        if (!data?.userId) return null;
+
+        const userSnap = await getDoc(doc(db, 'users', data.userId));
+        if (!userSnap.exists()) return null;
+        const userData = userSnap.data() || {};
+
         return {
             id: data.userId,
-            name: data.displayName,
+            name: data.displayName || userData.displayName || cleanAlias,
             alias: cleanAlias,
         };
     },
@@ -784,7 +848,7 @@ export const firebaseService = {
                 });
             }
 
-            return { success: true, message: 'Rutina compartida con éxito' };
+            return { success: true, message: 'Rutina compartida con exito' };
         } catch (error) {
             console.error('Share Routine Error:', error);
             return { success: false, message: 'Error al compartir la rutina' };

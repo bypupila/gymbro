@@ -20,7 +20,7 @@ export const RoutineRequestNotifier: React.FC = () => {
     const handleAccept = async (requestId: string, request: RoutineRequest) => {
         try {
             await routineRequestService.acceptRequest(requestId, request);
-            toast.success('Solicitud de rutina aceptada');
+            toast.success('Solicitud aceptada. Copiando rutina...');
             setRequests((prev) => prev.filter((r) => r.id !== requestId));
         } catch {
             toast.error('No se pudo aceptar la solicitud');
@@ -145,4 +145,3 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '10px',
     },
 };
-

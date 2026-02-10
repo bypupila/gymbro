@@ -11,10 +11,22 @@ service cloud.firestore {
     }
 
     function isPartnerOf(userId) {
-      let profile = get(/databases/$(database)/documents/users/$(userId)/profile/main).data;
-      return isAuthenticated() && (
+      let profileDoc = get(/databases/$(database)/documents/users/$(userId)/profile/main);
+      let profile = profileDoc.data;
+      return isAuthenticated() &&
+        profile != null &&
+        (
         profile.partnerId == request.auth.uid ||
         (profile.partnerIds != null && request.auth.uid in profile.partnerIds)
+      );
+    }
+
+    function callerHasLinkedTarget(targetUserId) {
+      let callerDoc = get(/databases/$(database)/documents/users/$(request.auth.uid)/profile/main);
+      let callerProfile = callerDoc.data;
+      return callerProfile != null && (
+        callerProfile.partnerId == targetUserId ||
+        (callerProfile.partnerIds != null && targetUserId in callerProfile.partnerIds)
       );
     }
 
@@ -91,7 +103,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Relationship actions (unlink / break sync)
+    // Relationship actions (unlink / break sync / manual sync)
     match /relationshipActions/{actionId} {
       allow read: if isAuthenticated() && (
         resource.data.sourceUserId == request.auth.uid ||
@@ -100,7 +112,8 @@ service cloud.firestore {
       allow create: if isAuthenticated() &&
         request.resource.data.initiatedBy == request.auth.uid &&
         request.resource.data.sourceUserId == request.auth.uid &&
-        request.resource.data.actionType in ['UNLINK', 'BREAK_SYNC'];
+        callerHasLinkedTarget(request.resource.data.targetUserId) &&
+        request.resource.data.actionType in ['UNLINK', 'BREAK_SYNC', 'SYNC_NOW'];
       allow update, delete: if false;
     }
 
