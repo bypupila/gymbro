@@ -16,12 +16,16 @@ export const LinkRequestsNotifier: React.FC = () => {
     const handleAccept = async (request: LinkRequest) => {
         try {
             await firebaseService.acceptLinkRequest(request);
+
+            // Fetch display name del requester
+            const displayName = await firebaseService.fetchUserDisplayName(request.requesterId);
+
             addPartner({
                 id: request.requesterId,
                 alias: request.requesterAlias,
-                nombre: request.requesterAlias,
+                nombre: displayName, // NOMBRE REAL
             });
-            toast.success(`Ahora estas vinculado con ${request.requesterAlias}!`);
+            toast.success(`Ahora estas vinculado con ${displayName}!`);
         } catch (error) {
             console.error('Error accepting request:', error);
             toast.error('No se pudo aceptar la solicitud.');

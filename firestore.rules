@@ -32,7 +32,8 @@ service cloud.firestore {
 
     // Profile: owner write/read, partners read.
     match /users/{userId}/profile/{document=**} {
-      allow read: if isOwner(userId) || isPartnerOf(userId);
+      // Permitir lectura a usuarios autenticados para permitir vinculación
+      allow read: if isAuthenticated();
       allow write: if isOwner(userId);
     }
 
@@ -124,8 +125,14 @@ service cloud.firestore {
       );
       allow create: if isAuthenticated() &&
         request.resource.data.initiatedBy == request.auth.uid &&
-        request.resource.data.sourceUserId == request.auth.uid &&
-        callerHasLinkedTarget(request.resource.data.targetUserId) &&
+        (
+          // Acción normal (usuario como source)
+          (request.resource.data.sourceUserId == request.auth.uid &&
+           callerHasLinkedTarget(request.resource.data.targetUserId)) ||
+          // Mirror action (usuario como target, para desvinculación bidireccional)
+          (request.resource.data.targetUserId == request.auth.uid &&
+           request.resource.data.mirrorOf is string)
+        ) &&
         request.resource.data.actionType in ['UNLINK', 'BREAK_SYNC', 'SYNC_NOW'];
       allow update, delete: if false;
     }

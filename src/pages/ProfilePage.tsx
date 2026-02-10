@@ -39,6 +39,17 @@ export const ProfilePage: React.FC = () => {
         }
         : null;
     const linkedPartner = activePartner || legacyLinkedPartner;
+
+    // Debug logging para diagnosticar partners
+    console.log('[ProfilePage] Partner debug:', {
+        partners,
+        activePartnerId: perfil.activePartnerId,
+        partnerId: perfil.partnerId,
+        partnerIds: perfil.partnerIds,
+        activePartner,
+        legacyLinkedPartner,
+        linkedPartner
+    });
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(userInfo);

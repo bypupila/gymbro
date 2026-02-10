@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "WebFetch(domain:www.muscleandstrength.com)"
+      "WebFetch(domain:www.muscleandstrength.com)",
+      "Bash(claude mcp add:*)"
     ]
   }
 }

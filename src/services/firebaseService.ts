@@ -1,6 +1,6 @@
 import {
     doc, setDoc, getDoc, collection, addDoc, query,
-    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc
+    orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc, deleteField
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
@@ -550,17 +550,25 @@ export const firebaseService = {
                 });
                 console.log('[sendLinkRequest] Request recíproca actualizada a accepted');
 
+                // Fetch real display names
+                const recipientDisplayName = await this.fetchUserDisplayName(recipientId);
+                const requesterDisplayName = await this.fetchUserDisplayName(requesterId);
+                console.log('[sendLinkRequest] Display names obtenidos:', {
+                    recipientDisplayName,
+                    requesterDisplayName
+                });
+
                 // Add partner info to both users' profiles
                 await Promise.all([
                     this.upsertOwnPartner(requesterId, {
                         id: recipientId,
                         alias: recipientAlias || recipientId,
-                        nombre: recipientAlias || recipientId,
+                        nombre: recipientDisplayName, // NOMBRE REAL
                     }),
                     this.upsertOwnPartner(recipientId, {
                         id: requesterId,
                         alias: requesterAlias,
-                        nombre: requesterAlias,
+                        nombre: requesterDisplayName, // NOMBRE REAL
                     })
                 ]);
                 console.log('[sendLinkRequest] ✓ Partners vinculados exitosamente (auto-aceptación)');
@@ -657,6 +665,11 @@ export const firebaseService = {
                 .map((item) => item.partner)
                 .slice(0, 1);
 
+            // Auto-reconciliación: detectar y reparar inconsistencias
+            this.reconcilePartnerState(userId, activePartners).catch(err => {
+                console.error('[reconcilePartnerState] Error:', err);
+            });
+
             callback(activePartners);
         };
 
@@ -684,11 +697,13 @@ export const firebaseService = {
                             recipientId: data.recipientId,
                             alias
                         });
-                        // Actualizar el perfil del requester (usuario actual) de forma asíncrona
-                        this.upsertOwnPartner(userId, {
-                            id: data.recipientId,
-                            alias,
-                            nombre: alias,
+                        // Fetch display name y actualizar el perfil del requester (usuario actual)
+                        this.fetchUserDisplayName(data.recipientId).then((displayName) => {
+                            return this.upsertOwnPartner(userId, {
+                                id: data.recipientId,
+                                alias,
+                                nombre: displayName, // NOMBRE REAL
+                            });
                         }).then(() => {
                             console.log('[onAcceptedLinkRequestsChange] ✓ Perfil del requester actualizado');
                         }).catch((error) => {
@@ -744,6 +759,35 @@ export const firebaseService = {
             unsubscribeUnlinkBySource();
             unsubscribeUnlinkByTarget();
         };
+    },
+
+    async reconcilePartnerState(
+        userId: string,
+        expectedPartners: PartnerInfo[]
+    ): Promise<void> {
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const snap = await getDoc(profileRef);
+        if (!snap.exists()) return;
+
+        const currentProfile = snap.data();
+        const currentPartnerIds = new Set(currentProfile.partnerIds || []);
+        const expectedPartnerIds = new Set(expectedPartners.map(p => p.id));
+
+        // Detectar partners que deberían estar removidos
+        const toRemove: string[] = [];
+        currentPartnerIds.forEach(id => {
+            if (!expectedPartnerIds.has(id)) {
+                toRemove.push(id);
+            }
+        });
+
+        // Auto-reparar inconsistencias
+        if (toRemove.length > 0) {
+            console.log('[reconcilePartnerState] Detectada inconsistencia, removiendo:', toRemove);
+            for (const partnerId of toRemove) {
+                await this.removePartnerFromOwnProfile(userId, partnerId);
+            }
+        }
     },
 
     async upsertOwnPartner(userId: string, partner: PartnerInfo): Promise<boolean> {
@@ -802,10 +846,14 @@ export const firebaseService = {
         // Solo actualizar el perfil del usuario que está aceptando (recipient)
         // El requester actualizará su propio perfil cuando detecte la aceptación
         try {
+            // Fetch display name del requester
+            const requesterDisplayName = await this.fetchUserDisplayName(request.requesterId);
+            console.log('[acceptLinkRequest] Display name obtenido:', requesterDisplayName);
+
             await this.upsertOwnPartner(request.recipientId, {
                 id: request.requesterId,
                 alias: request.requesterAlias,
-                nombre: request.requesterAlias,
+                nombre: requesterDisplayName, // NOMBRE REAL
             });
             console.log('[acceptLinkRequest] ✓ Partner agregado al perfil del recipient');
         } catch (error) {
@@ -820,49 +868,84 @@ export const firebaseService = {
     },
 
     async unlinkPartner(userId: string, partnerToRemove: PartnerInfo): Promise<void> {
-        await addDoc(collection(db, 'relationshipActions'), {
+        console.log('[unlinkPartner] Iniciando desvinculación bidireccional', {
+            userId,
+            partnerId: partnerToRemove.id
+        });
+
+        // PASO 1: Crear action principal
+        const actionDoc = await addDoc(collection(db, 'relationshipActions'), {
             actionType: 'UNLINK',
             initiatedBy: userId,
             sourceUserId: userId,
             targetUserId: partnerToRemove.id,
-            status: 'pending',
+            status: 'client_processed',
             createdAt: new Date().toISOString(),
+            processedAt: new Date().toISOString(),
         });
+        console.log('[unlinkPartner] Action creada:', actionDoc.id);
 
-        // Helper to remove partner from a profile
-        const removePartnerFromProfile = async (targetId: string, partnerIdToRemove: string) => {
-            const profileRef = doc(db, 'users', targetId, 'profile', 'main');
-            const snap = await getDoc(profileRef);
-            if (!snap.exists()) return;
+        // PASO 2: Actualizar mi perfil
+        await this.removePartnerFromOwnProfile(userId, partnerToRemove.id);
+        console.log('[unlinkPartner] Perfil propio actualizado');
 
-            const data = snap.data();
-            const currentPartners = (data.partners || []) as PartnerInfo[];
-            const nextPartners = currentPartners.filter(p => p.id !== partnerIdToRemove);
-            const nextPartnerIds = (data.partnerIds || []).filter((id: string) => id !== partnerIdToRemove);
+        // PASO 3: Crear mirror action para partner
+        await addDoc(collection(db, 'relationshipActions'), {
+            actionType: 'UNLINK',
+            initiatedBy: userId,
+            sourceUserId: partnerToRemove.id, // INVERTIDO
+            targetUserId: userId,               // INVERTIDO
+            status: 'client_processed',
+            createdAt: new Date().toISOString(),
+            processedAt: new Date().toISOString(),
+            mirrorOf: actionDoc.id,
+        });
+        console.log('[unlinkPartner] Mirror action creada para partner');
 
-            const updatePayload: any = {
-                partners: nextPartners,
-                partnerIds: nextPartnerIds,
-                updatedAt: new Date().toISOString(),
-            };
+        // El listener del partner detectará la mirror action y se auto-desvinculará
+    },
 
-            // If active partner was the removed one, clear it
-            if (data.activePartnerId === partnerIdToRemove) {
-                updatePayload.activePartnerId = nextPartners[0]?.id || null;
-            }
-            if (data.partnerId === partnerIdToRemove) {
-                updatePayload.partnerId = nextPartners[0]?.id || null;
-            }
+    async removePartnerFromOwnProfile(userId: string, partnerIdToRemove: string): Promise<void> {
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const snap = await getDoc(profileRef);
 
-            await updateDoc(profileRef, updatePayload);
+        if (!snap.exists()) {
+            console.error('[removePartnerFromOwnProfile] Perfil no existe');
+            return;
+        }
+
+        const data = snap.data();
+        const currentPartners = (data.partners || []) as PartnerInfo[];
+        const nextPartners = currentPartners.filter(p => p.id !== partnerIdToRemove);
+        const nextPartnerIds = nextPartners.map(p => p.id);
+
+        const updates: any = {
+            partners: nextPartners,
+            partnerIds: nextPartnerIds,
+            updatedAt: new Date().toISOString(),
         };
 
-        await Promise.all([
-            // Remove partner from my profile
-            removePartnerFromProfile(userId, partnerToRemove.id),
-            // Remove me from partner's profile
-            removePartnerFromProfile(partnerToRemove.id, userId)
-        ]);
+        // Limpiar activePartnerId si era el removido
+        if (data.activePartnerId === partnerIdToRemove) {
+            updates.activePartnerId = nextPartners[0]?.id || null;
+        }
+        if (data.partnerId === partnerIdToRemove) {
+            updates.partnerId = nextPartners[0]?.id || null;
+        }
+
+        // Limpiar routineSync si era con el removido
+        if (data.routineSync?.partnerId === partnerIdToRemove) {
+            updates.routineSync = {
+                enabled: false,
+                partnerId: null,
+                mode: 'manual',
+                syncId: null,
+                updatedAt: new Date().toISOString(),
+            };
+        }
+
+        await updateDoc(profileRef, updates);
+        console.log('[removePartnerFromOwnProfile] ✓ Partner removido');
     },
 
     async breakRoutineSync(userId: string, partnerId: string): Promise<void> {
@@ -910,6 +993,16 @@ export const firebaseService = {
             name: data.displayName || userData.displayName || cleanAlias,
             alias: cleanAlias,
         };
+    },
+
+    async fetchUserDisplayName(userId: string): Promise<string> {
+        try {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            return userDoc.exists() ? (userDoc.data()?.displayName || userId) : userId;
+        } catch (error) {
+            console.error('[fetchUserDisplayName] Error:', error);
+            return userId;
+        }
     },
 
     // ========== ROUTINE SHARING ==========
@@ -1039,6 +1132,28 @@ export const firebaseService = {
                 batch.set(ref, ex);
             });
             await batch.commit();
+        }
+    },
+
+    // Función temporal para limpiar inconsistencias de partners
+    async forceCleanPartnerInconsistency(userId: string): Promise<void> {
+        console.log('[forceCleanPartner] Limpiando inconsistencia para userId:', userId);
+
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+
+        try {
+            await updateDoc(profileRef, {
+                partnerId: deleteField(),
+                activePartnerId: null,
+                partners: [],
+                partnerIds: [],
+                linkSetupPendingPartnerId: null,
+            });
+
+            console.log('[forceCleanPartner] ✓ Perfil limpiado exitosamente');
+        } catch (error) {
+            console.error('[forceCleanPartner] Error al limpiar perfil:', error);
+            throw error;
         }
     }
 };
