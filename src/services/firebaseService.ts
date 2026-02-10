@@ -12,9 +12,10 @@ export interface LinkRequest {
     requesterAlias: string;
     recipientId: string;
     recipientAlias?: string;
-    status: 'pending' | 'accepted' | 'declined';
+    status: 'pending' | 'accepted' | 'declined' | 'unlinked';
     createdAt: string;
     resolvedAt?: string;
+    unlinkedAt?: string;
 }
 
 export interface RelationshipAction {
@@ -872,6 +873,37 @@ export const firebaseService = {
             userId,
             partnerId: partnerToRemove.id
         });
+
+        // PASO 0: Marcar linkRequests como unlinked
+        try {
+            const requestsRef = collection(db, 'linkRequests');
+            const q1 = query(requestsRef, where('requesterId', '==', userId), where('recipientId', '==', partnerToRemove.id), where('status', '==', 'accepted'));
+            const q2 = query(requestsRef, where('requesterId', '==', partnerToRemove.id), where('recipientId', '==', userId), where('status', '==', 'accepted'));
+
+            const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+
+            const updatePromises: Promise<void>[] = [];
+            snap1.forEach(docSnap => {
+                updatePromises.push(updateDoc(doc(db, 'linkRequests', docSnap.id), {
+                    status: 'unlinked',
+                    unlinkedAt: new Date().toISOString()
+                }));
+            });
+            snap2.forEach(docSnap => {
+                updatePromises.push(updateDoc(doc(db, 'linkRequests', docSnap.id), {
+                    status: 'unlinked',
+                    unlinkedAt: new Date().toISOString()
+                }));
+            });
+
+            if (updatePromises.length > 0) {
+                await Promise.all(updatePromises);
+                console.log('[unlinkPartner] LinkRequests marcados como unlinked:', updatePromises.length);
+            }
+        } catch (error) {
+            console.error('[unlinkPartner] Error marcando linkRequests:', error);
+            // Continuar de todas formas
+        }
 
         // PASO 1: Crear action principal
         const actionDoc = await addDoc(collection(db, 'relationshipActions'), {

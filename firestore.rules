@@ -110,8 +110,19 @@ service cloud.firestore {
           request.resource.data.requesterAlias == resource.data.requesterAlias
         ) ||
         (
+          // Requester puede cancelar
           resource.data.requesterId == request.auth.uid &&
           request.resource.data.status == 'cancelled'
+        ) ||
+        (
+          // Ambos pueden marcar como unlinked si estaba accepted
+          (resource.data.requesterId == request.auth.uid || resource.data.recipientId == request.auth.uid) &&
+          resource.data.status == 'accepted' &&
+          request.resource.data.status == 'unlinked' &&
+          // No puede cambiar otros campos
+          request.resource.data.requesterId == resource.data.requesterId &&
+          request.resource.data.recipientId == resource.data.recipientId &&
+          request.resource.data.requesterAlias == resource.data.requesterAlias
         )
       );
       allow delete: if false;
