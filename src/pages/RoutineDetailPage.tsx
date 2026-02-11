@@ -863,7 +863,9 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
     dragControls
 }) => {
     const originalIndex = rutina.ejercicios.findIndex((e: EjercicioRutina) => e.id === ejercicio.id);
-    const [localSelectedDays, setLocalSelectedDays] = useState<string[]>(ejercicio.dia ? [ejercicio.dia] : []);
+    const [localSelectedDays, setLocalSelectedDays] = useState<string[]>(
+        ejercicio.dia && availableDays.includes(ejercicio.dia) ? [ejercicio.dia] : []
+    );
     const [isProgressive, setIsProgressive] = useState(ejercicio.repeticiones.includes(',') || ejercicio.repeticiones.includes('/'));
 
     const toggleDay = (day: string) => {
@@ -1104,7 +1106,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                     <div style={styles.editActions}>
                         <button style={styles.cancelEditBtn} onClick={() => {
                             handleCancelEdit();
-                            setLocalSelectedDays(ejercicio.dia ? [ejercicio.dia] : []);
+                            setLocalSelectedDays(ejercicio.dia && availableDays.includes(ejercicio.dia) ? [ejercicio.dia] : []);
                         }}>
                             <X size={16} />
                             Cancelar
@@ -1554,7 +1556,6 @@ export const RoutineDetailPage: React.FC = () => {
             nuevosEjercicios = [{
                 ...baseFields,
                 id: generateSafeId(),
-                dia: 'Sin asignar',
             } as EjercicioRutina];
         } else {
             nuevosEjercicios = newExerciseDays.map(day => ({
