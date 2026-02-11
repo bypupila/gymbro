@@ -11,9 +11,10 @@ interface Props {
     partnerAlias: string;
     partnerId: string;
     onClose: () => void;
+    isInitialSetup?: boolean;
 }
 
-export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, partnerId, onClose }) => {
+export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, partnerId, onClose, isInitialSetup = true }) => {
     void partnerAlias;
     const perfil = useUserStore((state) => state.perfil);
     const userId = useUserStore((state) => state.userId);
@@ -75,11 +76,14 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
         <div style={styles.overlay}>
             <Card style={styles.modal}>
                 <div style={styles.header}>
-                    <h3 style={styles.title}>Vinculacion exitosa</h3>
+                    <h3 style={styles.title}>{isInitialSetup ? 'Vinculacion exitosa' : 'Copiar Rutina'}</h3>
                     <button onClick={onClose} style={styles.closeButton}><X size={20} /></button>
                 </div>
                 <p style={styles.text}>
-                    Ahora estas vinculado con <span style={styles.partnerName}>{partnerName}</span>. Elige si quieres solicitar una copia inicial de rutina.
+                    {isInitialSetup
+                        ? <>Ahora estas vinculado con <span style={styles.partnerName}>{partnerName}</span>. Elige si quieres solicitar una copia inicial de rutina.</>
+                        : <>Elige una opcion para sincronizar rutinas con <span style={styles.partnerName}>{partnerName}</span>.</>
+                    }
                 </p>
                 <div style={styles.buttonGroup}>
                     <button

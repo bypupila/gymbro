@@ -5,6 +5,7 @@
 
 import { Card } from '@/components/Card';
 import { ExerciseSelector } from '@/components/ExerciseSelector';
+import { TimeInput } from '@/components/TimeInput';
 import { EjercicioBase, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
 import { getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
 import { useUserStore, EjercicioRutina, RutinaUsuario } from '@/stores/userStore';
@@ -900,6 +901,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                             ...editedExercise,
                             nombre: e.target.value
                         })}
+                        onFocus={(e) => e.target.select()}
                         style={styles.editInput}
                         placeholder="Nombre del ejercicio"
                     />
@@ -913,6 +915,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     ...editedExercise,
                                     series: parseInt(e.target.value) || 0
                                 })}
+                                onFocus={(e) => e.target.select()}
                                 style={styles.editInputSmall}
                             />
                             <div
@@ -943,6 +946,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                                 style={styles.editInputSmallProg}
                                                 value={editedExercise.repeticiones.split(/[,/]/)[i] || ''}
                                                 onChange={(e) => handleProgressiveRepChange(e.target.value, i)}
+                                                onFocus={(e) => e.target.select()}
                                                 placeholder="10"
                                             />
                                         </div>
@@ -956,33 +960,31 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                         ...editedExercise,
                                         repeticiones: e.target.value
                                     })}
+                                    onFocus={(e) => e.target.select()}
                                     style={styles.editInputSmall}
                                     placeholder="e.g. 12-15"
                                 />
                             )}
                         </div>
                         <div style={styles.editField}>
-                            <label style={styles.editLabel}>Segundos</label>
-                            <input
-                                type="number"
-                                value={editedExercise.segundos || ''}
-                                onChange={(e) => setEditedExercise({
+                            <TimeInput
+                                label="Duracion"
+                                value={editedExercise.segundos}
+                                onChange={(val) => setEditedExercise({
                                     ...editedExercise,
-                                    segundos: e.target.value ? parseInt(e.target.value) : undefined
+                                    segundos: val
                                 })}
-                                style={styles.editInputSmall}
-                                placeholder="30"
+                                allowEmpty={true}
                             />
                         </div>
                         <div style={styles.editField}>
-                            <input
-                                type="number"
+                            <TimeInput
+                                label="Descanso"
                                 value={editedExercise.descanso}
-                                onChange={(e) => setEditedExercise({
+                                onChange={(val) => setEditedExercise({
                                     ...editedExercise,
-                                    descanso: parseInt(e.target.value) || 0
+                                    descanso: val || 0
                                 })}
-                                style={styles.editInputSmall}
                             />
                         </div>
                         <div style={styles.editField}>
@@ -1369,9 +1371,9 @@ export const RoutineDetailPage: React.FC = () => {
         repeticiones: '10-12',
         descanso: 60,
         categoria: 'maquina',
-        dia: 'Sin asignar',
         grupoMuscular: ''
     });
+    const [newExerciseDays, setNewExerciseDays] = useState<string[]>([]);
 
     const handleIAOrganize = async () => {
         if (!rutina || isReorganizing) return;
@@ -1534,42 +1536,58 @@ export const RoutineDetailPage: React.FC = () => {
 
     const handleAddExercise = () => {
         if (!rutina || !newExercise.nombre) return;
-        const nuevoEjercicio: EjercicioRutina = {
-            id: generateSafeId(),
+
+        const baseFields = {
             nombre: newExercise.nombre || '',
             series: newExercise.series || 3,
             repeticiones: newExercise.repeticiones || '10-12',
             descanso: newExercise.descanso || 60,
+            segundos: newExercise.segundos,
             categoria: newExercise.categoria || 'maquina',
-            dia: newExercise.dia || 'Sin asignar',
-            grupoMuscular: newExercise.grupoMuscular
+            grupoMuscular: newExercise.grupoMuscular,
+            enfocadoA: newExercise.enfocadoA,
         };
+
+        let nuevosEjercicios: EjercicioRutina[];
+
+        if (newExerciseDays.length === 0) {
+            nuevosEjercicios = [{
+                ...baseFields,
+                id: generateSafeId(),
+                dia: 'Sin asignar',
+            } as EjercicioRutina];
+        } else {
+            nuevosEjercicios = newExerciseDays.map(day => ({
+                ...baseFields,
+                id: generateSafeId(),
+                dia: day,
+            } as EjercicioRutina));
+        }
+
         setRutina({
             ...rutina,
-            ejercicios: cleanupRoutineExercises([...rutina.ejercicios, nuevoEjercicio])
+            ejercicios: cleanupRoutineExercises([...rutina.ejercicios, ...nuevosEjercicios])
         });
         setNewExercise({
             nombre: '', series: 3, repeticiones: '10-12', descanso: 60, categoria: 'maquina', grupoMuscular: ''
         });
+        setNewExerciseDays([]);
         setShowAddExerciseModal(false);
     };
 
     const handleSelectFromDatabase = (ejercicio: EjercicioBase) => {
         if (!rutina) return;
-        const nuevoEjercicio: EjercicioRutina = {
-            id: generateSafeId(),
+        setNewExercise({
             nombre: ejercicio.nombre,
             series: 3,
             repeticiones: '10-12',
             descanso: 60,
             categoria: 'maquina',
-            grupoMuscular: ejercicio.grupoMuscular
-        };
-        setRutina({
-            ...rutina,
-            ejercicios: cleanupRoutineExercises([...rutina.ejercicios, nuevoEjercicio])
+            grupoMuscular: ejercicio.grupoMuscular,
         });
+        setNewExerciseDays([]);
         setShowExerciseSelector(false);
+        setShowAddExerciseModal(true);
     };
 
     const handleRenewRoutine = () => {
@@ -1704,7 +1722,11 @@ export const RoutineDetailPage: React.FC = () => {
 
             <div style={styles.exercisesHeader}>
                 <h3 style={styles.sectionTitle}>Ejercicios ({rutina.ejercicios.length})</h3>
-                <button style={styles.addExerciseBtn} onClick={() => setShowAddExerciseModal(true)}>
+                <button style={styles.addExerciseBtn} onClick={() => {
+                    setNewExercise({ nombre: '', series: 3, repeticiones: '10-12', descanso: 60, categoria: 'maquina', grupoMuscular: '' });
+                    setNewExerciseDays([]);
+                    setShowAddExerciseModal(true);
+                }}>
                     <Plus size={18} /> Anadir
                 </button>
             </div>
@@ -1857,40 +1879,83 @@ export const RoutineDetailPage: React.FC = () => {
                         <div style={styles.modal}>
                             <div style={styles.modalHeader}>
                                 <h3 style={styles.modalTitle}>Anadir Ejercicio</h3>
-                                <button style={styles.closeModalBtn} onClick={() => setShowAddExerciseModal(false)}><X size={24} /></button>
+                                <button style={styles.closeModalBtn} onClick={() => { setShowAddExerciseModal(false); setNewExerciseDays([]); }}><X size={24} /></button>
                             </div>
                             <div style={styles.addForm}>
                                 <div style={styles.formRow}>
-                                    <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>Dia</label>
-                                        <select
-                                            value={newExercise.dia}
-                                            onChange={(e) => setNewExercise({ ...newExercise, dia: e.target.value })}
-                                            style={styles.formInput}
-                                        >
-                                            <option value="Sin asignar">Sin asignar</option>
-                                            {perfil.horario.dias.filter(d => d.entrena).map(d => (
-                                                <option key={d.dia} value={d.dia}>{d.dia}</option>
-                                            ))}
-                                        </select>
+                                    <div style={{ ...styles.formGroup, flex: 1 }}>
+                                        <label style={styles.formLabel}>Dias</label>
+                                        <div style={styles.dayChipsRow}>
+                                            {perfil.horario.dias.filter(d => d.entrena).map(d => {
+                                                const isSelected = newExerciseDays.includes(d.dia);
+                                                return (
+                                                    <button
+                                                        key={d.dia}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setNewExerciseDays(prev =>
+                                                                isSelected
+                                                                    ? prev.filter(day => day !== d.dia)
+                                                                    : [...prev, d.dia]
+                                                            );
+                                                        }}
+                                                        style={{
+                                                            ...styles.dayChip,
+                                                            background: isSelected ? Colors.primary : Colors.surfaceLight,
+                                                            color: isSelected ? '#000' : Colors.textSecondary,
+                                                            borderColor: isSelected ? Colors.primary : Colors.border,
+                                                        }}
+                                                    >
+                                                        {d.dia.slice(0, 2)}
+                                                    </button>
+                                                );
+                                            })}
+                                            <button
+                                                type="button"
+                                                onClick={() => setNewExerciseDays([])}
+                                                style={{
+                                                    ...styles.dayChip,
+                                                    background: newExerciseDays.length === 0 ? Colors.error : Colors.surfaceLight,
+                                                    color: newExerciseDays.length === 0 ? '#FFF' : Colors.textSecondary,
+                                                    borderColor: Colors.border,
+                                                }}
+                                            >
+                                                Limpiar
+                                            </button>
+                                        </div>
                                     </div>
+                                </div>
+                                <div style={styles.formRow}>
                                     <div style={styles.formGroup}>
                                         <label style={styles.formLabel}>Nombre</label>
-                                        <input type="text" value={newExercise.nombre} onChange={(e) => setNewExercise({ ...newExercise, nombre: e.target.value })} style={styles.formInput} placeholder="Ej: Press de Banca" />
+                                        <input type="text" value={newExercise.nombre} onChange={(e) => setNewExercise({ ...newExercise, nombre: e.target.value })} onFocus={(e) => e.target.select()} style={styles.formInput} placeholder="Ej: Press de Banca" />
                                     </div>
                                 </div>
                                 <div style={styles.formRow}>
                                     <div style={styles.formGroup}>
                                         <label style={styles.formLabel}>Series</label>
-                                        <input type="number" value={newExercise.series} onChange={(e) => setNewExercise({ ...newExercise, series: parseInt(e.target.value) || 0 })} style={styles.formInput} />
+                                        <input type="number" value={newExercise.series} onChange={(e) => setNewExercise({ ...newExercise, series: parseInt(e.target.value) || 0 })} onFocus={(e) => e.target.select()} style={styles.formInput} />
                                     </div>
                                     <div style={styles.formGroup}>
                                         <label style={styles.formLabel}>Reps</label>
-                                        <input type="text" value={newExercise.repeticiones} onChange={(e) => setNewExercise({ ...newExercise, repeticiones: e.target.value })} style={styles.formInput} placeholder="10-12" />
+                                        <input type="text" value={newExercise.repeticiones} onChange={(e) => setNewExercise({ ...newExercise, repeticiones: e.target.value })} onFocus={(e) => e.target.select()} style={styles.formInput} placeholder="10-12" />
+                                    </div>
+                                </div>
+                                <div style={styles.formRow}>
+                                    <div style={styles.formGroup}>
+                                        <TimeInput
+                                            label="Duracion"
+                                            value={newExercise.segundos}
+                                            onChange={(val) => setNewExercise({ ...newExercise, segundos: val })}
+                                            allowEmpty={true}
+                                        />
                                     </div>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>Descanso</label>
-                                        <input type="number" value={newExercise.descanso} onChange={(e) => setNewExercise({ ...newExercise, descanso: parseInt(e.target.value) || 0 })} style={styles.formInput} />
+                                        <TimeInput
+                                            label="Descanso"
+                                            value={newExercise.descanso}
+                                            onChange={(val) => setNewExercise({ ...newExercise, descanso: val || 0 })}
+                                        />
                                     </div>
                                 </div>
                                 <div style={styles.formRow}>

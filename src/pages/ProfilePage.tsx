@@ -6,7 +6,7 @@ import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
-    Bell, Calendar, Heart, RefreshCw, Shield, Users,
+    Bell, Calendar, Heart, RefreshCw, Shield, Users, Copy,
     CheckCircle, AlertCircle, Loader2, LogOut, Camera, Trash2, X, UserX, Image as ImageIcon
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
@@ -17,6 +17,7 @@ import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
 import { NivelExperiencia, ObjetivoFitness } from '@/stores/userStore';
 import { LinkRequestsNotifier } from '@/components/LinkRequestsNotifier';
+import { RoutineCopyModal } from '@/components/RoutineCopyModal';
 import { useRenderMetric } from '@/utils/renderMetrics';
 
 interface FirebaseAuthError {
@@ -66,6 +67,8 @@ export const ProfilePage: React.FC = () => {
     // Modal States
     const [showPartnerModal, setShowPartnerModal] = useState(false);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
+    const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
+    const [isSyncingRoutine, setIsSyncingRoutine] = useState(false);
     const [tempAvatar, setTempAvatar] = useState<string>(userInfo.avatar || '');
 
     // New state for partner linking flow
@@ -200,6 +203,19 @@ export const ProfilePage: React.FC = () => {
         ), { duration: 5000 });
     };
 
+
+    const handleSyncRoutine = async () => {
+        if (!userId || !perfil.routineSync?.partnerId) return;
+        setIsSyncingRoutine(true);
+        try {
+            await firebaseService.syncRoutineNow(userId, perfil.routineSync.partnerId);
+            toast.success('Rutina sincronizada con tu pareja');
+        } catch {
+            toast.error('No se pudo sincronizar la rutina');
+        } finally {
+            setIsSyncingRoutine(false);
+        }
+    };
 
     const handleAvatarSelect = (seed: string) => {
         setTempAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4`);
@@ -580,6 +596,26 @@ export const ProfilePage: React.FC = () => {
                             <p style={styles.partnerStatus}>Sincronizados</p>
                         </div>
                         <button
+                            style={styles.copyRoutineBtn}
+                            onClick={() => setShowRoutineCopyModal(true)}
+                            title="Copiar rutina"
+                        >
+                            <Copy size={16} color={Colors.primary} />
+                        </button>
+                        {perfil.routineSync?.enabled && perfil.rutina && (
+                            <button
+                                style={styles.syncRoutineBtn}
+                                onClick={handleSyncRoutine}
+                                disabled={isSyncingRoutine}
+                                title="Sincronizar rutina"
+                            >
+                                {isSyncingRoutine
+                                    ? <Loader2 size={16} color={Colors.success} className="animate-spin" />
+                                    : <RefreshCw size={16} color={Colors.success} />
+                                }
+                            </button>
+                        )}
+                        <button
                             style={styles.unlinkPartnerBtn}
                             onClick={() => handleUnlinkCurrentPartner(linkedPartner)}
                             title="Desvincular partner"
@@ -834,6 +870,15 @@ export const ProfilePage: React.FC = () => {
                 )
             }
 
+            {showRoutineCopyModal && linkedPartner && (
+                <RoutineCopyModal
+                    partnerId={linkedPartner.id}
+                    partnerName={linkedPartner.nombre}
+                    partnerAlias={linkedPartner.alias}
+                    onClose={() => setShowRoutineCopyModal(false)}
+                    isInitialSetup={false}
+                />
+            )}
         </div >
     );
 };
@@ -984,6 +1029,28 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '13px',
         color: Colors.textSecondary,
         margin: '4px 0 0 0',
+    },
+    copyRoutineBtn: {
+        width: '36px',
+        height: '36px',
+        borderRadius: '10px',
+        border: `1px solid ${Colors.primary}40`,
+        background: `${Colors.primary}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+    syncRoutineBtn: {
+        width: '36px',
+        height: '36px',
+        borderRadius: '10px',
+        border: `1px solid ${Colors.success}40`,
+        background: `${Colors.success}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
     },
     unlinkPartnerBtn: {
         width: '36px',

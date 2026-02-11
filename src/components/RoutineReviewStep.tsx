@@ -8,6 +8,7 @@ import { Card } from './Card';
 import { EjercicioRutina, AnalysisResult, RutinaUsuario, useUserStore } from '../stores/userStore';
 import Colors from '../styles/colors';
 import { ExerciseSelector } from './ExerciseSelector';
+import { TimeInput } from './TimeInput';
 import { EjercicioBase } from '@/data/exerciseDatabase';
 import {
     Check,
@@ -422,6 +423,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
                         style={styles.editInput}
                         value={tempExercise.nombre}
                         onChange={(e) => setTempExercise({ ...tempExercise, nombre: e.target.value })}
+                        onFocus={(e) => e.target.select()}
                     />
                     <div style={styles.editRow}>
                         <div style={styles.editCol}>
@@ -431,6 +433,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
                                 style={styles.editInputSmall}
                                 value={tempExercise.series}
                                 onChange={(e) => setTempExercise({ ...tempExercise, series: parseInt(e.target.value) || 0 })}
+                                onFocus={(e) => e.target.select()}
                             />
                             <div
                                 onClick={() => setIsProgressive(!isProgressive)}
@@ -463,6 +466,7 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
                                                 style={styles.editInputSmallProg}
                                                 value={tempExercise.repeticiones.split(/[,/]/)[i] || ''}
                                                 onChange={(e) => handleProgressiveRepChange(e.target.value, i)}
+                                                onFocus={(e) => e.target.select()}
                                                 placeholder="10"
                                             />
                                         </div>
@@ -473,18 +477,24 @@ const ExerciseItem: React.FC<ExerciseItemProps> = ({
                                     style={styles.editInputSmall}
                                     value={tempExercise.repeticiones}
                                     onChange={(e) => setTempExercise({ ...tempExercise, repeticiones: e.target.value })}
+                                    onFocus={(e) => e.target.select()}
                                     placeholder="e.g. 12-15"
                                 />
                             )}
                         </div>
                         <div style={styles.editCol}>
-                            <label style={styles.editLabel}>Segundos</label>
-                            <input
-                                type="number"
-                                style={styles.editInputSmall}
-                                value={tempExercise.segundos || ''}
-                                onChange={(e) => setTempExercise({ ...tempExercise, segundos: e.target.value ? parseInt(e.target.value) : undefined })}
-                                placeholder="Ej: 30"
+                            <TimeInput
+                                label="Duracion"
+                                value={tempExercise.segundos}
+                                onChange={(val) => setTempExercise({ ...tempExercise, segundos: val })}
+                                allowEmpty={true}
+                            />
+                        </div>
+                        <div style={styles.editCol}>
+                            <TimeInput
+                                label="Descanso"
+                                value={tempExercise.descanso}
+                                onChange={(val) => setTempExercise({ ...tempExercise, descanso: val || 0 })}
                             />
                         </div>
                     </div>
