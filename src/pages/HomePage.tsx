@@ -15,11 +15,16 @@ import { MoodStats } from '@/components/MoodStats';
 import { trainingInvitationService } from '@/services/trainingInvitationService';
 import { liveSessionService } from '@/services/liveSessionService';
 import { toast } from 'react-hot-toast';
+import { useRenderMetric } from '@/utils/renderMetrics';
 
 export const HomePage: React.FC = () => {
+    useRenderMetric('HomePage');
     const navigate = useNavigate();
     const [showRoutineModal, setShowRoutineModal] = useState(false);
-    const { perfil, getEntrenamientoHoy, activeSession, startSession } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const getEntrenamientoHoy = useUserStore((state) => state.getEntrenamientoHoy);
+    const activeSession = useUserStore((state) => state.activeSession);
+    const startSession = useUserStore((state) => state.startSession);
     const entrenamientoHoy = getEntrenamientoHoy();
 
     // Mood Tracking State

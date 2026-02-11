@@ -5,7 +5,9 @@ import { Colors } from '../styles/colors';
 import { CloudOff, Loader2, CheckCircle2 } from 'lucide-react';
 
 export const SyncStatus: React.FC = () => {
-    const { isSyncing, lastSyncError, userId } = useUserStore();
+    const isSyncing = useUserStore((state) => state.isSyncing);
+    const lastSyncError = useUserStore((state) => state.lastSyncError);
+    const userId = useUserStore((state) => state.userId);
 
     if (!userId) return null;
 

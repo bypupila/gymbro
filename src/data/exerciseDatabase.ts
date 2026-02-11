@@ -36,7 +36,7 @@ export interface EjercicioBase {
 
 const ejerciciosCardio: EjercicioBase[] = [
     { id: 'cardio-001', nombre: 'Cinta', grupoMuscular: 'cardio', esCompuesto: false },
-    { id: 'cardio-002', nombre: 'Elíptico', grupoMuscular: 'cardio', esCompuesto: false },
+    { id: 'cardio-002', nombre: 'Eliptico', grupoMuscular: 'cardio', esCompuesto: false },
     { id: 'cardio-003', nombre: 'Bicicleta', grupoMuscular: 'cardio', esCompuesto: false },
     { id: 'cardio-004', nombre: 'Spinning', grupoMuscular: 'cardio', esCompuesto: false },
     { id: 'cardio-005', nombre: 'Remo', grupoMuscular: 'cardio', esCompuesto: true },
@@ -47,7 +47,7 @@ const ejerciciosCardio: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosEspinales: EjercicioBase[] = [
-    { id: 'esp-001', nombre: 'Espinales en Máquina', grupoMuscular: 'espinales', equipamiento: 'Máquina', esCompuesto: false },
+    { id: 'esp-001', nombre: 'Espinales en Maquina', grupoMuscular: 'espinales', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'esp-002', nombre: 'Espinales en Banco', grupoMuscular: 'espinales', equipamiento: 'Banco', esCompuesto: false },
     { id: 'esp-003', nombre: 'Espinales en Colchoneta', grupoMuscular: 'espinales', equipamiento: 'Colchoneta', esCompuesto: false },
 ];
@@ -57,7 +57,7 @@ const ejerciciosEspinales: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosAbdominales: EjercicioBase[] = [
-    { id: 'abd-001', nombre: 'Abdominales en Máquina', grupoMuscular: 'abdominales', equipamiento: 'Máquina', esCompuesto: false },
+    { id: 'abd-001', nombre: 'Abdominales en Maquina', grupoMuscular: 'abdominales', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'abd-002', nombre: 'Abdominales en Colchoneta', grupoMuscular: 'abdominales', equipamiento: 'Colchoneta', esCompuesto: false },
     { id: 'abd-003', nombre: 'Abdominales en Banco', grupoMuscular: 'abdominales', equipamiento: 'Banco', esCompuesto: false },
     { id: 'abd-004', nombre: 'Abdominales en Polea', grupoMuscular: 'abdominales', equipamiento: 'Polea', esCompuesto: false },
@@ -82,10 +82,10 @@ const ejerciciosOblicuos: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosPectoral: EjercicioBase[] = [
-    { id: 'pec-001', nombre: 'Chest Press', grupoMuscular: 'pectoral', equipamiento: 'Máquina', esCompuesto: true },
-    { id: 'pec-002', nombre: 'Chest Press Hammer', grupoMuscular: 'pectoral', equipamiento: 'Máquina Hammer', esCompuesto: true },
-    { id: 'pec-003', nombre: 'Peck Deck', grupoMuscular: 'pectoral', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pec-004', nombre: 'Pec Fly', grupoMuscular: 'pectoral', equipamiento: 'Máquina', esCompuesto: false },
+    { id: 'pec-001', nombre: 'Chest Press', grupoMuscular: 'pectoral', equipamiento: 'Maquina', esCompuesto: true },
+    { id: 'pec-002', nombre: 'Chest Press Hammer', grupoMuscular: 'pectoral', equipamiento: 'Maquina Hammer', esCompuesto: true },
+    { id: 'pec-003', nombre: 'Peck Deck', grupoMuscular: 'pectoral', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pec-004', nombre: 'Pec Fly', grupoMuscular: 'pectoral', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'pec-005', nombre: 'Press en Banco Plano con Barra', grupoMuscular: 'pectoral', equipamiento: 'Barra', esCompuesto: true },
     { id: 'pec-006', nombre: 'Press en Banco Plano con Smith', grupoMuscular: 'pectoral', equipamiento: 'Smith', esCompuesto: true },
     { id: 'pec-007', nombre: 'Press en Banco Plano con Mancuernas', grupoMuscular: 'pectoral', equipamiento: 'Mancuernas', esCompuesto: true },
@@ -103,12 +103,12 @@ const ejerciciosPectoral: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosEspalda: EjercicioBase[] = [
-    { id: 'esp-101', nombre: 'Vertical Trac', grupoMuscular: 'espalda', equipamiento: 'Máquina', esCompuesto: true },
-    { id: 'esp-102', nombre: 'Low Row (Remo Bajo)', grupoMuscular: 'espalda', equipamiento: 'Máquina', esCompuesto: true },
-    { id: 'esp-103', nombre: 'Low Row Hammer', grupoMuscular: 'espalda', equipamiento: 'Máquina Hammer', esCompuesto: true },
+    { id: 'esp-101', nombre: 'Vertical Trac', grupoMuscular: 'espalda', equipamiento: 'Maquina', esCompuesto: true },
+    { id: 'esp-102', nombre: 'Low Row (Remo Bajo)', grupoMuscular: 'espalda', equipamiento: 'Maquina', esCompuesto: true },
+    { id: 'esp-103', nombre: 'Low Row Hammer', grupoMuscular: 'espalda', equipamiento: 'Maquina Hammer', esCompuesto: true },
     { id: 'esp-104', nombre: 'Lat con Barra Pronado', grupoMuscular: 'espalda', equipamiento: 'Polea Alta/Barra', esCompuesto: true },
     { id: 'esp-105', nombre: 'Lat con Barra Supino', grupoMuscular: 'espalda', equipamiento: 'Polea Alta/Barra', esCompuesto: true },
-    { id: 'esp-106', nombre: 'Lat con Triángulo', grupoMuscular: 'espalda', equipamiento: 'Polea Alta/Triángulo', esCompuesto: true },
+    { id: 'esp-106', nombre: 'Lat con Triangulo', grupoMuscular: 'espalda', equipamiento: 'Polea Alta/Triangulo', esCompuesto: true },
     { id: 'esp-107', nombre: 'Pull Over con Mancuerna', grupoMuscular: 'espalda', equipamiento: 'Banco/Mancuerna', esCompuesto: false },
     { id: 'esp-108', nombre: 'Pull Over en Polea', grupoMuscular: 'espalda', equipamiento: 'Polea', esCompuesto: false },
     { id: 'esp-109', nombre: 'Remo con Barra', grupoMuscular: 'espalda', equipamiento: 'Barra', esCompuesto: true },
@@ -123,7 +123,7 @@ const ejerciciosEspalda: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosTrapecio: EjercicioBase[] = [
-    { id: 'trap-001', nombre: 'Tirón al Mentón', grupoMuscular: 'trapecio', equipamiento: 'Barra/Polea', esCompuesto: true },
+    { id: 'trap-001', nombre: 'Tiron al Menton', grupoMuscular: 'trapecio', equipamiento: 'Barra/Polea', esCompuesto: true },
     { id: 'trap-002', nombre: 'Encogimiento con Barra', grupoMuscular: 'trapecio', equipamiento: 'Barra', esCompuesto: false },
     { id: 'trap-003', nombre: 'Encogimiento con Mancuernas', grupoMuscular: 'trapecio', equipamiento: 'Mancuernas', esCompuesto: false },
     { id: 'trap-004', nombre: 'Encogimiento con Discos', grupoMuscular: 'trapecio', equipamiento: 'Discos', esCompuesto: false },
@@ -134,7 +134,7 @@ const ejerciciosTrapecio: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosHombros: EjercicioBase[] = [
-    { id: 'hom-001', nombre: 'Shoulder Press (Máquina)', grupoMuscular: 'hombros', equipamiento: 'Máquina', esCompuesto: true },
+    { id: 'hom-001', nombre: 'Shoulder Press (Maquina)', grupoMuscular: 'hombros', equipamiento: 'Maquina', esCompuesto: true },
     { id: 'hom-002', nombre: 'Press de Hombros con Barra', grupoMuscular: 'hombros', equipamiento: 'Barra', esCompuesto: true },
     { id: 'hom-003', nombre: 'Press de Hombros con Mancuernas', grupoMuscular: 'hombros', equipamiento: 'Mancuernas', esCompuesto: true },
     { id: 'hom-004', nombre: 'Press de Hombros con Smith', grupoMuscular: 'hombros', equipamiento: 'Smith', esCompuesto: true },
@@ -144,17 +144,17 @@ const ejerciciosHombros: EjercicioBase[] = [
     { id: 'hom-008', nombre: 'Vuelos Frontales en Polea', grupoMuscular: 'hombros', equipamiento: 'Polea', esCompuesto: false },
     { id: 'hom-009', nombre: 'Vuelos Laterales con Mancuernas', grupoMuscular: 'hombros', equipamiento: 'Mancuernas', esCompuesto: false },
     { id: 'hom-010', nombre: 'Vuelos Laterales en Polea', grupoMuscular: 'hombros', equipamiento: 'Polea', esCompuesto: false },
-    { id: 'hom-011', nombre: 'Vuelos Posteriores en Máquina', grupoMuscular: 'hombros', equipamiento: 'Máquina', esCompuesto: false },
+    { id: 'hom-011', nombre: 'Vuelos Posteriores en Maquina', grupoMuscular: 'hombros', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'hom-012', nombre: 'Vuelos Posteriores con Mancuernas', grupoMuscular: 'hombros', equipamiento: 'Mancuernas', esCompuesto: false },
     { id: 'hom-013', nombre: 'Vuelos Posteriores en Polea', grupoMuscular: 'hombros', equipamiento: 'Polea', esCompuesto: false },
 ];
 
 // =====================================================
-// BÍCEPS
+// BÃ¯Â¿Â½CEPS
 // =====================================================
 
 const ejerciciosBiceps: EjercicioBase[] = [
-    { id: 'bic-001', nombre: 'Arm Curl (Bíceps en Máquina)', grupoMuscular: 'biceps', equipamiento: 'Máquina', esCompuesto: false },
+    { id: 'bic-001', nombre: 'Arm Curl (Biceps en Maquina)', grupoMuscular: 'biceps', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'bic-002', nombre: 'Curl con Mancuernas', grupoMuscular: 'biceps', equipamiento: 'Mancuernas', esCompuesto: false },
     { id: 'bic-003', nombre: 'Curl en Polea', grupoMuscular: 'biceps', equipamiento: 'Polea', esCompuesto: false },
     { id: 'bic-004', nombre: 'Curl Alternado', grupoMuscular: 'biceps', equipamiento: 'Mancuernas', esCompuesto: false },
@@ -165,37 +165,37 @@ const ejerciciosBiceps: EjercicioBase[] = [
 ];
 
 // =====================================================
-// TRÍCEPS
+// TRÃ¯Â¿Â½CEPS
 // =====================================================
 
 const ejerciciosTriceps: EjercicioBase[] = [
-    { id: 'tri-001', nombre: 'Arm Extension (Tríceps en Máquina)', grupoMuscular: 'triceps', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'tri-002', nombre: 'Extensión en Polea con Barra', grupoMuscular: 'triceps', equipamiento: 'Polea/Barra', esCompuesto: false },
-    { id: 'tri-003', nombre: 'Extensión en Polea con Soga', grupoMuscular: 'triceps', equipamiento: 'Polea/Soga', esCompuesto: false },
-    { id: 'tri-004', nombre: 'Press Francés', grupoMuscular: 'triceps', equipamiento: 'Barra/Mancuernas', esCompuesto: false },
+    { id: 'tri-001', nombre: 'Arm Extension (Triceps en Maquina)', grupoMuscular: 'triceps', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'tri-002', nombre: 'Extension en Polea con Barra', grupoMuscular: 'triceps', equipamiento: 'Polea/Barra', esCompuesto: false },
+    { id: 'tri-003', nombre: 'Extension en Polea con Soga', grupoMuscular: 'triceps', equipamiento: 'Polea/Soga', esCompuesto: false },
+    { id: 'tri-004', nombre: 'Press Frances', grupoMuscular: 'triceps', equipamiento: 'Barra/Mancuernas', esCompuesto: false },
     { id: 'tri-005', nombre: 'Press Cerrado con Barra', grupoMuscular: 'triceps', equipamiento: 'Barra', esCompuesto: true },
     { id: 'tri-006', nombre: 'Press Cerrado con Smith', grupoMuscular: 'triceps', equipamiento: 'Smith', esCompuesto: true },
     { id: 'tri-007', nombre: 'Fondos en Banco', grupoMuscular: 'triceps', equipamiento: 'Banco', esCompuesto: true },
     { id: 'tri-008', nombre: 'Fondos en Paralelas', grupoMuscular: 'triceps', equipamiento: 'Paralelas', esCompuesto: true },
-    { id: 'tri-009', nombre: 'Tríceps Concentrado con Mancuerna', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false },
-    { id: 'tri-010', nombre: 'Tríceps Concentrado en Polea', grupoMuscular: 'triceps', equipamiento: 'Polea', esCompuesto: false },
-    { id: 'tri-011', nombre: 'Patada de Tríceps', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false },
+    { id: 'tri-009', nombre: 'Triceps Concentrado con Mancuerna', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false },
+    { id: 'tri-010', nombre: 'Triceps Concentrado en Polea', grupoMuscular: 'triceps', equipamiento: 'Polea', esCompuesto: false },
+    { id: 'tri-011', nombre: 'Patada de Triceps', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false },
 ];
 
 // =====================================================
-// PIERNAS Y GLÚTEOS
+// PIERNAS Y GLÃ¯Â¿Â½TEOS
 // =====================================================
 
 const ejerciciosPiernas: EjercicioBase[] = [
-    { id: 'pier-001', nombre: 'Prensa 45Â°', grupoMuscular: 'piernas', equipamiento: 'Máquina Prensa', esCompuesto: true },
-    { id: 'pier-002', nombre: 'Prensa 90Â°', grupoMuscular: 'piernas', equipamiento: 'Máquina Prensa', esCompuesto: true },
-    { id: 'pier-003', nombre: 'Leg Curl (Femorales)', grupoMuscular: 'piernas', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pier-004', nombre: 'Leg Extension (Cuádriceps)', grupoMuscular: 'piernas', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pier-005', nombre: 'Gemelos', grupoMuscular: 'piernas', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pier-006', nombre: 'Máquina Aductores', grupoMuscular: 'piernas', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pier-007', nombre: 'Máquina Abductores', grupoMuscular: 'piernas', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pier-008', nombre: 'Multi-Hip', grupoMuscular: 'piernas', equipamiento: 'Máquina', esCompuesto: false },
-    { id: 'pier-009', nombre: 'Sentadilla Sissy', grupoMuscular: 'piernas', equipamiento: 'Máquina Sissy', esCompuesto: true },
+    { id: 'pier-001', nombre: 'Prensa 45 grados', grupoMuscular: 'piernas', equipamiento: 'Maquina Prensa', esCompuesto: true },
+    { id: 'pier-002', nombre: 'Prensa 90 grados', grupoMuscular: 'piernas', equipamiento: 'Maquina Prensa', esCompuesto: true },
+    { id: 'pier-003', nombre: 'Leg Curl (Femorales)', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-004', nombre: 'Leg Extension (Cuadriceps)', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-005', nombre: 'Gemelos', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-006', nombre: 'Maquina Aductores', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-007', nombre: 'Maquina Abductores', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-008', nombre: 'Multi-Hip', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-009', nombre: 'Sentadilla Sissy', grupoMuscular: 'piernas', equipamiento: 'Maquina Sissy', esCompuesto: true },
     { id: 'pier-010', nombre: 'Sentadilla con Barra', grupoMuscular: 'piernas', equipamiento: 'Barra', esCompuesto: true },
     { id: 'pier-011', nombre: 'Sentadilla con Smith', grupoMuscular: 'piernas', equipamiento: 'Smith', esCompuesto: true },
     { id: 'pier-012', nombre: 'Sentadilla con Mancuernas', grupoMuscular: 'piernas', equipamiento: 'Mancuernas', esCompuesto: true },
@@ -207,11 +207,11 @@ const ejerciciosGluteos: EjercicioBase[] = [
     { id: 'glut-001', nombre: 'Hip Thrust con Barra', grupoMuscular: 'gluteos', equipamiento: 'Barra/Banco', esCompuesto: true },
     { id: 'glut-002', nombre: 'Hip Thrust con Smith', grupoMuscular: 'gluteos', equipamiento: 'Smith/Banco', esCompuesto: true },
     { id: 'glut-003', nombre: 'Hip Thrust en Colchoneta', grupoMuscular: 'gluteos', equipamiento: 'Colchoneta', esCompuesto: true },
-    { id: 'glut-004', nombre: 'Glúteos en Polea', grupoMuscular: 'gluteos', equipamiento: 'Polea', esCompuesto: false },
+    { id: 'glut-004', nombre: 'Gluteos en Polea', grupoMuscular: 'gluteos', equipamiento: 'Polea', esCompuesto: false },
 ];
 
 // =====================================================
-// EXPORTACIÓN COMPLETA
+// EXPORTACION COMPLETA
 // =====================================================
 
 export const EJERCICIOS_DATABASE: EjercicioBase[] = [
@@ -239,27 +239,27 @@ export const EJERCICIOS_DATABASE: EjercicioBase[] = [
     // Add Leg Exercises
     { id: 'pier-201', nombre: 'Estocadas con Mancuernas', grupoMuscular: 'piernas', equipamiento: 'Mancuernas', esCompuesto: true },
     { id: 'pier-202', nombre: 'Estocadas Caminando', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Sin equipo', esCompuesto: true },
-    { id: 'pier-203', nombre: 'Sentadilla Búlgara', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Banco', esCompuesto: true },
-    { id: 'pier-204', nombre: 'Subida al Cajón (Step Up)', grupoMuscular: 'piernas', equipamiento: 'Cajón/Mancuernas', esCompuesto: true },
+    { id: 'pier-203', nombre: 'Sentadilla Bulgara', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Banco', esCompuesto: true },
+    { id: 'pier-204', nombre: 'Subida al Cajon (Step Up)', grupoMuscular: 'piernas', equipamiento: 'Cajon/Mancuernas', esCompuesto: true },
 
     ...ejerciciosGluteos,
 ];
 
 // Mapa de grupos musculares para mostrar en UI
 export const GRUPOS_MUSCULARES: Record<GrupoMuscularEjercicio, { nombre: string; emoji: string; color: string }> = {
-    calentamiento: { nombre: 'Calentamiento', emoji: 'ðŸ”¥', color: '#F59E0B' },
-    cardio: { nombre: 'Cardio', emoji: 'â¤ï¸', color: '#EF4444' },
-    espinales: { nombre: 'Espinales', emoji: 'ðŸ¦´', color: '#8B5CF6' },
-    abdominales: { nombre: 'Abdominales', emoji: 'ðŸ’Ž', color: '#3B82F6' },
-    oblicuos: { nombre: 'Oblicuos', emoji: 'â†”ï¸', color: '#06B6D4' },
-    pectoral: { nombre: 'Pectoral', emoji: 'ðŸ’ª', color: '#EC4899' },
-    espalda: { nombre: 'Espalda', emoji: 'ðŸ”™', color: '#10B981' },
-    trapecio: { nombre: 'Trapecio', emoji: 'â¬†ï¸', color: '#14B8A6' },
-    hombros: { nombre: 'Hombros', emoji: 'ðŸŽ¯', color: '#F97316' },
-    biceps: { nombre: 'Bíceps', emoji: 'ðŸ’ª', color: '#EF4444' },
-    triceps: { nombre: 'Tríceps', emoji: 'ðŸ¦¾', color: '#8B5CF6' },
-    piernas: { nombre: 'Piernas / Glúteos', emoji: 'ðŸ¦µ', color: '#22C55E' },
-    gluteos: { nombre: 'Piernas / Glúteos', emoji: 'ðŸ¦µ', color: '#22C55E' },
+    calentamiento: { nombre: 'Calentamiento', emoji: '\u{1F525}', color: '#F59E0B' },
+    cardio: { nombre: 'Cardio', emoji: '\u2764\uFE0F', color: '#EF4444' },
+    espinales: { nombre: 'Espinales', emoji: '\u{1F9B4}', color: '#8B5CF6' },
+    abdominales: { nombre: 'Abdominales', emoji: '\u{1F48E}', color: '#3B82F6' },
+    oblicuos: { nombre: 'Oblicuos', emoji: '\u2194\uFE0F', color: '#06B6D4' },
+    pectoral: { nombre: 'Pectoral', emoji: '\u{1F4AA}', color: '#EC4899' },
+    espalda: { nombre: 'Espalda', emoji: '\u{1F519}', color: '#10B981' },
+    trapecio: { nombre: 'Trapecio', emoji: '\u2B06\uFE0F', color: '#14B8A6' },
+    hombros: { nombre: 'Hombros', emoji: '\u{1F3AF}', color: '#F97316' },
+    biceps: { nombre: 'Biceps', emoji: '\u{1F4AA}', color: '#EF4444' },
+    triceps: { nombre: 'Triceps', emoji: '\u{1F9BE}', color: '#8B5CF6' },
+    piernas: { nombre: 'Piernas / Gluteos', emoji: '\u{1F9B5}', color: '#22C55E' },
+    gluteos: { nombre: 'Piernas / Gluteos', emoji: '\u{1F9B5}', color: '#22C55E' },
 };
 
 // Helper functions
@@ -276,17 +276,7 @@ export const buscarEjercicios = (query: string): EjercicioBase[] => {
     );
 };
 
-export const getEjercicioById = (id: string): EjercicioBase | undefined => {
-    return EJERCICIOS_DATABASE.find(ej => ej.id === id);
-};
 
-export const getEjerciciosCompuestos = (): EjercicioBase[] => {
-    return EJERCICIOS_DATABASE.filter(ej => ej.esCompuesto);
-};
 
-export const getEjerciciosAislamiento = (): EjercicioBase[] => {
-    return EJERCICIOS_DATABASE.filter(ej => !ej.esCompuesto);
-};
 
-export default EJERCICIOS_DATABASE;
 

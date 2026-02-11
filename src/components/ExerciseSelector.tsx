@@ -1,6 +1,6 @@
 // =====================================================
 // GymBro PWA - Exercise Selector Component
-// Selector de ejercicios con b�squeda y filtros por grupo muscular
+// Selector de ejercicios con búsqueda y filtros por grupo muscular
 // =====================================================
 
 import React, { useState, useMemo } from 'react';
@@ -101,7 +101,7 @@ export const ExerciseSelector: React.FC<ExerciseSelectorProps> = ({ onSelect, on
                 {/* Back Button (when in exercises view) */}
                 {view === 'exercises' && selectedGroup && !searchQuery && (
                     <button style={styles.backBtn} onClick={handleBack}>
-                        ← Volver a grupos
+                        {'<'} Volver a grupos
                     </button>
                 )}
 
@@ -160,7 +160,7 @@ export const ExerciseSelector: React.FC<ExerciseSelectorProps> = ({ onSelect, on
                                 ))
                             ) : (
                                 <div style={styles.emptyState}>
-                                    <span style={styles.emptyIcon}>🔍</span>
+                                    <Search size={24} color={Colors.textTertiary} />
                                     <p style={styles.emptyText}>
                                         No se encontraron ejercicios
                                     </p>

@@ -1,6 +1,6 @@
-﻿// =====================================================
+// =====================================================
 // GymBro PWA - Routine Detail Page
-// Gestión completa de rutinas: ver, editar, eliminar
+// Gestion completa de rutinas: ver, editar, eliminar
 // =====================================================
 
 import { Card } from '@/components/Card';
@@ -41,13 +41,19 @@ import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 const DAY_STYLE: Record<string, { color: string, bg: string }> = {
     'Lunes': { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.05)' },
     'Martes': { color: '#FF2D55', bg: 'rgba(255, 45, 85, 0.05)' },
-    'Miércoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
+    'Miercoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
     'Jueves': { color: '#5856D6', bg: 'rgba(88, 86, 214, 0.05)' },
     'Viernes': { color: '#34C759', bg: 'rgba(52, 199, 89, 0.05)' },
-    'Sábado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
+    'Sibado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
     'Domingo': { color: '#FF3B30', bg: 'rgba(255, 59, 48, 0.05)' },
     'default': { color: Colors.primary, bg: 'rgba(0, 230, 153, 0.05)' }
 };
@@ -998,13 +1004,13 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                 <span style={{
                                     ...styles.checkboxLabel,
                                     color: editedExercise.isOptional ? Colors.text : Colors.textTertiary
-                                }}>{editedExercise.isOptional ? 'Sí' : 'No'}</span>
+                                }}>{editedExercise.isOptional ? 'Si' : 'No'}</span>
                             </div>
                         </div>
                     </div>
                     <div style={styles.editRow}>
                         <div style={{ ...styles.editField, flex: 1 }}>
-                            <label style={styles.editLabel}>Días (Multiselección)</label>
+                            <label style={styles.editLabel}>Dias (Multiseleccion)</label>
                             <div style={styles.dayChipsRow}>
                                 {availableDays.map(day => {
                                     const isSelected = localSelectedDays.includes(day);
@@ -1044,7 +1050,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                     </div>
                     <div style={styles.editRow}>
                         <div style={styles.editField}>
-                            <label style={styles.editLabel}>Categoría</label>
+                            <label style={styles.editLabel}>Categoria</label>
                             <select
                                 value={editedExercise.categoria}
                                 onChange={(e) => setEditedExercise({
@@ -1294,7 +1300,9 @@ const DraggableExerciseCard = (props: ExerciseCardProps) => {
 
 export const RoutineDetailPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, setRutina, userId } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const setRutina = useUserStore((state) => state.setRutina);
+    const userId = useUserStore((state) => state.userId);
     const rutina = perfil.rutina;
 
     const [editingExercise, setEditingExercise] = useState<string | null>(null);
@@ -1347,6 +1355,9 @@ export const RoutineDetailPage: React.FC = () => {
             toast.success('Solicitud enviada');
             setShowShareModal(false);
             setShareAlias('');
+        } catch (error) {
+            console.error('[RoutineDetailPage] Error compartiendo rutina:', error);
+            toast.error('No se pudo compartir la rutina. Intentalo de nuevo.');
         } finally {
             setIsSharing(false);
         }
@@ -1373,7 +1384,7 @@ export const RoutineDetailPage: React.FC = () => {
                 ejercicios: cleanupRoutineExercises(result.exercises),
                 nombre: result.routineName || rutina.nombre
             });
-            toast.success("¡Rutina organizada con éxito por la IA!");
+            toast.success("Rutina organizada con exito por la IA!");
         } catch (error) {
             console.error(error);
             toast.error("No se pudo organizar la rutina con IA.");
@@ -1386,7 +1397,7 @@ export const RoutineDetailPage: React.FC = () => {
         if (rutina?.ejercicios) {
             const cleaned = cleanupRoutineExercises(rutina.ejercicios);
             if (cleaned.length !== rutina.ejercicios.length) {
-                console.log("Auto-cleaning duplicates on mount");
+                debugLog("Auto-cleaning duplicates on mount");
                 setRutina({ ...rutina, ejercicios: cleaned });
             }
         }
@@ -1474,7 +1485,7 @@ export const RoutineDetailPage: React.FC = () => {
 
         toast((t) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar este ejercicio?</span>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>Eliminar este ejercicio?</span>
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                     <button
                         onClick={() => toast.dismiss(t.id)}
@@ -1617,12 +1628,12 @@ export const RoutineDetailPage: React.FC = () => {
                             {routineInfo.expirada ? (
                                 <>
                                     <span style={{ ...styles.expirationTitle, color: Colors.error }}>Rutina Expirada</span>
-                                    <span style={styles.expirationSubtitle}>Finalizó el {formatDate(routineInfo.fechaFin)}</span>
+                                    <span style={styles.expirationSubtitle}>Finalizo el {formatDate(routineInfo.fechaFin)}</span>
                                 </>
                             ) : (
                                 <>
-                                    <span style={{ ...styles.expirationTitle, color: routineInfo.proximaACaducar ? Colors.warning : Colors.success }}>{routineInfo.diasRestantes} días restantes</span>
-                                    <span style={styles.expirationSubtitle}>Válida hasta {formatDate(routineInfo.fechaFin)}</span>
+                                    <span style={{ ...styles.expirationTitle, color: routineInfo.proximaACaducar ? Colors.warning : Colors.success }}>{routineInfo.diasRestantes} dias restantes</span>
+                                    <span style={styles.expirationSubtitle}>Valida hasta {formatDate(routineInfo.fechaFin)}</span>
                                 </>
                             )}
                         </div>
@@ -1694,7 +1705,7 @@ export const RoutineDetailPage: React.FC = () => {
             <div style={styles.exercisesHeader}>
                 <h3 style={styles.sectionTitle}>Ejercicios ({rutina.ejercicios.length})</h3>
                 <button style={styles.addExerciseBtn} onClick={() => setShowAddExerciseModal(true)}>
-                    <Plus size={18} /> Añadir
+                    <Plus size={18} /> Anadir
                 </button>
             </div>
 
@@ -1829,8 +1840,8 @@ export const RoutineDetailPage: React.FC = () => {
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
                             <div style={styles.modalIcon}><AlertTriangle size={24} color={Colors.warning} /></div>
-                            <h3 style={styles.modalTitle}>¿Eliminar Rutina?</h3>
-                            <p style={styles.modalText}>Esta acción eliminará permanentemente tu rutina &quot;{rutina.nombre}&quot; y todos sus ejercicios.</p>
+                            <h3 style={styles.modalTitle}>Eliminar Rutina?</h3>
+                            <p style={styles.modalText}>Esta accion eliminara permanentemente tu rutina &quot;{rutina.nombre}&quot; y todos sus ejercicios.</p>
                             <div style={styles.modalActions}>
                                 <button style={styles.modalCancelBtn} onClick={() => setShowDeleteModal(false)}>Cancelar</button>
                                 <button style={styles.modalDeleteBtn} onClick={handleDeleteRoutine}><Trash2 size={18} /> Eliminar</button>
@@ -1845,13 +1856,13 @@ export const RoutineDetailPage: React.FC = () => {
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>Añadir Ejercicio</h3>
+                                <h3 style={styles.modalTitle}>Anadir Ejercicio</h3>
                                 <button style={styles.closeModalBtn} onClick={() => setShowAddExerciseModal(false)}><X size={24} /></button>
                             </div>
                             <div style={styles.addForm}>
                                 <div style={styles.formRow}>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>Día</label>
+                                        <label style={styles.formLabel}>Dia</label>
                                         <select
                                             value={newExercise.dia}
                                             onChange={(e) => setNewExercise({ ...newExercise, dia: e.target.value })}
@@ -1884,7 +1895,7 @@ export const RoutineDetailPage: React.FC = () => {
                                 </div>
                                 <div style={styles.formRow}>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>Categoría</label>
+                                        <label style={styles.formLabel}>Categoria</label>
                                         <select value={newExercise.categoria} onChange={(e) => setNewExercise({ ...newExercise, categoria: e.target.value as 'calentamiento' | 'maquina' })} style={styles.formInput}>
                                             <option value="maquina">Rutina Principal</option>
                                             <option value="calentamiento">Calentamiento</option>
@@ -1899,7 +1910,7 @@ export const RoutineDetailPage: React.FC = () => {
                                         </select>
                                     </div>
                                     <div style={styles.formGroup}>
-                                        <label style={styles.formLabel}>Músculo</label>
+                                        <label style={styles.formLabel}>Musculo</label>
                                         <select value={newExercise.grupoMuscular || ''} onChange={(e) => setNewExercise({ ...newExercise, grupoMuscular: e.target.value })} style={styles.formInput}>
                                             <option value="">Sin asignar</option>
                                             {Object.entries(GRUPOS_MUSCULARES)
@@ -1910,7 +1921,7 @@ export const RoutineDetailPage: React.FC = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> Añadir Ejercicio</button>
+                                <button style={styles.addExerciseSubmitBtn} onClick={handleAddExercise} disabled={!newExercise.nombre}><Plus size={20} /> Anadir Ejercicio</button>
                                 <div style={styles.divider}><span style={styles.dividerText}>o</span></div>
                                 <button style={styles.selectFromDbBtn} onClick={() => { setShowAddExerciseModal(false); setShowExerciseSelector(true); }}>
                                     <BookOpen size={16} style={{ marginRight: '6px' }} />
@@ -1995,4 +2006,5 @@ export const RoutineDetailPage: React.FC = () => {
 
 
 export default RoutineDetailPage;
+
 

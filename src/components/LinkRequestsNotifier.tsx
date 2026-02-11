@@ -1,13 +1,15 @@
-﻿import React from 'react';
+import React from 'react';
 import { useUserStore } from '@/stores/userStore';
-import { firebaseService, LinkRequest } from '@/services/firebaseService';
+import { firebaseService } from '@/services/firebaseService';
+import type { LinkRequest } from '@/services/firebaseService';
 import { Card } from './Card';
 import Colors from '@/styles/colors';
 import { Check, X, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export const LinkRequestsNotifier: React.FC = () => {
-    const { linkRequests, addPartner } = useUserStore();
+    const linkRequests = useUserStore((state) => state.linkRequests);
+    const addPartner = useUserStore((state) => state.addPartner);
 
     if (linkRequests.length === 0) {
         return null;

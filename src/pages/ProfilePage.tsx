@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // GymBro PWA - Profile Page
 // =====================================================
 
@@ -17,16 +17,32 @@ import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
 import { NivelExperiencia, ObjetivoFitness } from '@/stores/userStore';
 import { LinkRequestsNotifier } from '@/components/LinkRequestsNotifier';
+import { useRenderMetric } from '@/utils/renderMetrics';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface FirebaseAuthError {
     code: string;
     message: string;
 }
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
+
 export const ProfilePage: React.FC = () => {
+    useRenderMetric('ProfilePage');
     const navigate = useNavigate();
-    const { userId, perfil, resetear, logout, isSyncing, lastSyncError, setDatosPersonales, deleteRoutineFromHistory, removePartner } = useUserStore();
+    const userId = useUserStore((state) => state.userId);
+    const perfil = useUserStore((state) => state.perfil);
+    const resetear = useUserStore((state) => state.resetear);
+    const logout = useUserStore((state) => state.logout);
+    const isSyncing = useUserStore((state) => state.isSyncing);
+    const lastSyncError = useUserStore((state) => state.lastSyncError);
+    const setDatosPersonales = useUserStore((state) => state.setDatosPersonales);
+    const deleteRoutineFromHistory = useUserStore((state) => state.deleteRoutineFromHistory);
+    const removePartner = useUserStore((state) => state.removePartner);
     const userInfo = perfil.usuario;
     const partnerInfo = perfil.pareja;
     const partners = perfil.partners || [];
@@ -39,17 +55,6 @@ export const ProfilePage: React.FC = () => {
         }
         : null;
     const linkedPartner = activePartner || legacyLinkedPartner;
-
-    // Debug logging para diagnosticar partners
-    console.log('[ProfilePage] Partner debug:', {
-        partners,
-        activePartnerId: perfil.activePartnerId,
-        partnerId: perfil.partnerId,
-        partnerIds: perfil.partnerIds,
-        activePartner,
-        legacyLinkedPartner,
-        linkedPartner
-    });
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(userInfo);
@@ -61,6 +66,7 @@ export const ProfilePage: React.FC = () => {
     // Modal States
     const [showPartnerModal, setShowPartnerModal] = useState(false);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
+    const [tempAvatar, setTempAvatar] = useState<string>(userInfo.avatar || '');
 
     // New state for partner linking flow
     const [partnerAliasInput, setPartnerAliasInput] = useState('');
@@ -95,13 +101,13 @@ export const ProfilePage: React.FC = () => {
     };
 
     const handleSendRequest = async () => {
-        // Validación de datos necesarios
+        // Validacion de datos necesarios
         if (!foundUser || !userId || !perfil.alias) {
             toast.error('Faltan datos necesarios para enviar la solicitud.');
             return;
         }
 
-        // Validación de auto-vinculación
+        // Validacion de auto-vinculacion
         if (userId === foundUser.id) {
             toast.error('No puedes vincularte contigo mismo.');
             setSearchStatus('error');
@@ -125,25 +131,28 @@ export const ProfilePage: React.FC = () => {
 
             // Capturar tanto message como code de Firestore
             const errorMessage = error instanceof Error ? error.message : '';
-            const errorCode = (error as any)?.code;
+            const errorCode =
+                typeof error === 'object' && error !== null && 'code' in error
+                    ? String((error as { code?: unknown }).code ?? '')
+                    : '';
 
-            console.log('[handleSendRequest] Error details:', { errorCode, errorMessage, error });
+            debugLog('[handleSendRequest] Error details:', { errorCode, errorMessage, error });
 
-            // Manejar errores específicos
+            // Manejar errores especificos
             if (errorMessage === 'ALREADY_HAS_PARTNER') {
                 toast.error('Ya tienes un partner activo.');
             } else if (errorMessage === 'RECIPIENT_ALREADY_HAS_PARTNER') {
                 toast.error('Ese usuario ya tiene un partner activo.');
             } else if (errorMessage === 'ALREADY_LINKED') {
-                toast.error('Ya están vinculados.');
+                toast.error('Ya estan vinculados.');
             } else if (errorMessage === 'PROFILE_NOT_FOUND') {
                 toast.error('No se pudo encontrar el perfil del usuario.');
             } else if (errorCode === 'permission-denied') {
-                toast.error('No tienes permisos. Verifica tu sesión y vuelve a intentar.');
+                toast.error('No tienes permisos. Verifica tu sesion y vuelve a intentar.');
             } else if (errorCode === 'unavailable') {
-                toast.error('Error de conexión. Verifica tu internet.');
+                toast.error('Error de conexion. Verifica tu internet.');
             } else {
-                // Mostrar error más detallado para debugging
+                // Mostrar error mas detallado para debugging
                 const detailedError = errorMessage || errorCode || 'Desconocido';
                 toast.error(`Error al enviar la solicitud: ${detailedError}`);
             }
@@ -153,7 +162,7 @@ export const ProfilePage: React.FC = () => {
         }
     };
 
-    const handleUnlinkCurrentPartner = (partnerToUnlink: { id: string; nombre: string; alias?: string }) => {
+    const handleUnlinkCurrentPartner = (partnerToUnlink: { id: string; nombre: string; alias: string }) => {
         if (!userId) return;
 
         toast((t) => (
@@ -244,7 +253,7 @@ export const ProfilePage: React.FC = () => {
         const currentAlias = (perfil.alias || '').toLowerCase();
 
         try {
-            // 1. Validar alias si cambió
+            // 1. Validar alias si cambio
             if (cleanAlias !== currentAlias) {
                 if (cleanAlias.length < 3) {
                     setAliasError('El alias debe tener al menos 3 caracteres.');
@@ -254,7 +263,7 @@ export const ProfilePage: React.FC = () => {
                 // 1. Validar disponibilidad
                 const available = await firebaseService.isAliasAvailable(cleanAlias, userId);
                 if (!available) {
-                    setAliasError('Este alias ya está registrado. Elige otro.');
+                    setAliasError('Este alias ya esta registrado. Elige otro.');
                     setIsSaving(false);
                     return;
                 }
@@ -266,10 +275,11 @@ export const ProfilePage: React.FC = () => {
                 if (isGymbroAccount) {
                     try {
                         await authService.updateEmail(`${cleanAlias}@gymbro.app`);
-                    } catch (authError: FirebaseAuthError) {
-                        console.error("Auth Email Update Error:", authError);
-                        if (authError.code === 'auth/requires-recent-login') {
-                            setAliasError('Por seguridad, debes cerrar sesión y volver a entrar para cambiar tu alias de login.');
+                    } catch (authError: unknown) {
+                        const typedAuthError = authError as FirebaseAuthError;
+                        console.error("Auth Email Update Error:", typedAuthError);
+                        if (typedAuthError.code === 'auth/requires-recent-login') {
+                            setAliasError('Por seguridad, debes cerrar sesion y volver a entrar para cambiar tu alias de login.');
                             setIsSaving(false);
                             return;
                         }
@@ -289,10 +299,11 @@ export const ProfilePage: React.FC = () => {
             // 2. Guardar datos personales
             setDatosPersonales(editData);
             setIsEditing(false);
-        } catch (error: FirebaseAuthError) {
-            console.error("Error saving profile:", error);
-            setAliasError(error.message === 'ALIAS_TAKEN'
-                ? 'Este alias ya está registrado.'
+        } catch (error: unknown) {
+            const typedError = error as FirebaseAuthError;
+            console.error("Error saving profile:", typedError);
+            setAliasError(typedError.message === 'ALIAS_TAKEN'
+                ? 'Este alias ya esta registrado.'
                 : 'Error al conectar con la base de datos.');
         } finally {
             setIsSaving(false);
@@ -331,7 +342,7 @@ export const ProfilePage: React.FC = () => {
             <div style={styles.profileHeader}>
                 <div
                     style={{ ...styles.avatarContainer, cursor: 'pointer' }}
-                    onClick={() => setShowAvatarModal(true)}
+                    onClick={() => { setTempAvatar(userInfo.avatar || ''); setShowAvatarModal(true); }}
                 >
                     <img
                         src={userInfo.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo.nombre}&backgroundColor=b6e3f4`}
@@ -436,7 +447,7 @@ export const ProfilePage: React.FC = () => {
 
             {/* Personal Info Section */}
             <div style={styles.sectionHeader}>
-                <h3 style={styles.sectionTitle}>Información Personal</h3>
+                <h3 style={styles.sectionTitle}>Informacion Personal</h3>
             </div>
 
             <Card style={styles.infoCard}>
@@ -491,7 +502,7 @@ export const ProfilePage: React.FC = () => {
                                 style={styles.editSelect}
                                 value={editData.objetivo}
                                                                     onChange={(e) => setEditData({ ...editData, objetivo: e.target.value as ObjetivoFitness })}                            >
-                                <option value="ganar_musculo">Ganar Músculo</option>
+                                <option value="ganar_musculo">Ganar Musculo</option>
                                 <option value="perder_grasa">Perder Grasa</option>
                                 <option value="mantener">Mantenerme</option>
                                 <option value="fuerza">Ganar Fuerza</option>
@@ -527,7 +538,7 @@ export const ProfilePage: React.FC = () => {
                     <div style={styles.viewGrid}>
                         <div style={styles.viewItem}>
                             <span style={styles.viewLabel}>EDAD</span>
-                            <span style={styles.viewValue}>{userInfo.edad || '--'} años</span>
+                            <span style={styles.viewValue}>{userInfo.edad || '--'} anos</span>
                         </div>
                         <div style={styles.viewItem}>
                             <span style={styles.viewLabel}>PESO</span>
@@ -609,7 +620,7 @@ export const ProfilePage: React.FC = () => {
                                             onClick={() => {
                                                 toast((t) => (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta rutina del historial?</span>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>Eliminar esta rutina del historial?</span>
                                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                             <button
                                                                 onClick={() => toast.dismiss(t.id)}
@@ -659,7 +670,7 @@ export const ProfilePage: React.FC = () => {
                     <div style={{ ...styles.menuIcon, background: Colors.textSecondary }}>
                         <LogOut size={20} color="#FFF" />
                     </div>
-                    <span style={styles.menuText}>Cerrar Sesión (Cambiar Usuario)</span>
+                    <span style={styles.menuText}>Cerrar Sesion (Cambiar Usuario)</span>
                 </button>
 
                 <button style={{ ...styles.menuItem, marginTop: '8px' }} onClick={handleReset}>
@@ -678,9 +689,9 @@ export const ProfilePage: React.FC = () => {
                     <div style={styles.modalOverlay}>
                         <div style={styles.modal}>
                             <div style={styles.modalIcon}><AlertCircle size={24} color={Colors.warning} /></div>
-                            <h3 style={styles.modalTitle}>¿Reiniciar App?</h3>
+                            <h3 style={styles.modalTitle}>Reiniciar App?</h3>
                             <p style={styles.modalText}>
-                                Esto borrará todos tus datos: perfil, rutinas e historial. Esta acción no se puede deshacer.
+                                Esto borrara todos tus datos: perfil, rutinas e historial. Esta accion no se puede deshacer.
                             </p>
                             <div style={styles.modalActions}>
                                 <button style={styles.modalCancelBtn} onClick={() => setShowResetConfirm(false)}>
@@ -712,7 +723,7 @@ export const ProfilePage: React.FC = () => {
                             </button>
                         </div>
                         <p style={styles.modalText}>
-                            Introduce el alias de tu pareja para enviarle una solicitud de vinculación.
+                            Introduce el alias de tu pareja para enviarle una solicitud de vinculacion.
                         </p>
                         <div style={styles.partnerSearchContainer}>
                             <input
@@ -757,13 +768,13 @@ export const ProfilePage: React.FC = () => {
                         )}
 
                         {searchStatus === 'not_found' && (
-                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e inténtalo de nuevo.</p>
+                            <p style={styles.searchStatusText}>Usuario no encontrado. Revisa el alias e intentalo de nuevo.</p>
                         )}
                         {searchStatus === 'error' && (
-                            <p style={styles.searchStatusTextError}>Hubo un error. Inténtalo más tarde.</p>
+                            <p style={styles.searchStatusTextError}>Hubo un error. Intentalo mas tarde.</p>
                         )}
                         {searchStatus === 'request_sent' && (
-                            <p style={styles.searchStatusTextSuccess}>¡Solicitud enviada! Esperando respuesta.</p>
+                            <p style={styles.searchStatusTextSuccess}>Solicitud enviada! Esperando respuesta.</p>
                         )}
                     </div>
                 </div>
@@ -1463,4 +1474,6 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ProfilePage;
+
+
 

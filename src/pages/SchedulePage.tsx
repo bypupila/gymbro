@@ -12,7 +12,8 @@ import { useNavigate } from 'react-router-dom';
 
 export const SchedulePage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, setHorario } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const setHorario = useUserStore((state) => state.setHorario);
     const [dias, setDias] = useState(perfil.horario.dias);
 
     const toggleDia = (index: number) => {
@@ -33,14 +34,14 @@ export const SchedulePage: React.FC = () => {
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <button onClick={() => navigate('/profile')} style={styles.backBtn}>
+                <button type="button" aria-label="Volver al perfil" onClick={() => navigate('/profile')} style={styles.backBtn}>
                     <ChevronLeft size={24} />
                 </button>
                 <h1 style={styles.title}>Editar Horario</h1>
             </div>
 
             <p style={styles.description}>
-                Marca los dÌas que tienes disponibles para entrenar. Esto afectar· las sugerencias del Coach IA y lo que ver·s en el constructor de rutinas.
+                Marca los d√≠as que tienes disponibles para entrenar. Esto afectar√° las sugerencias del Coach IA y lo que ver√°s en el constructor de rutinas.
             </p>
 
             <div style={styles.daysGrid}>
@@ -74,7 +75,7 @@ export const SchedulePage: React.FC = () => {
 
             <div style={styles.summary}>
                 <p style={styles.summaryText}>
-                    Disponibilidad: <strong>{dias.filter(d => d.entrena).length} dÌas</strong> por semana
+                    Disponibilidad: <strong>{dias.filter(d => d.entrena).length} d√≠as</strong> por semana
                 </p>
             </div>
 

@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import Colors from '@/styles/colors';
 
 const TrainPageComp: React.FC = () => {
-    const { activeSession, finishSession, cancelSession } = useUserStore();
+    const activeSession = useUserStore((state) => state.activeSession);
     const navigate = useNavigate();
 
     // If there is an active session, show the overlay
@@ -32,9 +32,9 @@ const TrainPageComp: React.FC = () => {
 
             <div style={styles.content}>
                 <div style={styles.emptyState}>
-                    <div style={styles.emptyIcon}>💪</div>
-                    <h3 style={styles.emptyText}>No hay sesión activa</h3>
-                    <p style={styles.emptySubtext}>Ve al Catálogo o Rutina para comenzar.</p>
+                    <div style={styles.emptyIcon}>GYM</div>
+                    <h3 style={styles.emptyText}>No hay sesion activa</h3>
+                    <p style={styles.emptySubtext}>Ve al Catalogo o Rutina para comenzar.</p>
                     <button
                         onClick={() => navigate('/catalog')}
                         style={{
@@ -48,7 +48,7 @@ const TrainPageComp: React.FC = () => {
                             cursor: 'pointer'
                         }}
                     >
-                        Ir al Catálogo
+                        Ir al Catalogo
                     </button>
                 </div>
             </div>

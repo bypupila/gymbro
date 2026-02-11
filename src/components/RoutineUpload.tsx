@@ -30,7 +30,8 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
 
     const fileInputRefReq = useRef<HTMLInputElement>(null);
     const fileInputRefOpt = useRef<HTMLInputElement>(null);
-    const { setRutina, perfil } = useUserStore();
+    const setRutina = useUserStore((state) => state.setRutina);
+    const perfil = useUserStore((state) => state.perfil);
     const [manualExercises, setManualExercises] = useState<EjercicioRutina[]>([]);
     const [manualActiveDays, setManualActiveDays] = useState<string[]>([]);
     
@@ -138,7 +139,23 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             if (answer && clari.exerciseIndex !== undefined && clari.field) {
                 const exercise = updatedExercises[clari.exerciseIndex];
                 if (exercise) {
-                    exercise[clari.field as keyof EjercicioRutina] = answer;
+                    const mutableExercise = exercise as unknown as Record<string, unknown>;
+                    const field = clari.field;
+
+                    if (field === 'series' || field === 'descanso' || field === 'segundos') {
+                        const numericValue = Number.parseInt(answer, 10);
+                        if (!Number.isNaN(numericValue)) {
+                            mutableExercise[field] = numericValue;
+                        }
+                    } else if (field === 'isOptional') {
+                        mutableExercise[field] = answer === 'true';
+                    } else if (field === 'categoria') {
+                        if (answer === 'calentamiento' || answer === 'maquina') {
+                            mutableExercise[field] = answer;
+                        }
+                    } else {
+                        mutableExercise[field] = answer;
+                    }
                 }
             }
         });
@@ -201,13 +218,13 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             <div style={styles.iconContainer}>
                 <Dumbbell size={48} color={Colors.primary} />
             </div>
-            <h2 style={styles.title}>¿Ya tienes una rutina?</h2>
+            <h2 style={styles.title}>Â¿Ya tienes una rutina?</h2>
             <p style={styles.description}>
-                Sube una foto de tu rutina actual y nuestra IA la pasará a digital por ti.
+                Sube una foto de tu rutina actual y nuestra IA la pasarÃ¡ a digital por ti.
             </p>
             <div style={styles.buttonGroup}>
                 <Button onClick={() => setStep('upload')} variant="primary" fullWidth>
-                    Sí, tengo una rutina (Escanear)
+                    SÃ­, tengo una rutina (Escanear)
                 </Button>
                 <Button onClick={() => setStep('create_options')} variant="secondary" fullWidth>
                     No, quiero crear una nueva
@@ -223,7 +240,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             </div>
             <h2 style={styles.title}>Crear Nueva Rutina</h2>
             <p style={styles.description}>
-                Puedo diseñar un plan para ti basado en tu perfil y objetivos.
+                Puedo diseÃ±ar un plan para ti basado en tu perfil y objetivos.
             </p>
 
             <div style={styles.infoBox}>
@@ -254,7 +271,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
         <div style={styles.content}>
             <h2 style={styles.title}>Tus datos actuales</h2>
             <p style={styles.description}>
-                Para generar la mejor rutina, necesitamos saber cómo estás hoy.
+                Para generar la mejor rutina, necesitamos saber cÃ³mo estÃ¡s hoy.
             </p>
 
             <div style={styles.formGrid}>
@@ -274,7 +291,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                         value={tempProfile.objetivo}
                         onChange={(e) => setTempProfile({ ...tempProfile, objetivo: e.target.value as 'ganar_musculo' | 'perder_grasa' | 'fuerza' | 'mantener' })}
                     >
-                        <option value="ganar_musculo">Ganar Músculo</option>
+                        <option value="ganar_musculo">Ganar MÃºsculo</option>
                         <option value="perder_grasa">Perder Grasa</option>
                         <option value="fuerza">Fuerza</option>
                         <option value="mantener">Mantener</option>
@@ -299,7 +316,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                                 style={styles.input}
                                                         value={tempProfile.partnerObjetivo}
                                                         onChange={(e) => setTempProfile({ ...tempProfile, partnerObjetivo: e.target.value as 'ganar_musculo' | 'perder_grasa' | 'fuerza' | 'mantener' })}                            >
-                                <option value="ganar_musculo">Ganar Músculo</option>
+                                <option value="ganar_musculo">Ganar MÃºsculo</option>
                                 <option value="perder_grasa">Perder Grasa</option>
                                 <option value="fuerza">Fuerza</option>
                                 <option value="mantener">Mantener</option>
@@ -314,26 +331,26 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                     <Sparkles size={18} /> Generar Rutina con IA
                 </Button>
                 <Button onClick={() => setStep('create_options')} variant="ghost" fullWidth>
-                    Atrás
+                    AtrÃ¡s
                 </Button>
             </div>
         </div>
     );
 
     const renderManualBuild = () => {
-        const weekdays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+        const weekdays = ['Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado', 'Domingo'];
         const availableDays = weekdays.filter(d => !manualActiveDays.includes(d));
 
         return (
             <div style={{ ...styles.content, padding: '24px 16px' }}>
                 <h2 style={styles.title}>Constructor Manual</h2>
-                <p style={styles.description}>Crea tu rutina paso a paso. Comienza añadiendo un día de entrenamiento.</p>
+                <p style={styles.description}>Crea tu rutina paso a paso. Comienza aÃ±adiendo un dÃ­a de entrenamiento.</p>
 
                 <div style={styles.manualScrollArea}>
                     {manualActiveDays.length === 0 ? (
                         <div style={styles.emptyManualState}>
                             <Dumbbell size={40} color={Colors.textTertiary} style={{ opacity: 0.3, marginBottom: '12px' }} />
-                            <p style={{ fontSize: '14px', color: Colors.textTertiary }}>No has añadido días todavía</p>
+                            <p style={{ fontSize: '14px', color: Colors.textTertiary }}>No has aÃ±adido dÃ­as todavÃ­a</p>
                         </div>
                     ) : (
                         manualActiveDays.map(day => {
@@ -356,7 +373,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                                         {manualExercises.filter(ex => ex.dia === day).map(ex => (
                                             <div key={ex.id} style={styles.manualExerciseItem}>
                                                 <div style={{ flex: 1, textAlign: 'left' }}>
-                                                    <span style={styles.manualExCategory}>{ex.categoria === 'calentamiento' ? 'ðŸ”¥' : 'ðŸ’ª'}</span>
+                                                    <span style={styles.manualExCategory}>{ex.categoria === 'calentamiento' ? 'C' : 'R'}</span>
                                                     <span style={styles.manualExName}>{ex.nombre}</span>
                                                 </div>
                                                 <button
@@ -401,13 +418,13 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                             style={styles.addDayBigBtn}
                             onClick={() => setShowDaySelector(true)}
                         >
-                            <Calendar size={18} /> Añadir Día de Entrenamiento
+                            <Calendar size={18} /> AÃ±adir DÃ­a de Entrenamiento
                         </button>
                     )}
 
                     {showDaySelector && (
                         <div style={styles.daySelectorCard}>
-                            <p style={styles.selectorLabel}>Selecciona el día a añadir:</p>
+                            <p style={styles.selectorLabel}>Selecciona el dÃ­a a aÃ±adir:</p>
                             <div style={styles.daySelectionGrid}>
                                 {availableDays.map(dayName => (
                                     <button
@@ -431,10 +448,10 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                         fullWidth
                         disabled={manualExercises.length === 0}
                     >
-                        Continuar a Revisión ({manualExercises.length})
+                        Continuar a RevisiÃ³n ({manualExercises.length})
                     </Button>
                     <Button onClick={() => setStep('create_options')} variant="ghost" fullWidth>
-                        Atrás
+                        AtrÃ¡s
                     </Button>
                 </div>
             </div>
@@ -445,7 +462,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
         <div style={styles.content}>
             <h2 style={styles.title}>Detalla tu rutina</h2>
             <p style={styles.description}>
-                Aquí debes colocar toda una descripción utiliza este espacio para colocar detalles específicos de tu rutina para que pueda extraer la información lo mejor posible. Si está escrita a mano, que días entrenas, si usas colores para identificar tus días. Todo lo que pueda servir para realizar el mejor análisis.
+                AquÃ­ debes colocar toda una descripciÃ³n utiliza este espacio para colocar detalles especÃ­ficos de tu rutina para que pueda extraer la informaciÃ³n lo mejor posible. Si estÃ¡ escrita a mano, que dÃ­as entrenas, si usas colores para identificar tus dÃ­as. Todo lo que pueda servir para realizar el mejor anÃ¡lisis.
             </p>
 
             <div style={styles.uploadCards}>
@@ -495,7 +512,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             <div style={styles.descriptionSection}>
                 <label style={styles.label}>CONTEXTO ADICIONAL (OPCIONAL)</label>
                 <div style={{ fontSize: '11px', color: Colors.textTertiary, marginBottom: '8px', textAlign: 'left' }}>
-                    ðŸ’¡ Tip: Indica qué días entrenas o qué significan los símbolos de tu rutina para un análisis perfecto.
+                    Tip: Indica que dias entrenas o que significan los simbolos de tu rutina para un analisis perfecto.
                 </div>
                 <textarea
                     style={styles.descriptionInput}
@@ -517,7 +534,7 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                     {isAnalyzing ? <Loader2 className="animate-spin" /> : <><Sparkles size={18} /> Analizar con Gemini</>}
                 </Button>
                 <Button onClick={() => setStep('initial')} variant="ghost" fullWidth>
-                    Atrás
+                    AtrÃ¡s
                 </Button>
             </div>
         </div>
@@ -528,9 +545,9 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
             <div style={styles.successIcon}>
                 <Check size={64} color={Colors.primary} />
             </div>
-            <h2 style={styles.title}>¡Rutina Guardada!</h2>
+            <h2 style={styles.title}>Â¡Rutina Guardada!</h2>
             <p style={styles.description}>
-                Tu rutina ha sido analizada y guardada con éxito. Ya puedes empezar a entrenar.
+                Tu rutina ha sido analizada y guardada con Ã©xito. Ya puedes empezar a entrenar.
             </p>
         </div>
     );
@@ -568,11 +585,11 @@ export const RoutineUpload: React.FC<RoutineUploadProps> = ({ onComplete, onCanc
                             <Loader2 size={48} color={Colors.primary} className="animate-spin" />
                         </div>
                         <h2 style={styles.title}>
-                            {step === 'generating' ? 'Diseñando tu plan...' : 'Analizando imagen...'}
+                            {step === 'generating' ? 'DiseÃ±ando tu plan...' : 'Analizando imagen...'}
                         </h2>
                         <p style={styles.description}>
                             {step === 'generating'
-                                ? 'La IA está creando la mejor rutina para tu objetivo.'
+                                ? 'La IA estÃ¡ creando la mejor rutina para tu objetivo.'
                                 : 'Digitalizando e interpretando tu rutina manuscrita.'}
                         </p>
                     </div>

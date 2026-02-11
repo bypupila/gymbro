@@ -4,7 +4,9 @@ import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { setUserId, setLinkRequests, setPartners } = useUserStore();
+    const setUserId = useUserStore((state) => state.setUserId);
+    const setLinkRequests = useUserStore((state) => state.setLinkRequests);
+    const setPartners = useUserStore((state) => state.setPartners);
 
     useEffect(() => {
         let unsubscribeLinkRequests: (() => void) | null = null;

@@ -64,7 +64,7 @@ export const routineRequestService = {
         });
     },
 
-    async acceptRequest(requestId: string, _request: RoutineRequest): Promise<void> {
+    async acceptRequest(requestId: string): Promise<void> {
         // Backend Cloud Function applies the copy and sync config.
         await updateDoc(doc(db, 'routineRequests', requestId), {
             status: 'accepted',

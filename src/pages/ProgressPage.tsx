@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // GymBro PWA - Progress Page (Enhanced with Stats)
 // =====================================================
 
@@ -11,7 +11,8 @@ import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
 
 export const ProgressPage: React.FC = () => {
-    const { perfil, removeExtraActivity } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const removeExtraActivity = useUserStore((state) => state.removeExtraActivity);
     const partners = perfil.partners || [];
     const activePartner = partners.find((p) => p.id === perfil.activePartnerId) || partners[0] || null;
     const hasPartner = !!activePartner || !!perfil.pareja;
@@ -126,8 +127,8 @@ export const ProgressPage: React.FC = () => {
     const detailedStats = [
         { icon: Clock, label: 'Minutos Totales', value: totalMinutes, unit: 'min', color: Colors.accent },
         { icon: Weight, label: 'Volumen Gym', value: Math.round(gymStats.totalVolume / 1000), unit: 'ton', color: Colors.primary },
-        { icon: BarChart3, label: 'Promedio Sesión', value: gymStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
-        { icon: Zap, label: 'Calorías (Est.)', value: totalCalories, unit: 'kcal', color: Colors.warning },
+        { icon: BarChart3, label: 'Promedio Sesion', value: gymStats.avgWeightPerSession, unit: 'kg', color: Colors.info },
+        { icon: Zap, label: 'Calorias (Est.)', value: totalCalories, unit: 'kcal', color: Colors.warning },
     ];
 
     const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -159,7 +160,7 @@ export const ProgressPage: React.FC = () => {
                         />
                         {hasPartner && (
                             <>
-                                <span style={styles.heartEmoji}>â¤ï¸</span>
+                                <span style={styles.heartEmoji}>+</span>
                                 <img
                                     src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${perfil.pareja?.nombre}`}
                                     alt="Partner"
@@ -170,7 +171,7 @@ export const ProgressPage: React.FC = () => {
                     </div>
                 </div>
                 <button
-                    onClick={() => toast('Próximamente: Análisis visual con IA', { icon: 'ð¤' })}
+                    onClick={() => toast('Proximamente: analisis visual con IA', { icon: 'AI' })}
                     style={styles.cameraBtn}
                 >
                     <Camera size={24} color={Colors.primary} />
@@ -189,7 +190,7 @@ export const ProgressPage: React.FC = () => {
             </div>
 
             {/* Detailed Training Stats */}
-            <h3 style={styles.sectionTitle}>ð Estadísticas Globales</h3>
+            <h3 style={styles.sectionTitle}>Estadisticas Globales</h3>
             <div style={styles.detailedStatsGrid}>
                 {detailedStats.map((stat, i) => (
                     <Card key={i} style={styles.detailedStatCard}>
@@ -207,7 +208,7 @@ export const ProgressPage: React.FC = () => {
             {/* Extra Activities Stats */}
             {perfil.actividadesExtras && perfil.actividadesExtras.length > 0 && (
                 <>
-                    <h3 style={styles.sectionTitle}>ð Actividades Extras</h3>
+                    <h3 style={styles.sectionTitle}>Actividades Extras</h3>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
                         {(showAllExtras ? perfil.actividadesExtras : perfil.actividadesExtras.slice(0, 3))
@@ -261,7 +262,7 @@ export const ProgressPage: React.FC = () => {
                                     }}>
                                         <div style={{ textAlign: 'center' }}>
                                             <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.duracionMinutos || 0}<small>m</small></div>
-                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACIÓN</div>
+                                            <div style={{ fontSize: '10px', color: Colors.textTertiary, fontWeight: 700 }}>DURACION</div>
                                         </div>
                                         <div style={{ textAlign: 'center', borderLeft: `1px solid ${Colors.border}`, borderRight: `1px solid ${Colors.border}` }}>
                                             <div style={{ fontSize: '16px', fontWeight: 800, color: Colors.text }}>{extra.analisisIA?.calorias || 0}</div>
@@ -285,7 +286,7 @@ export const ProgressPage: React.FC = () => {
                                             onClick={() => {
                                                 toast((t) => (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Eliminar esta actividad?</span>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>Eliminar esta actividad?</span>
                                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                             <button
                                                                 onClick={() => toast.dismiss(t.id)}
@@ -358,12 +359,12 @@ export const ProgressPage: React.FC = () => {
             {/* Energy Insights */}
             {moodStats && (
                 <>
-                    <h3 style={styles.sectionTitle}>ð§  Bienestar y Energía</h3>
+                    <h3 style={styles.sectionTitle}>Bienestar y Energia</h3>
                     <Card style={{ padding: '24px', marginBottom: '32px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
                             <div style={{ width: '100%' }}>
                                 <div style={{ fontSize: '12px', fontWeight: 700, color: Colors.textSecondary, marginBottom: '16px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                                    Energía Promedio (1-5)
+                                    Energia Promedio (1-5)
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px' }}>
                                     <div style={{ textAlign: 'center' }}>
@@ -401,8 +402,8 @@ export const ProgressPage: React.FC = () => {
                                 <Zap size={18} color={Colors.warning} fill={Colors.warning} />
                                 <span>
                                     {parseFloat(moodStats.improvement) > 0
-                                        ? `¡Genial! Tu energía sube un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% tras entrenar.`
-                                        : `¡Buen trabajo! Mantienes tu energía a tope durante el entrenamiento.`}
+                                        ? `Genial! Tu energia sube un ${Math.abs(Math.round(parseFloat(moodStats.improvement) * 20))}% tras entrenar.`
+                                        : `Buen trabajo! Mantienes tu energia a tope durante el entrenamiento.`}
                                 </span>
                             </div>
                         </div>
@@ -445,7 +446,7 @@ export const ProgressPage: React.FC = () => {
                 <Card style={styles.mostTrainedCard}>
                     <Trophy size={24} color={Colors.warning} />
                     <div style={styles.mostTrainedInfo}>
-                        <span style={styles.mostTrainedLabel}>Ejercicio Más Realizado</span>
+                        <span style={styles.mostTrainedLabel}>Ejercicio Mas Realizado</span>
                         <span style={styles.mostTrainedValue}>{gymStats.mostTrained}</span>
                     </div>
                 </Card>
@@ -504,18 +505,18 @@ export const ProgressPage: React.FC = () => {
             {/* Yearly Stat */}
             <div style={styles.yearlyBox}>
                 <div style={styles.yearlyContent}>
-                    <h4 style={styles.yearlyTitle}>Resumen del Año {currentYear}</h4>
+                    <h4 style={styles.yearlyTitle}>Resumen del Ano {currentYear}</h4>
                     <p style={styles.yearlySub}>Has completado un total de:</p>
                     <div style={styles.yearlyMain}>
                         <span style={styles.yearlyValue}>{yearlyTotal}</span>
                         <span style={styles.yearlyUnit}>entrenamientos</span>
                     </div>
                 </div>
-                <div style={styles.yearlyIcon}>ð</div>
+                <div style={styles.yearlyIcon}>TOP</div>
             </div>
 
             {/* Unified Activity History */}
-            <h3 style={styles.sectionTitle}>ð Historial de Actividad</h3>
+            <h3 style={styles.sectionTitle}>Historial de Actividad</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
                 {unifiedHistory.length > 0 ? (
                     unifiedHistory.slice(0, 5).map((item, idx) => (
@@ -534,12 +535,12 @@ export const ProgressPage: React.FC = () => {
                                     <div>
                                         <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
                                             {item.type === 'gym' ? (item.data as EntrenamientoRealizado).nombre :
-                                                item.type === 'extra' ? (item.data as ExtraActivity).analisisIA?.tipoDeporte : 'Día Registrado'}
+                                                item.type === 'extra' ? (item.data as ExtraActivity).analisisIA?.tipoDeporte : 'Dia Registrado'}
                                         </div>
                                         <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
                                             {item.date.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                            {item.type === 'gym' && ` â¢ ${(item.data as EntrenamientoRealizado).duracionMinutos} min`}
-                                            {item.type === 'extra' && ` â¢ ${(item.data as ExtraActivity).analisisIA?.duracionMinutos} min`}
+                                            {item.type === 'gym' && ` - ${(item.data as EntrenamientoRealizado).duracionMinutos} min`}
+                                            {item.type === 'extra' && ` - ${(item.data as ExtraActivity).analisisIA?.duracionMinutos} min`}
                                         </div>
                                     </div>
                                 </div>
@@ -556,7 +557,7 @@ export const ProgressPage: React.FC = () => {
                 ) : (
                     <div style={styles.emptyState}>
                         <Activity size={40} color={Colors.textTertiary} />
-                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aún no hay actividad registrada</p>
+                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aun no hay actividad registrada</p>
                     </div>
                 )}
             </div>
@@ -565,9 +566,9 @@ export const ProgressPage: React.FC = () => {
             <h3 style={styles.sectionTitle}>Fotos de Progreso</h3>
             <div style={styles.photosEmpty}>
                 <Camera size={48} color={Colors.textTertiary} />
-                <p style={styles.emptyText}>Sin fotos aún</p>
+                <p style={styles.emptyText}>Sin fotos aun</p>
                 <p style={styles.emptySubtext}>
-                    Toma tu primera foto para trackear tu transformación
+                    Toma tu primera foto para trackear tu transformacion
                 </p>
             </div>
         </div>
@@ -897,4 +898,5 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ProgressPage;
+
 

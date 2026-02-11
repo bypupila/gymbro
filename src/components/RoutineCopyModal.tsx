@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useUserStore } from '@/stores/userStore';
 import { routineRequestService } from '@/services/routineRequestService';
 import { Card } from './Card';
@@ -15,7 +15,8 @@ interface Props {
 
 export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, partnerId, onClose }) => {
     void partnerAlias;
-    const { perfil, userId } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const userId = useUserStore((state) => state.userId);
     const [isLoading, setIsLoading] = useState<null | 'mine' | 'theirs'>(null);
 
     const handleCopyMyRoutine = async () => {
@@ -38,6 +39,9 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
             });
             toast.success(`Se envio solicitud a ${partnerName}.`);
             onClose();
+        } catch (error) {
+            console.error('[RoutineCopyModal] Error creando solicitud:', error);
+            toast.error('No se pudo enviar la solicitud. Inténtalo de nuevo.');
         } finally {
             setIsLoading(null);
         }

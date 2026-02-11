@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/userStore';
 import { RoutineRequest, routineRequestService } from '@/services/routineRequestService';
 
 export const RoutineRequestNotifier: React.FC = () => {
-    const { userId } = useUserStore();
+    const userId = useUserStore((state) => state.userId);
     const [requests, setRequests] = useState<RoutineRequest[]>([]);
 
     useEffect(() => {
@@ -17,9 +17,9 @@ export const RoutineRequestNotifier: React.FC = () => {
 
     if (requests.length === 0) return null;
 
-    const handleAccept = async (requestId: string, request: RoutineRequest) => {
+    const handleAccept = async (requestId: string) => {
         try {
-            await routineRequestService.acceptRequest(requestId, request);
+            await routineRequestService.acceptRequest(requestId);
             toast.success('Solicitud aceptada. Copiando rutina...');
             setRequests((prev) => prev.filter((r) => r.id !== requestId));
         } catch {
@@ -56,7 +56,7 @@ export const RoutineRequestNotifier: React.FC = () => {
                             <X size={16} />
                             Rechazar
                         </button>
-                        <button style={styles.acceptBtn} onClick={() => handleAccept(req.id, req)}>
+                        <button style={styles.acceptBtn} onClick={() => handleAccept(req.id)}>
                             <Check size={16} />
                             Aceptar
                         </button>

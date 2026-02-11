@@ -1,5 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { EjercicioRutina, AnalysisResult, DatosPersonales, Clarification, HorarioSemanal, DiaEntrenamiento } from "../stores/userStore";
+import type {
+    AnalysisResult,
+    Clarification,
+    DatosPersonales,
+    DiaEntrenamiento,
+    EjercicioRutina,
+    HorarioSemanal,
+} from "../stores/userStore";
 
 interface GeminiExerciseRaw {
     id?: string;
@@ -9,8 +16,9 @@ interface GeminiExerciseRaw {
     series?: number | string;
     repeticiones?: string;
     descanso?: number;
-    categoria?: 'calentamiento' | 'maquina' | string;
+    categoria?: "calentamiento" | "maquina" | string;
     dia?: string;
+    enfocadoA?: "ambos" | "hombre" | "mujer";
     grupo_muscular?: string;
     observaciones?: string;
 }
@@ -26,21 +34,64 @@ interface GeminiClarificationRaw {
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 const IS_DEV = import.meta.env.DEV;
-// Evitar exponer detalles sensibles en consola (especialmente en producci�n).
-if (IS_DEV) {
-    console.debug("Gemini: API key cargada:", API_KEY.length >= 10 ? "s�" : "no");
-    if (API_KEY.length < 10) console.warn("Gemini: falta `VITE_GEMINI_API_KEY` o es inv�lida.");
-}
-const genAI = new GoogleGenerativeAI(API_KEY);
 
+if (IS_DEV) {
+    console.debug("Gemini: API key loaded:", API_KEY.length >= 10 ? "yes" : "no");
+    if (API_KEY.length < 10) {
+        console.warn("Gemini: missing or invalid VITE_GEMINI_API_KEY.");
+    }
+}
+
+const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
     model: "gemini-1.5-flash",
     generationConfig: {
         temperature: 0.1,
         responseMimeType: "application/json",
-    }
+    },
 });
 
+const parseSeries = (rawSeries: number | string | undefined, fallback = 3): number => {
+    const parsed = Number(rawSeries);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return parsed;
+};
+
+const stripJsonFence = (text: string): string => {
+    const trimmed = text.trim();
+    if (trimmed.startsWith("```")) {
+        return trimmed.replace(/^```(json)?\n?/, "").replace(/\n?```$/, "");
+    }
+    return text;
+};
+
+const parseJsonWithFallback = (text: string): Record<string, unknown> => {
+    try {
+        return JSON.parse(stripJsonFence(text));
+    } catch {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error("INVALID_JSON_RESPONSE");
+        }
+        return JSON.parse(jsonMatch[0]);
+    }
+};
+
+const toRoutineExercise = (ex: GeminiExerciseRaw, fallbackDay = "Dia 1"): EjercicioRutina => ({
+    id: ex.id || crypto.randomUUID(),
+    nombre: ex.nombre_estandarizado || ex.nombre_original || ex.nombre || "Ejercicio",
+    series: parseSeries(ex.series, 3),
+    repeticiones: String(ex.repeticiones || "10-12"),
+    descanso: ex.descanso ?? 60,
+    categoria: ex.categoria === "calentamiento" ? "calentamiento" : "maquina",
+    dia: ex.dia || fallbackDay,
+    grupoMuscular: ex.grupo_muscular,
+    nombreOriginal: ex.nombre_original,
+    observaciones: ex.observaciones,
+    enfocadoA: ex.enfocadoA || "ambos",
+});
 
 export const analyzeRoutineImages = async (
     image1Base64: string,
@@ -48,70 +99,48 @@ export const analyzeRoutineImages = async (
     userDescription?: string
 ): Promise<AnalysisResult> => {
     try {
-        const prompt = `Act�a como un experto en digitalizaci�n de datos y entrenador personal.
+        const prompt = `Actua como un experto en digitalizacion de rutinas de gym.
 
-Tu tarea es extraer EXCLUSIVAMENTE la rutina de ejercicios asignada al usuario a partir de la imagen proporcionada.
+Objetivo:
+- Extraer SOLO ejercicios que aparezcan en la imagen.
+- No inventar informacion.
+- Mantener series/repeticiones como texto real cuando aplique (ej: "12-10-8", "45s").
 
-INSTRUCCI�N T�CNICA (PRECISI�N ROB�TICA):
-- Extracci�n de datos 100% precisa.
-- NO seas creativo.
-- NO inventes ejercicios que no est�n en la foto.
-- C��ete estrictamente a lo que ves.
+Contexto del usuario:
+"${userDescription || "No proporcionado"}"
 
-CONTEXTO ADICIONAL DEL USUARIO (MUY IMPORTANTE):
-"${userDescription || 'No proporcionado'}"
+Si hay ambiguedad, responde preguntas en "unclear_items" en lugar de asumir.
 
-INSTRUCCIONES DE EXTRACCI�N CR�TICAS:
-1. SOLO extrae ejercicios marcados (con n�meros a mano, checks o subrayados).
-2. REPETICIONES COMPLEJAS: 
-   - El campo "repeticiones" es un STRING. Capta la realidad:
-   - Si es un rango, mantenlo: "12-15".
-   - Si es por tiempo, mantenlo: "45 seg" o "30s".
-   - Si es progesiva/piramidal (diferentes reps por serie), capta la secuencia: "15-12-10-8" o "12/10/8".
-3. SERIES: Extrae el n�mero total de series indicado.
-4. D�AS: Identifica espec�ficamente los d�as de la semana (Lunes, Martes, etc.). Si NO est�n escritos, GENERA una pregunta en "unclear_items" preguntando a qu� d�as de la semana corresponde cada bloque o entrenamiento. No asumas "D�a 1" por defecto si hay ambig�edad.
-5. INSPECCI�N ESTRUCTURAL Y CONSULTA: Antes de extraer la lista completa, detecta "claves de autor":
-   - �Hay s�mbolos (*, ●, √) que diferencien bloques?
-   - �Hay c�digos de colores o subrayados que separen por d�as o categor�as?
-   - �Hay notas al margen sobre el orden de los d�as?
-   Si no est�s 100% seguro de c�mo funcionan estas claves, DET�N la asunci�n y genera preguntas espec�ficas en "unclear_items".
-   
-INSTRUCCI�N DE CLARIFICACI�N:
-- Si el orden de los d�as es ambiguo: PREGUNTA.
-- Si la diferencia entre calentamiento y rutina principal no es obvia: PREGUNTA.
-- Si hay texto manuscrito que parece ser una instrucci�n de uso de la tabla: PREGUNTA.
-
-ESTRUCTURA DE RESPUESTA (JSON PURO):
+Devuelve JSON con esta forma:
 {
-    "routine_name": "Nombre de la rutina",
-    "description": "Resumen",
-    "exercises": [
-        {
-            "id": "uuid",
-            "dia": "Lunes, Martes, etc.",
-            "nombre_original": "Texto imagen",
-            "nombre_estandarizado": "Nombre t�cnico",
-            "series": 3,
-            "repeticiones": "12-15",
-            "observaciones": "notas extra",
-            "grupo_muscular": "pectoral",
-            "categoria": "calentamiento o maquina"
-        }
-    ],
-    "unclear_items": [
-        {
-            "id": "q_id",
-            "question": "�Qu� significan los puntos rojos junto a estos ejercicios?",
-            "detected_value": "Punto rojo",
-            "options": ["Calentamiento", "Serie pesada", "Biset"],
-            "exercise_index": 0,
-            "field": "categoria"
-        }
-    ],
-    "confidence_level": "High"
+  "routine_name": "Nombre",
+  "confidence_level": "High|Medium|Low",
+  "exercises": [
+    {
+      "id": "uuid",
+      "dia": "Lunes",
+      "nombre_original": "texto",
+      "nombre_estandarizado": "nombre",
+      "series": 3,
+      "repeticiones": "12-15",
+      "categoria": "calentamiento|maquina",
+      "grupo_muscular": "pectoral",
+      "observaciones": "nota opcional"
+    }
+  ],
+  "unclear_items": [
+    {
+      "id": "q_id",
+      "question": "pregunta",
+      "detected_value": "valor",
+      "options": ["op1","op2"],
+      "exercise_index": 0,
+      "field": "categoria"
+    }
+  ]
 }`;
 
-        const imageParts = [
+        const imageParts: Array<{ inlineData: { data: string; mimeType: string } }> = [
             {
                 inlineData: {
                     data: image1Base64.split(",")[1] || image1Base64,
@@ -131,78 +160,37 @@ ESTRUCTURA DE RESPUESTA (JSON PURO):
 
         const result = await model.generateContent([prompt, ...imageParts]);
         const response = await result.response;
-        let text = response.text();
-        // Evitar volcar la respuesta completa en consola (puede contener datos del usuario).
-        if (IS_DEV) console.debug("Gemini: respuesta recibida.");
+        const parsed = parseJsonWithFallback(response.text()) as {
+            routine_name?: string;
+            confidence_level?: string;
+            exercises?: GeminiExerciseRaw[];
+            unclear_items?: GeminiClarificationRaw[];
+        };
 
-        // Clean markdown if present
-        if (text.trim().startsWith('```')) {
-            text = text.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '');
-        }
+        const exercises: EjercicioRutina[] = (parsed.exercises || []).map((ex) => toRoutineExercise(ex));
+        const unclearItems: Clarification[] = (parsed.unclear_items || []).map((item) => ({
+            id: item.id || crypto.randomUUID(),
+            question: item.question,
+            detectedValue: item.detected_value,
+            options: item.options,
+            exerciseIndex: item.exercise_index,
+            field: item.field,
+        }));
 
-        try {
-            const parsed = JSON.parse(text);
+        const confidenceRaw = (parsed.confidence_level || "").toLowerCase();
+        const confidence: AnalysisResult["confidence"] =
+            confidenceRaw === "high" ? "high" : confidenceRaw === "medium" ? "medium" : "low";
 
-            const exercises: EjercicioRutina[] = (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
-                id: ex.id || crypto.randomUUID(),
-                nombre: ex.nombre_estandarizado || ex.nombre_original || ex.nombre || "Ejercicio",
-                series: typeof ex.series === 'number' ? ex.series : parseInt(ex.series) || 3,
-                repeticiones: String(ex.repeticiones || "10-12"),
-                descanso: 60,
-                categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',
-                dia: ex.dia || "D�a 1",
-                grupoMuscular: ex.grupo_muscular,
-                nombreOriginal: ex.nombre_original,
-                observaciones: ex.observaciones,
-                enfocadoA: 'ambos'
-            }));
-
-            const unclearItems: Clarification[] = (parsed.unclear_items || []).map((item: GeminiClarificationRaw) => ({
-                id: item.id || crypto.randomUUID(),
-                question: item.question,
-                detectedValue: item.detected_value,
-                options: item.options,
-                exerciseIndex: item.exercise_index,
-                field: item.field
-            }));
-
-            return {
-                exercises: exercises,
-                unclearItems: unclearItems,
-                confidence: parsed.confidence_level?.toLowerCase() === 'high' ? 'high' :
-                    parsed.confidence_level?.toLowerCase() === 'medium' ? 'medium' : 'low',
-                routineName: parsed.routine_name
-            };
-        } catch (pError) {
-            console.error("JSON Parse Error:", pError);
-
-            // Fallback for older models or unexpected output
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                // ... logic replicated or simplified ...
-                return {
-                    exercises: (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
-                        id: ex.id || crypto.randomUUID(),
-                        nombre: ex.nombre_estandarizado || ex.nombre_original || ex.nombre || "Ejercicio",
-                        series: typeof ex.series === 'number' ? ex.series : parseInt(ex.series) || 3,
-                        repeticiones: String(ex.repeticiones || "10-12"),
-                        descanso: 60,
-                        categoria: 'maquina' as const,
-                        dia: ex.dia || "D�a 1",
-                    })),
-                    unclearItems: [],
-                    confidence: 'medium',
-                    routineName: parsed.routine_name
-                };
-            }
-            throw new Error("No pudimos formatear los datos. Intenta con una foto m�s n�tida.");
-        }
-
-        throw new Error("No pudimos extraer datos de la imagen.");
-    } catch (error: Error) {
-        console.error("Gemini Error:", error);
-        throw new Error(error.message || "Error al conectar con el servicio de IA.");
+        return {
+            exercises,
+            unclearItems,
+            confidence,
+            routineName: parsed.routine_name,
+        };
+    } catch (error: unknown) {
+        console.error("Gemini analyze error:", error);
+        const message = error instanceof Error ? error.message : "Error al conectar con el servicio de IA.";
+        throw new Error(message);
     }
 };
 
@@ -213,100 +201,73 @@ export const generateRoutineFromProfile = async (
 ): Promise<AnalysisResult> => {
     try {
         const isCouple = !!member2;
+        const scheduleText = JSON.stringify(
+            horario?.dias
+                ?.filter((d: DiaEntrenamiento) => d.entrena)
+                .map((d: DiaEntrenamiento) => `${d.dia}: ${d.grupoMuscular}`) || []
+        );
 
-        const prompt = `
-            Act�a como un entrenador personal de �lite.
-            
-            OBJETIVO:
-            Crea una rutina personalizada ${isCouple ? 'para una PAREJA' : 'para una persona'}.
-            
-            INSTRUCCI�N T�CNICA (PRECISI�N):
-            - Generaci�n de datos t�cnica y funcional.
-            - Evita descripciones creativas innecesarias.
-            - Respeta estrictamente los perfiles proporcionados.
-            
-            DIN�MICA DE REPETICIONES (IMPORTANTE):
-            Usa variedad en el campo "repeticiones" (String):
-            - Rangos para hipertrofia: "10-12" o "12-15".
-            - Isom�tricos/Resistencia: "30-45 seg".
-            - Progresivas/Piramidales: "15-12-10" (indicando que cada serie baja reps y sube peso).
-            
-            PERFIL MIEMBRO 1 (${member1.nombre}): ${member1.nivel}, ${member1.objetivo}, ${member1.peso}kg. Lesiones: ${member1.lesiones || 'Ninguna'}.
-            ${isCouple ? `PERFIL MIEMBRO 2 (${member2?.nombre}): ${member2?.nivel}, ${member2?.objetivo}, ${member2?.peso}kg. Lesiones: ${member2?.lesiones || 'Ninguna'}.` : ''}
+        const prompt = `Actua como entrenador personal experto.
 
-            REGLAS:
-            1. HORARIO: Usa ESTRICTAMENTE estos d�as y grupos: ${JSON.stringify(horario?.dias?.filter((d: DiaEntrenamiento) => d.entrena).map((d: DiaEntrenamiento) => `${d.dia}: ${d.grupoMuscular}`))}.
-            2. CATEGOR�AS: Cada d�a DEBE empezar con 2-3 ejercicios de "calentamiento" (activaci�n espec�fica, movilidad) y luego 5-7 ejercicios de "maquina" (rutina principal).
-            3. ORDEN L�GICO: Dentro de la rutina principal, coloca primero los ejercicios multiarticulares pesados y al final los de aislamiento. Controla el volumen para evitar sobrecarga.
-            4. Si es pareja, ejercicios compartidos ("ambos") + 2 espec�ficos para cada uno ("hombre"/"mujer") intercalados l�gicamente.
-            5. Incluye progresiones en ejercicios b�sicos (ej: Sentadillas: "12-10-8").
+Genera una rutina ${isCouple ? "para pareja" : "individual"} usando el perfil y horario.
 
-            ESTRUCTURA (JSON):
-            {
-                "routine_name": "Nombre",
-                "exercises": [
-                    {
-                        "id": "uuid",
-                        "dia": "Lunes, Martes, etc. (seg�n horario)",
-                        "nombre": "Ejercicio",
-                        "series": 4, 
-                        "repeticiones": "12-10-8 o 45s o 10-12",
-                        "descanso": 60,
-                        "categoria": "calentamiento" | "maquina",
-                        "enfocadoA": "ambos" | "hombre" | "mujer",
-                        "grupo_muscular": "pectoral | espalda | trapecio | hombros | biceps | triceps | piernas | gluteos"
-                    }
-                ]
-            }
-        `;
+Perfil 1:
+- Nombre: ${member1.nombre}
+- Nivel: ${member1.nivel}
+- Objetivo: ${member1.objetivo}
+- Peso: ${member1.peso}
+- Lesiones: ${member1.lesiones || "Ninguna"}
+
+${isCouple ? `Perfil 2:
+- Nombre: ${member2?.nombre}
+- Nivel: ${member2?.nivel}
+- Objetivo: ${member2?.objetivo}
+- Peso: ${member2?.peso}
+- Lesiones: ${member2?.lesiones || "Ninguna"}` : ""}
+
+Horario disponible: ${scheduleText}
+
+Reglas:
+- Cada dia debe tener calentamiento + rutina principal.
+- Mantener estructura segura y progresiva.
+- Si es pareja, usar enfocadoA: ambos|hombre|mujer cuando aplique.
+
+Responde JSON:
+{
+  "routine_name": "Nombre",
+  "exercises": [
+    {
+      "id": "uuid",
+      "dia": "Lunes",
+      "nombre": "Ejercicio",
+      "series": 4,
+      "repeticiones": "12-10-8",
+      "descanso": 60,
+      "categoria": "calentamiento|maquina",
+      "enfocadoA": "ambos|hombre|mujer",
+      "grupo_muscular": "pectoral"
+    }
+  ]
+}`;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        let text = response.text();
+        const parsed = parseJsonWithFallback(response.text()) as {
+            routine_name?: string;
+            nombre?: string;
+            exercises?: GeminiExerciseRaw[];
+        };
 
-        // Clean markdown if present
-        if (text.trim().startsWith('```')) {
-            text = text.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '');
-        }
+        const exercises: EjercicioRutina[] = (parsed.exercises || []).map((ex) => toRoutineExercise(ex));
 
-        try {
-            const parsed = JSON.parse(text);
-            const exercises = (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
-                ...ex,
-                id: ex.id && ex.id.length > 5 ? ex.id : crypto.randomUUID(),
-                categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',
-                enfocadoA: ex.enfocadoA || 'ambos',
-                grupoMuscular: ex.grupo_muscular
-            }));
-
-            return {
-                exercises,
-                unclearItems: [],
-                confidence: 'high',
-                routineName: parsed.routine_name
-            };
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (_error) {
-            // Fallback for regex mapping
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                return {
-                    exercises: (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
-                        ...ex,
-                                            id: ex.id && ex.id.length > 5 ? ex.id : crypto.randomUUID(),
-                                            categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',                        enfocadoA: ex.enfocadoA || 'ambos',
-                        grupoMuscular: ex.grupo_muscular
-                    })),
-                    unclearItems: [],
-                    confidence: 'high',
-                    routineName: parsed.routine_name || parsed.nombre
-                };
-            }
-            throw new Error("Error en estructura generada.");
-        }
-    } catch (error: Error) {
-        console.error("Gemini Generation Error:", error);
+        return {
+            exercises,
+            unclearItems: [],
+            confidence: "high",
+            routineName: parsed.routine_name || parsed.nombre,
+        };
+    } catch (error: unknown) {
+        console.error("Gemini generation error:", error);
         throw new Error("Error al generar la rutina.");
     }
 };
@@ -316,122 +277,98 @@ export const reorganizeRoutine = async (
     userDescription?: string
 ): Promise<AnalysisResult> => {
     try {
-        const prompt = `Act�a como un experto entrenador personal.
-        
-        Tu tarea es REORGANIZAR la siguiente lista de ejercicios en una rutina semanal l�gica.
-        
-        ENTRADA:
-        ENTRADA:
-        ${JSON.stringify(exercises.map(e => ({
-            nombre: e.nombre,
-            series: e.series,
-            repeticiones: e.repeticiones,
-            descanso: e.descanso,
-            categoria: e.categoria,
-            dia_actual: e.dia
-        })))}
-        
-        CONTEXTO ADICIONAL:
-        "${userDescription || 'Divide los ejercicios en d�as l�gicos y separa el calentamiento de la rutina principal.'}"
-        
-        REGLAS:
-        1. Identifica qu� ejercicios son de CALENTAMIENTO y m�rcalos como "categoria": "calentamiento".
-        2. Divide los ejercicios en d�as (D�a 1, D�a 2, etc. o nombres de m�sculos).
-        2. Divide los ejercicios en d�as (D�a 1, D�a 2, etc. o nombres de m�sculos) usando "dia_actual" como referencia si tiene sentido.
-        3. Mant�n los valores de series, repeticiones y descanso originales si son v�lidos.
-        
-        ESTRUCTURA DE RESPUESTA (JSON):
-        {
-            "routine_name": "Nombre sugerido",
-            "exercises": [
-                {
-                    "nombre": "Nombre",
-                    "dia": "D�a 1",
-                    "categoria": "calentamiento o maquina",
-                    "series": 3,
-                    "repeticiones": "12",
-                    "grupo_muscular": "pectoral"
-                }
-            ]
-        }`;
+        const prompt = `Actua como entrenador experto.
+
+Reorganiza estos ejercicios en una rutina semanal logica.
+
+Entrada:
+${JSON.stringify(
+    exercises.map((e) => ({
+        nombre: e.nombre,
+        series: e.series,
+        repeticiones: e.repeticiones,
+        descanso: e.descanso,
+        categoria: e.categoria,
+        dia_actual: e.dia,
+    }))
+)}
+
+Contexto adicional:
+"${userDescription || "Divide por dias de forma logica y separa calentamiento de rutina principal."}"
+
+Devuelve JSON:
+{
+  "routine_name": "Nombre sugerido",
+  "exercises": [
+    {
+      "nombre": "Nombre",
+      "dia": "Dia 1",
+      "categoria": "calentamiento|maquina",
+      "series": 3,
+      "repeticiones": "12",
+      "descanso": 60,
+      "grupo_muscular": "pectoral"
+    }
+  ]
+}`;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        let text = response.text();
-
-        // Clean markdown if present
-        if (text.trim().startsWith('```')) {
-            text = text.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '');
-        }
-
-        let parsed;
-        try {
-            parsed = JSON.parse(text);
-        } catch (e) {
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                parsed = JSON.parse(jsonMatch[0]);
-            } else {
-                throw e;
-            }
-        }
+        const parsed = parseJsonWithFallback(response.text()) as {
+            routine_name?: string;
+            exercises?: GeminiExerciseRaw[];
+        };
 
         return {
-            exercises: (parsed.exercises || []).map((ex: GeminiExerciseRaw) => ({
+            exercises: (parsed.exercises || []).map((ex) => ({
+                ...toRoutineExercise(ex, "General"),
                 id: crypto.randomUUID(),
-                nombre: ex.nombre,
-                series: ex.series || 3,
-                repeticiones: String(ex.repeticiones || "12"),
-                descanso: ex.descanso || 60,
-                categoria: (ex.categoria === 'calentamiento' ? 'calentamiento' : 'maquina') as 'calentamiento' | 'maquina',
-                dia: ex.dia || "General",
-                grupoMuscular: ex.grupo_muscular
             })),
             unclearItems: [],
-            confidence: 'high',
+            confidence: "high",
             routineName: parsed.routine_name,
-            isAI: true
+            isAI: true,
         };
-    } catch (error) {
-        console.error("Error reorganizando:", error);
+    } catch (error: unknown) {
+        console.error("Gemini reorganize error:", error);
         throw error;
     }
 };
 
 export const coachChat = async (
     message: string,
-    history: { role: 'user' | 'model', parts: { text: string }[] }[],
+    history: { role: "user" | "model"; parts: { text: string }[] }[],
     userProfile: DatosPersonales
 ): Promise<string> => {
     try {
-        // Ensure history structure matches Gemini requirements
-        const validHistory = history.map(h => ({
+        const validHistory = history.map((h) => ({
             role: h.role,
-            parts: h.parts.map(p => ({ text: p.text }))
+            parts: h.parts.map((p) => ({ text: p.text })),
         }));
 
         const chat = model.startChat({
             history: [
                 {
                     role: "user",
-                    parts: [{ text: `Eres el Coach de Gymbro. Perfil del usuario: ${userProfile.nombre}, ${userProfile.nivel}, objetivo: ${userProfile.objetivo}, peso: ${userProfile.peso}kg, lesiones: ${userProfile.lesiones || 'Ninguna'}. Responde de forma motivadora y t�cnica.` }],
+                    parts: [{
+                        text: `Eres el coach de GymBro. Perfil: ${userProfile.nombre}, nivel ${userProfile.nivel}, objetivo ${userProfile.objetivo}, peso ${userProfile.peso}kg, lesiones: ${userProfile.lesiones || "Ninguna"}. Responde tecnico y claro.`,
+                    }],
                 },
                 {
                     role: "model",
-                    parts: [{ text: `�Entendido! Soy el Coach de ${userProfile.nombre}. Estoy listo para ayudarle a alcanzar su objetivo de ${userProfile.objetivo} con consejos t�cnicos y motivaci�n. �En qu� puedo ayudarte hoy?` }],
+                    parts: [{
+                        text: `Entendido. Soy el coach de ${userProfile.nombre}. Listo para ayudarte con recomendaciones tecnicas de entrenamiento.`,
+                    }],
                 },
-                ...validHistory
+                ...validHistory,
             ],
         });
 
         const result = await chat.sendMessage(message);
         const response = await result.response;
         return response.text();
-    } catch (error) {
-        console.error("Gemini Chat Error:", error);
-        return "Lo siento, tuve un problema al procesar tu consulta. Int�ntalo de nuevo.";
+    } catch (error: unknown) {
+        console.error("Gemini chat error:", error);
+        return "Lo siento, tuve un problema al procesar tu consulta. Intentalo de nuevo.";
     }
 };
-
-
-

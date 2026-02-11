@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
 
 export const WeeklyProgressBar: React.FC = () => {
-    const { perfil } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
     const weeklyTracking = perfil.weeklyTracking || {};
     const [showModal, setShowModal] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -25,7 +25,8 @@ export const WeeklyProgressBar: React.FC = () => {
     const [isAddingCustom, setIsAddingCustom] = useState(false);
     const [customActivityName, setCustomActivityName] = useState('');
 
-    const { addExtraActivity, removeExtraActivitiesOnDate } = useUserStore();
+    const addExtraActivity = useUserStore((state) => state.addExtraActivity);
+    const removeExtraActivitiesOnDate = useUserStore((state) => state.removeExtraActivitiesOnDate);
 
     // Get current week days (Monday as start)
     const getWeekDays = () => {
@@ -42,7 +43,7 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const weekDays = getWeekDays();
-    const dayNames = ['Lun', 'Mar', 'Mi?', 'Jue', 'Vie', 'S?b', 'Dom'];
+    const dayNames = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 
     const handleDayClick = (dateStr: string) => {
         const trackingStatus = weeklyTracking[dateStr];
@@ -176,7 +177,7 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const getDaySchedule = (dayIndex: number) => {
-        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Mi?rcoles', 'Jueves', 'Viernes', 'S?bado'];
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
         const targetDay = dayNames[dayIndex];
         return perfil.horario.dias.find(d =>
             d.dia.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===

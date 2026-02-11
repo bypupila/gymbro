@@ -36,9 +36,11 @@ export const MigratorPage: React.FC = () => {
 
                 if (result.exercises && result.exercises.length > 0) {
                     const { setRutina, perfil } = useUserStore.getState();
+                    const previousRoutine = perfil.rutina;
 
                     setRutina({
-                        ...perfil.rutina,
+                        ...(previousRoutine || {}),
+                        id: previousRoutine?.id || crypto.randomUUID(),
                         nombre: result.routineName || 'Rutina Escaneada',
                         duracionSemanas: 4,
                         ejercicios: result.exercises,
@@ -46,10 +48,10 @@ export const MigratorPage: React.FC = () => {
                         analizadaPorIA: true
                     });
 
-                    toast.success(`°Rutina digitalizada con Èxito! ${result.exercises.length} ejercicios detectados.`);
+                    toast.success(`¬°Rutina digitalizada con √©xito! ${result.exercises.length} ejercicios detectados.`);
                     navigate('/routine');
                 } else {
-                    toast.error('No pude detectar ejercicios en la imagen. Intenta con una m·s clara.');
+                    toast.error('No pude detectar ejercicios en la imagen. Intenta con una m√°s clara.');
                 }
             };
             reader.readAsDataURL(file);
@@ -65,7 +67,7 @@ export const MigratorPage: React.FC = () => {
         <div style={styles.container}>
             {/* Header */}
             <div style={styles.header}>
-                <button onClick={() => navigate(-1)} style={styles.backBtn}>
+                <button type="button" aria-label="Volver" onClick={() => navigate(-1)} style={styles.backBtn}>
                     <ChevronLeft size={24} color={Colors.text} />
                 </button>
                 <div style={styles.headerTitleContainer}>
@@ -96,9 +98,9 @@ export const MigratorPage: React.FC = () => {
                         <div style={styles.cornerBR} />
                     </div>
                 </div>
-                <h2 style={styles.heroTitle}>Convierte tu rutina fÌsica</h2>
+                <h2 style={styles.heroTitle}>Convierte tu rutina f√≠sica</h2>
                 <p style={styles.heroDesc}>
-                    Saca una foto a tu rutina de gimnasio escrita o impresa y Gemini la convertir· en una experiencia digital din·mica.
+                    Saca una foto a tu rutina de gimnasio escrita o impresa y Gemini la convertir√° en una experiencia digital din√°mica.
                 </p>
             </div>
 
@@ -108,13 +110,13 @@ export const MigratorPage: React.FC = () => {
                     <div style={styles.stepNum}>1</div>
                     <div style={styles.stepContent}>
                         <h4 style={styles.stepTitle}>Escanea la rutina</h4>
-                        <p style={styles.stepDesc}>Aseg˙rate de que haya buena iluminaciÛn y el texto sea legible.</p>
+                        <p style={styles.stepDesc}>Aseg√∫rate de que haya buena iluminaci√≥n y el texto sea legible.</p>
                     </div>
                 </div>
                 <div style={styles.stepItem}>
                     <div style={styles.stepNum}>2</div>
                     <div style={styles.stepContent}>
-                        <h4 style={styles.stepTitle}>An·lisis Multimodal</h4>
+                        <h4 style={styles.stepTitle}>An√°lisis Multimodal</h4>
                         <p style={styles.stepDesc}>Gemini 1.5 Pro identifica ejercicios, series, reps y descansos.</p>
                     </div>
                 </div>
@@ -131,7 +133,7 @@ export const MigratorPage: React.FC = () => {
             <Card style={styles.actionCard}>
                 <div style={styles.infoRow}>
                     <Zap size={20} color={Colors.warning} />
-                    <span style={styles.infoText}>OptimizaciÛn Autom·tica habilitada</span>
+                    <span style={styles.infoText}>Optimizaci√≥n Autom√°tica habilitada</span>
                 </div>
                 <button
                     style={styles.mainBtn}

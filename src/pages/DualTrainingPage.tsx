@@ -14,7 +14,11 @@ import { firebaseService } from '@/services/firebaseService';
 
 export const DualTrainingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, userId, removePartner, setActivePartnerId, setRoutineSync } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const userId = useUserStore((state) => state.userId);
+    const removePartner = useUserStore((state) => state.removePartner);
+    const setActivePartnerId = useUserStore((state) => state.setActivePartnerId);
+    const setRoutineSync = useUserStore((state) => state.setRoutineSync);
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [aliasInput, setAliasInput] = React.useState('');
     const [connectError, setConnectError] = React.useState('');
@@ -143,14 +147,14 @@ export const DualTrainingPage: React.FC = () => {
         <div style={styles.container}>
             {/* Header */}
             <div style={styles.header}>
-                <button onClick={() => navigate(-1)} style={styles.backBtn}>
+                <button type="button" aria-label="Volver" onClick={() => navigate(-1)} style={styles.backBtn}>
                     <ChevronLeft size={24} color={Colors.text} />
                 </button>
                 <div style={styles.headerTitleContainer}>
                     <p style={styles.headerLabel}>SOCIAL SYNC</p>
                     <h1 style={styles.headerTitle}>Entrenamiento Dual</h1>
                 </div>
-                <button style={styles.actionBtn}>
+                <button type="button" aria-label="Compartir" style={styles.actionBtn}>
                     <Share2 size={24} color={Colors.primary} />
                 </button>
             </div>

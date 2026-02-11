@@ -56,7 +56,7 @@ export const OnboardingWelcome: React.FC = () => {
 // Personal Data Screen
 export const OnboardingDatos: React.FC = () => {
     const navigate = useNavigate();
-    const { setDatosPersonales } = useUserStore();
+    const setDatosPersonales = useUserStore((state) => state.setDatosPersonales);
 
     const [datos, setDatos] = useState({
         nombre: '',
@@ -75,10 +75,10 @@ export const OnboardingDatos: React.FC = () => {
     ];
 
     const objetivos: { value: ObjetivoFitness; label: string }[] = [
-        { value: 'ganar_musculo', label: 'Ganar Músculo' },
+        { value: 'ganar_musculo', label: 'Ganar MÃºsculo' },
         { value: 'perder_grasa', label: 'Perder Grasa' },
         { value: 'mantener', label: 'Mantenerme' },
-        { value: 'fuerza', label: 'Más Fuerza' },
+        { value: 'fuerza', label: 'MÃ¡s Fuerza' },
     ];
 
     const isValid = datos.nombre.length > 0 && parseInt(datos.edad) > 0 && parseInt(datos.peso) > 0;
@@ -100,7 +100,7 @@ export const OnboardingDatos: React.FC = () => {
         <div style={styles.container}>
             <div style={styles.header}>
                 <span style={styles.stepIndicator}>Paso 1 de 2</span>
-                <h1 style={styles.pageTitle}>Cuéntanos sobre ti</h1>
+                <h1 style={styles.pageTitle}>CuÃ©ntanos sobre ti</h1>
             </div>
 
             <div style={styles.form}>
@@ -210,7 +210,9 @@ export const OnboardingDatos: React.FC = () => {
 // Schedule Screen
 export const OnboardingHorarios: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil, setHorario, completarOnboarding } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
+    const setHorario = useUserStore((state) => state.setHorario);
+    const completarOnboarding = useUserStore((state) => state.completarOnboarding);
     const [dias, setDias] = useState(perfil.horario.dias);
 
     const toggleDia = (index: number) => {
@@ -233,8 +235,8 @@ export const OnboardingHorarios: React.FC = () => {
         <div style={styles.container}>
             <div style={styles.header}>
                 <span style={styles.stepIndicator}>Paso 2 de 2</span>
-                <h1 style={styles.pageTitle}>¿Cuándo entrenas?</h1>
-                <p style={styles.pageSubtitle}>Selecciona los días que puedes ir al gym</p>
+                <h1 style={styles.pageTitle}>Â¿CuÃ¡ndo entrenas?</h1>
+                <p style={styles.pageSubtitle}>Selecciona los dÃ­as que puedes ir al gym</p>
             </div>
 
             <div style={styles.daysGrid}>
@@ -265,7 +267,7 @@ export const OnboardingHorarios: React.FC = () => {
 
             <div style={styles.summary}>
                 <p style={styles.summaryText}>
-                    Entrenarás <strong>{dias.filter(d => d.entrena).length} días</strong> por semana
+                    EntrenarÃ¡s <strong>{dias.filter(d => d.entrena).length} dÃ­as</strong> por semana
                 </p>
             </div>
 
@@ -281,7 +283,7 @@ export const OnboardingHorarios: React.FC = () => {
 // Completion Screen
 export const OnboardingCompletado: React.FC = () => {
     const navigate = useNavigate();
-    const { perfil } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
 
     return (
         <div style={{ ...styles.container, justifyContent: 'center', textAlign: 'center' }}>
@@ -289,9 +291,9 @@ export const OnboardingCompletado: React.FC = () => {
                 <Check size={48} color="#000" />
             </div>
 
-            <h1 style={styles.successTitle}>¡Listo, {perfil.usuario.nombre}!</h1>
+            <h1 style={styles.successTitle}>Â¡Listo, {perfil.usuario.nombre}!</h1>
             <p style={styles.successSubtitle}>
-                Tu perfil ha sido configurado. El Coach IA ya está preparando tu primera rutina.
+                Tu perfil ha sido configurado. El Coach IA ya estÃ¡ preparando tu primera rutina.
             </p>
 
             <div style={{ ...styles.footer, marginTop: '40px' }}>

@@ -9,6 +9,9 @@ import MainLayout from './components/MainLayout';
 import { CloudSyncManager } from './components/CloudSyncManager';
 import { useUserStore } from './stores/userStore';
 import Loader from './components/Loader';
+import { AuthProvider } from './components/AuthProvider';
+import { TrainingInvitationNotifier } from './components/TrainingInvitationNotifier';
+import { RoutineRequestNotifier } from './components/RoutineRequestNotifier';
 
 // Lazy load pages
 const BodyStatusPage = lazy(() => import('./pages/BodyStatusPage').then(module => ({ default: module.BodyStatusPage })));
@@ -29,9 +32,19 @@ const TrainPage = lazy(() => import('./pages/TrainPage').then(module => ({ defau
 const CatalogPage = lazy(() => import('./pages/CatalogPage').then(module => ({ default: module.CatalogPage })));
 
 
+const isDevAuthBypassEnabled = () =>
+    import.meta.env.DEV &&
+    typeof window !== 'undefined' &&
+    window.localStorage.getItem('__dev_bypass_auth') === '1';
+
 // Protected Route wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { userId, perfil } = useUserStore();
+    const userId = useUserStore((state) => state.userId);
+    const onboardingCompleted = useUserStore((state) => state.perfil.onboardingCompletado);
+
+    if (isDevAuthBypassEnabled()) {
+        return <>{children}</>;
+    }
 
     // If not logged in, ALWAYS go to login
     if (!userId) {
@@ -39,7 +52,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     }
 
     // If logged in but onboarding not done, go to onboarding
-    if (!perfil.onboardingCompletado) {
+    if (!onboardingCompleted) {
         return <Navigate to="/onboarding" replace />;
     }
 
@@ -48,18 +61,18 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 // Onboarding Route wrapper (redirects if already completed)
 const OnboardingRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { perfil } = useUserStore();
+    const onboardingCompleted = useUserStore((state) => state.perfil.onboardingCompletado);
 
-    if (perfil.onboardingCompletado) {
+    if (isDevAuthBypassEnabled()) {
+        return <>{children}</>;
+    }
+
+    if (onboardingCompleted) {
         return <Navigate to="/" replace />;
     }
 
     return <>{children}</>;
 };
-
-import { AuthProvider } from './components/AuthProvider';
-import { TrainingInvitationNotifier } from './components/TrainingInvitationNotifier';
-import { RoutineRequestNotifier } from './components/RoutineRequestNotifier';
 
 function App() {
     return (

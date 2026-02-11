@@ -5,10 +5,15 @@
 // =====================================================
 
 import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { firebaseApp, db } from '../config/firebase';
 
 let messagingInstance: ReturnType<typeof getMessaging> | null = null;
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
 
 async function ensureMessagingServiceWorker(): Promise<ServiceWorkerRegistration | null> {
     if (!('serviceWorker' in navigator)) {
@@ -68,7 +73,7 @@ export async function requestNotificationPermission(userId: string): Promise<str
         // Request browser notification permission
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            console.log('Notification permission denied');
+            debugLog('Notification permission denied');
             return null;
         }
 
@@ -93,7 +98,7 @@ export async function requestNotificationPermission(userId: string): Promise<str
         if (token) {
             // Store token in Firestore
             await saveFCMToken(userId, token);
-            console.log('FCM token registered successfully');
+            debugLog('FCM token registered successfully');
             return token;
         }
 
@@ -118,35 +123,6 @@ async function saveFCMToken(userId: string, token: string): Promise<void> {
 }
 
 /**
- * Remove FCM token from Firestore (on logout)
- */
-export async function removeFCMToken(userId: string, token: string): Promise<void> {
-    try {
-        const tokenRef = doc(db, 'users', userId, 'fcmTokens', token);
-        await deleteDoc(tokenRef);
-    } catch (error) {
-        console.error('Error removing FCM token:', error);
-    }
-}
-
-/**
- * Get a user's FCM tokens (for sending notifications)
- */
-export async function getUserFCMTokens(userId: string): Promise<string[]> {
-    try {
-        // This would normally be done server-side (Cloud Function)
-        // Client-side reading is for debugging only
-        const { getDocs, collection } = await import('firebase/firestore');
-        const tokensRef = collection(db, 'users', userId, 'fcmTokens');
-        const snapshot = await getDocs(tokensRef);
-        return snapshot.docs.map(d => d.data().token as string);
-    } catch (error) {
-        console.error('Error getting FCM tokens:', error);
-        return [];
-    }
-}
-
-/**
  * Listen for foreground messages (when app is open)
  * Returns unsubscribe function
  */
@@ -157,7 +133,7 @@ export async function onForegroundMessage(
     if (!messaging) return null;
 
     const unsubscribe = onMessage(messaging, (payload) => {
-        console.log('Foreground message received:', payload);
+        debugLog('Foreground message received:', payload);
         callback({
             title: payload.notification?.title || 'GymBro',
             body: payload.notification?.body || '',
@@ -168,17 +144,4 @@ export async function onForegroundMessage(
     return unsubscribe;
 }
 
-/**
- * Check if notifications are enabled for this user
- */
-export function areNotificationsEnabled(): boolean {
-    return 'Notification' in window && Notification.permission === 'granted';
-}
 
-/**
- * Get current notification permission state
- */
-export function getNotificationPermission(): NotificationPermission | 'unsupported' {
-    if (!('Notification' in window)) return 'unsupported';
-    return Notification.permission;
-}

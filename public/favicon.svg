@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GymBro">
+  <rect width="64" height="64" rx="14" fill="#0A0A0B"/>
+  <path d="M16 30h6v4h-6v-4zm26 0h6v4h-6v-4zm-20-8h4v20h-4V22zm16 0h4v20h-4V22z" fill="#00E699"/>
+  <path d="M22 26h20v12H22z" fill="none" stroke="#00E699" stroke-width="3"/>
+</svg>

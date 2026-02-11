@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Dumbbell, Zap, TrendingUp, User, Search, Settings, LogOut } from 'lucide-react';
+import { Home, Dumbbell, Zap, TrendingUp, User, Search, LogOut } from 'lucide-react';
 import Colors from '@/styles/colors';
 import { Agentation } from 'agentation';
 import { useUserStore } from '@/stores/userStore';
@@ -9,7 +9,7 @@ const sidebarItems = [
     { path: '/', icon: Home, label: 'Inicio' },
     { path: '/routine', icon: Dumbbell, label: 'Mi Rutina' },
     { path: '/train', icon: Zap, label: 'Entrenar' },
-    { path: '/catalog', icon: Search, label: 'Catálogo' }, // Fixed Label
+    { path: '/catalog', icon: Search, label: 'Catalogo' }, // Fixed Label
     { path: '/progress', icon: TrendingUp, label: 'Progreso' },
     { path: '/profile', icon: User, label: 'Perfil' },
 ];
@@ -17,7 +17,7 @@ const sidebarItems = [
 export const DesktopLayout: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { logout } = useUserStore();
+    const logout = useUserStore((state) => state.logout);
 
     return (
         <div style={styles.container}>
@@ -52,7 +52,7 @@ export const DesktopLayout: React.FC = () => {
                 <div style={styles.footer}>
                     <button onClick={() => logout()} style={styles.logoutBtn}>
                         <LogOut size={20} />
-                        <span>Cerrar Sesión</span>
+                        <span>Cerrar Sesion</span>
                     </button>
                 </div>
             </aside>

@@ -175,7 +175,7 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
                 <div style={styles.header}>
                     <div style={{ width: 24 }} /> {/* Spacer */}
                     <h2 style={styles.title}>
-                        {type === 'pre' ? 'øCÛmo te sientes hoy?' : 'Resumen post-entreno'}
+                        {type === 'pre' ? '¬øC√≥mo te sientes hoy?' : 'Resumen post-entreno'}
                     </h2>
                     <button style={styles.closeBtn} onClick={onCancel}>
                         <X size={24} />
@@ -184,7 +184,7 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
 
                 {/* Mood Section */}
                 <div style={styles.section}>
-                    <h3 style={styles.sectionTitle}>Estado de ¡nimo</h3>
+                    <h3 style={styles.sectionTitle}>Estado de √Ånimo</h3>
                     <div style={styles.row}>
                         {MOOD_ICONS.map((Icon, idx) => {
                             const val = idx + 1;
@@ -216,7 +216,7 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
 
                 {/* Energy Section */}
                 <div style={styles.section}>
-                    <h3 style={styles.sectionTitle}>Nivel de EnergÌa: {ENERGY_LABELS[energy - 1]}</h3>
+                    <h3 style={styles.sectionTitle}>Nivel de Energ√≠a: {ENERGY_LABELS[energy - 1]}</h3>
                     <div style={{ ...styles.row, height: '60px', alignItems: 'flex-end', justifyContent: 'center', gap: '8px' }}>
                         {[1, 2, 3, 4, 5].map((val) => {
                             const isActive = energy >= val;
@@ -245,7 +245,7 @@ export const MoodCheckin: React.FC<MoodCheckinProps> = ({ onComplete, onCancel, 
                     <textarea
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
-                        placeholder={type === 'pre' ? "Alguna molestia o comentario..." : "CÛmo sentiste el entrenamiento..."}
+                        placeholder={type === 'pre' ? "Alguna molestia o comentario..." : "C√≥mo sentiste el entrenamiento..."}
                         style={styles.noteInput}
                     />
                 </div>

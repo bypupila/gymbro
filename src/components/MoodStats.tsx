@@ -5,7 +5,7 @@ import { Card } from './Card';
 import { Zap, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 export const MoodStats: React.FC = () => {
-    const { perfil } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
     const history = perfil.historial || [];
 
     // Filter sessions with energy data (fallback to legacy mood fields)
@@ -25,7 +25,7 @@ export const MoodStats: React.FC = () => {
             <div style={styles.header}>
                 <div>
                     <h3 style={styles.title}>Impacto del Entreno</h3>
-                    <p style={styles.subtitle}>Tu energía antes vs. después</p>
+                    <p style={styles.subtitle}>Tu energia antes vs. despues</p>
                 </div>
                 <div style={{
                     ...styles.badge,

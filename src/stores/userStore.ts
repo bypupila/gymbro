@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { liveSessionService, GranularLiveUpdate } from '../services/liveSessionService';
-import { LinkRequest } from '../services/firebaseService';
+import { firebaseService, type LinkRequest } from '../services/firebaseService';
 
 // Types
 export type NivelExperiencia = 'principiante' | 'intermedio' | 'avanzado';
@@ -177,10 +177,10 @@ const horarioInicial: HorarioSemanal = {
     dias: [
         { dia: 'Lunes', entrena: true, hora: '07:00', grupoMuscular: 'Pecho' },
         { dia: 'Martes', entrena: true, hora: '07:00', grupoMuscular: 'Espalda' },
-        { dia: 'Mi?rcoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
+        { dia: 'Miercoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
         { dia: 'Jueves', entrena: true, hora: '07:00', grupoMuscular: 'Hombros' },
         { dia: 'Viernes', entrena: true, hora: '07:00', grupoMuscular: 'Piernas' },
-        { dia: 'S?bado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
+        { dia: 'Sabado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
         { dia: 'Domingo', entrena: false, hora: '09:00', grupoMuscular: 'Descanso' },
     ]
 };
@@ -492,7 +492,7 @@ export const useUserStore = create<UserStore>()(
             })),
 
             getEntrenamientoHoy: () => {
-                const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Mi?rcoles', 'Jueves', 'Viernes', 'S?bado'];
+                const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
                 const hoyIndex = new Date().getDay();
                 const diaNombre = diasSemana[hoyIndex];
 
@@ -794,7 +794,6 @@ export const useUserStore = create<UserStore>()(
                 const state = get();
                 if (!state.activeSession) return;
 
-                const { firebaseService } = await import('../services/firebaseService');
                 const { userId, perfil, activeSession } = state;
                 const { isDualSession, partnerExercises } = activeSession;
 
@@ -865,14 +864,7 @@ export const useUserStore = create<UserStore>()(
                     };
                 });
 
-                // Explicitly save the updated profile to Firebase to persist weekly tracking
-                if (userId) {
-                    try {
-                        await firebaseService.saveProfile(userId, get().perfil);
-                    } catch (e) {
-                        console.error("Failed to sync profile after workout completion", e);
-                    }
-                }
+                // Profile changes are synced by CloudSyncManager debounced auto-save.
             },
 
             setDayTracking: (dateStr, status) => {
@@ -891,17 +883,7 @@ export const useUserStore = create<UserStore>()(
                     };
                 });
 
-                const { userId } = get();
-                if (userId) {
-                    void (async () => {
-                        try {
-                            const { firebaseService } = await import('../services/firebaseService');
-                            await firebaseService.saveProfile(userId, get().perfil);
-                        } catch (error) {
-                            console.error('Error syncing day tracking:', error);
-                        }
-                    })();
-                }
+                // Profile changes are synced by CloudSyncManager debounced auto-save.
             },
 
             cancelSession: () => set({ activeSession: null }),
@@ -1156,12 +1138,10 @@ export const useUserStore = create<UserStore>()(
                 });
 
                 // 2. Persist to Firebase
-                const { userId, perfil } = get();
+                const { userId } = get();
                 if (userId) {
                     try {
-                        const { firebaseService } = await import('../services/firebaseService');
                         await firebaseService.saveExtraActivity(userId, activity);
-                        await firebaseService.saveProfile(userId, perfil);
                     } catch (error) {
                         console.error('Error syncing extra activity:', error);
                     }
@@ -1199,11 +1179,7 @@ export const useUserStore = create<UserStore>()(
                 // 2. Persist to Firebase
                 if (userId) {
                     try {
-                        const { firebaseService } = await import('../services/firebaseService');
                         await firebaseService.deleteExtraActivity(userId, activityId);
-                        // Also update profile if tracking changed
-                        const updatedProfile = get().perfil;
-                        await firebaseService.saveProfile(userId, updatedProfile);
                     } catch (error) {
                         console.error('Error removing extra activity:', error);
                     }
@@ -1238,11 +1214,6 @@ export const useUserStore = create<UserStore>()(
                 // 2. Persist to Firebase
                 if (userId) {
                     try {
-                        const { firebaseService } = await import('../services/firebaseService');
-                        // Update Profile (for weeklyTracking)
-                        const updatedProfile = get().perfil;
-                        await firebaseService.saveProfile(userId, updatedProfile);
-
                         // Delete extra activity documents
                         await Promise.all(activitiesToDelete.map(activity =>
                             firebaseService.deleteExtraActivity(userId, activity.id)

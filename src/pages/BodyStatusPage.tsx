@@ -15,14 +15,14 @@ export const BodyStatusPage: React.FC = () => {
         <div style={styles.container}>
             {/* Header */}
             <div style={styles.header}>
-                <button onClick={() => navigate(-1)} style={styles.backBtn}>
+                <button type="button" aria-label="Volver" onClick={() => navigate(-1)} style={styles.backBtn}>
                     <ChevronLeft size={24} color={Colors.text} />
                 </button>
                 <div style={styles.headerTitleContainer}>
                     <p style={styles.headerLabel}>HEALTH INTEL</p>
                     <h1 style={styles.headerTitle}>Estado del Cuerpo</h1>
                 </div>
-                <button style={styles.actionBtn}>
+                <button type="button" aria-label="Ver estadisticas" style={styles.actionBtn}>
                     <BarChart size={24} color={Colors.primary} />
                 </button>
             </div>
@@ -52,9 +52,9 @@ export const BodyStatusPage: React.FC = () => {
                             <ShieldCheck size={24} color={Colors.primary} />
                         </div>
                         <div style={styles.aiInfo}>
-                            <h3 style={styles.aiTitle}>AdaptaciÛn IA Detectada</h3>
+                            <h3 style={styles.aiTitle}>Adaptaci√≥n IA Detectada</h3>
                             <p style={styles.aiText}>
-                                He reemplazado el <span style={{ color: Colors.primary, fontWeight: 700 }}>Peso Muerto</span> por alternativas m·s seguras y aÒadÌ 5 min de movilidad lumbar.
+                                He reemplazado el <span style={{ color: Colors.primary, fontWeight: 700 }}>Peso Muerto</span> por alternativas m√°s seguras y a√±ad√≠ 5 min de movilidad lumbar.
                             </p>
                         </div>
                     </div>
@@ -68,7 +68,7 @@ export const BodyStatusPage: React.FC = () => {
             <div style={styles.legend}>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.legendDot, background: Colors.error }} />
-                    <span style={styles.legendText}>TensiÛn Alta</span>
+                    <span style={styles.legendText}>Tensi√≥n Alta</span>
                 </div>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.legendDot, background: Colors.warning }} />
@@ -76,7 +76,7 @@ export const BodyStatusPage: React.FC = () => {
                 </div>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.legendDot, background: Colors.primary }} />
-                    <span style={styles.legendText}>”ptimo</span>
+                    <span style={styles.legendText}>√ìptimo</span>
                 </div>
             </div>
         </div>

@@ -19,7 +19,8 @@ import { liveSessionService } from '@/services/liveSessionService';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 export const TrainingInvitationNotifier: React.FC = () => {
-    const { userId, startSession } = useUserStore();
+    const userId = useUserStore((state) => state.userId);
+    const startSession = useUserStore((state) => state.startSession);
     const navigate = useNavigate();
     const [invitations, setInvitations] = useState<TrainingInvitation[]>([]);
     const isMobile = useMediaQuery('(max-width: 640px)');
@@ -349,7 +350,7 @@ const styles = {
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
-    },
+    } as React.CSSProperties,
     title: {
         fontSize: '14px',
         fontWeight: 800,

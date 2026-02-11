@@ -8,7 +8,7 @@ export default defineConfig({
         react(),
         VitePWA({
             registerType: 'autoUpdate',
-            includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+            includeAssets: ['favicon.svg'],
             manifest: {
                 name: 'GymBro - Tu Coach de Fitness IA',
                 short_name: 'GymBro',
@@ -19,14 +19,9 @@ export default defineConfig({
                 orientation: 'portrait',
                 icons: [
                     {
-                        src: 'pwa-192x192.png',
-                        sizes: '192x192',
-                        type: 'image/png'
-                    },
-                    {
-                        src: 'pwa-512x512.png',
-                        sizes: '512x512',
-                        type: 'image/png'
+                        src: 'favicon.svg',
+                        sizes: 'any',
+                        type: 'image/svg+xml'
                     }
                 ]
             }
@@ -40,5 +35,37 @@ export default defineConfig({
     server: {
         port: 3000,
         host: true
+    },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (!id.includes('node_modules')) {
+                        return undefined;
+                    }
+
+                    if (id.includes('@google/generative-ai')) {
+                        return 'vendor-gemini';
+                    }
+                    if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+                        return 'vendor-react';
+                    }
+                    if (id.includes('@firebase/firestore') || id.includes('firebase/firestore')) {
+                        return 'vendor-firebase-firestore';
+                    }
+                    if (id.includes('@firebase/auth') || id.includes('firebase/auth')) {
+                        return 'vendor-firebase-auth';
+                    }
+                    if (id.includes('@firebase/messaging') || id.includes('firebase/messaging')) {
+                        return 'vendor-firebase-messaging';
+                    }
+                    if (id.includes('firebase')) {
+                        return 'vendor-firebase-core';
+                    }
+
+                    return undefined;
+                }
+            }
+        }
     }
 })

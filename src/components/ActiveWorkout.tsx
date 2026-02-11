@@ -27,25 +27,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MoodCheckin } from './MoodCheckin';
 import { toast } from 'react-hot-toast';
 import { liveSessionService } from '@/services/liveSessionService';
+import { useRenderMetric } from '@/utils/renderMetrics';
 
 interface ActiveWorkoutProps {
     onFinish: () => void;
     onCancel: () => void;
 }
 
+type DurationUnit = 's' | 'm' | 'h';
+
 export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel }) => {
-    const {
-        perfil,
-        activeSession,
-        updateSet,
-        finishSession,
-        cancelSession,
-        replaceExerciseInSession,
-        addExerciseToSession,
-        markExerciseAsCompleted,
-        addExtraActivity,
-        skipExercise
-    } = useUserStore();
+    useRenderMetric('ActiveWorkout');
+    const perfil = useUserStore((state) => state.perfil);
+    const activeSession = useUserStore((state) => state.activeSession);
+    const updateSet = useUserStore((state) => state.updateSet);
+    const finishSession = useUserStore((state) => state.finishSession);
+    const cancelSession = useUserStore((state) => state.cancelSession);
+    const replaceExerciseInSession = useUserStore((state) => state.replaceExerciseInSession);
+    const addExerciseToSession = useUserStore((state) => state.addExerciseToSession);
+    const markExerciseAsCompleted = useUserStore((state) => state.markExerciseAsCompleted);
+    const addExtraActivity = useUserStore((state) => state.addExtraActivity);
+    const skipExercise = useUserStore((state) => state.skipExercise);
 
     const [duration, setDuration] = useState(0);
     const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
@@ -75,7 +77,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     });
 
     // Local state for time units in sets
-    const [durationUnits, setDurationUnits] = useState<Record<string, 's' | 'm' | 'h'>>({});
+    const [durationUnits, setDurationUnits] = useState<Record<string, DurationUnit>>({});
 
     // Completion Modal State
     const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -259,7 +261,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     </button>
                     <button
                         onClick={() => {
-                            skipExercise(exerciseId, isPartner);
+                            skipExercise(exerciseId, false);
                             setIsTimerRunning(false);
                             setTimerSeconds(0);
                             toast.dismiss(t.id);
@@ -689,7 +691,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             <button
                                                 onClick={() => {
                                                     if (!selectedExerciseForAdd) return;
-                                                    const isAddingForPartner = activeSession?.sessionMode === 'shared' && activeTab === 'partner';
                                                     addExerciseToSession({
                                                         id: selectedExerciseForAdd.id,
                                                         nombre: selectedExerciseForAdd.nombre,
@@ -697,7 +698,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         repeticiones: addConfig.unit !== 'reps' ? `${addConfig.repeticiones}${addConfig.unit}` : addConfig.repeticiones,
                                                         descanso: addConfig.descanso,
                                                         categoria: 'maquina'
-                                                    }, isAddingForPartner);
+                                                    }, false);
                                                     setShowAddModal(false);
                                                     setSelectedExerciseForAdd(null);
                                                     setSearchQuery('');
@@ -1595,7 +1596,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         />
                                                         <select
                                                             value={durationUnits[`${ex.id}-${sIdx}`] || 's'}
-                                                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${ex.id}-${sIdx}`]: e.target.value as any })}
+                                                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${ex.id}-${sIdx}`]: e.target.value as DurationUnit })}
                                                             style={{
                                                                 background: 'transparent',
                                                                 border: 'none',
@@ -1796,7 +1797,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         />
                         <select
                             value={durationUnits[`${userEx.id}-${sIdx}-user`] || 's'}
-                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${userEx.id}-${sIdx}-user`]: e.target.value as any })}
+                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${userEx.id}-${sIdx}-user`]: e.target.value as DurationUnit })}
                             style={{ background: 'transparent', border: 'none', color: Colors.textSecondary, fontSize: '9px', padding: 0, cursor: 'pointer', width: '22px' }}
                             disabled={userSet.completed || userSet.skipped}
                         >
@@ -1878,7 +1879,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         />
                         <select
                             value={durationUnits[`${userEx.id}-${sIdx}-partner`] || 's'}
-                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${userEx.id}-${sIdx}-partner`]: e.target.value as any })}
+                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${userEx.id}-${sIdx}-partner`]: e.target.value as DurationUnit })}
                             style={{ background: 'transparent', border: 'none', color: Colors.textSecondary, fontSize: '9px', padding: 0, cursor: 'pointer', width: '22px' }}
                             disabled={partnerSet.completed || partnerSet.skipped}
                         >

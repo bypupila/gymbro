@@ -3,8 +3,16 @@ import {
     orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc, deleteField
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
-import { EjercicioBase } from '../data/exerciseDatabase';
+import type { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
+import type { EjercicioBase } from '../data/exerciseDatabase';
+import {
+    buildProfileDiffPatch,
+    getProfileSyncFingerprint as buildProfileSyncFingerprint,
+    resolveActivePartnersFromEvents,
+    toProfileComparablePayload,
+    toProfileSyncPayload,
+} from './firebaseService.sync-utils';
+import type { AcceptedPartnerEvent, ProfileSyncPayload, UnlinkPartnerEvent } from './firebaseService.sync-utils';
 
 export interface LinkRequest {
     id: string;
@@ -28,43 +36,54 @@ export interface RelationshipAction {
     createdAt: string;
 }
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 export const firebaseService = {
     // ========== PROFILE MANAGEMENT ==========
 
+    getProfileSyncPayload(profile: PerfilCompleto): ProfileSyncPayload {
+        return toProfileSyncPayload(profile);
+    },
+
+    getProfileSyncFingerprint(profile: PerfilCompleto): string {
+        return buildProfileSyncFingerprint(profile);
+    },
+
     async saveProfile(userId: string, profile: PerfilCompleto): Promise<void> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
-        await setDoc(profileRef, {
-            usuario: profile.usuario,
-            pareja: profile.pareja,
-            horario: profile.horario,
-            rutina: profile.rutina ? { // Ensure ID and isDefault are saved
-                id: profile.rutina.id,
-                nombre: profile.rutina.nombre,
-                duracionSemanas: profile.rutina.duracionSemanas,
-                ejercicios: profile.rutina.ejercicios,
-                fechaInicio: profile.rutina.fechaInicio,
-                fechaExpiracion: profile.rutina.fechaExpiracion,
-                analizadaPorIA: profile.rutina.analizadaPorIA,
-                isDefault: profile.rutina.isDefault || false,
-            } : null,
-            onboardingCompletado: profile.onboardingCompletado,
-            partnerId: profile.partnerId || null,
-            partners: profile.partners || [],
-            partnerIds: profile.partnerIds || [],
-            activePartnerId: profile.activePartnerId || null,
-            routineSync: profile.routineSync || {
-                enabled: false,
-                partnerId: null,
-                mode: 'manual',
-                syncId: null,
-                updatedAt: new Date().toISOString(),
-            },
-            linkSetupPendingPartnerId: profile.linkSetupPendingPartnerId || null,
-            weeklyTracking: profile.weeklyTracking || {},
-            catalogoExtras: profile.catalogoExtras || [],
-            defaultRoutineId: profile.defaultRoutineId || null, // Save the default routine ID
-            updatedAt: new Date().toISOString(),
-        });
+        await setDoc(profileRef, toProfileSyncPayload(profile));
+    },
+
+    async saveProfileDiff(userId: string, previousProfile: PerfilCompleto | null, nextProfile: PerfilCompleto): Promise<boolean> {
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const nextPayload = toProfileSyncPayload(nextProfile);
+
+        if (!previousProfile) {
+            await setDoc(profileRef, nextPayload);
+            return true;
+        }
+
+        const previousComparable = toProfileComparablePayload(previousProfile);
+        const nextComparable = toProfileComparablePayload(nextProfile);
+        const patch = buildProfileDiffPatch(previousComparable, nextComparable, deleteField);
+
+        if (Object.keys(patch).length === 0) {
+            return false;
+        }
+
+        patch.updatedAt = new Date().toISOString();
+
+        try {
+            await updateDoc(profileRef, patch);
+        } catch {
+            await setDoc(profileRef, nextPayload);
+        }
+
+        return true;
     },
 
     async getProfile(userId: string): Promise<PerfilCompleto | null> {
@@ -135,26 +154,82 @@ export const firebaseService = {
         };
     },
 
-    // Real-time listener para sync autom?tico
-    onProfileChange(userId: string, callback: (profile: PerfilCompleto | null) => void) {
+    // Real-time listener para sync automatico
+    onProfileChange(
+        userId: string,
+        callback: (profile: PerfilCompleto | null) => void,
+        options?: {
+            // true = re-fetch related collections on every profile snapshot (legacy behavior)
+            rehydrateRelatedData?: boolean;
+            // true = ignore local pending writes to avoid sync echo churn
+            ignorePendingWrites?: boolean;
+        }
+    ) {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         const userRef = doc(db, 'users', userId);
+        const rehydrateRelatedData = options?.rehydrateRelatedData ?? true;
+        const ignorePendingWrites = options?.ignorePendingWrites ?? true;
+        let cachedUserData: Record<string, unknown> | null = null;
+        let cachedRelatedData: {
+            historial: EntrenamientoRealizado[];
+            historialRutinas: RutinaUsuario[];
+            extraActivities: ExtraActivity[];
+            catalogExtras: string[];
+        } | null = null;
+
+        const getUserData = async () => {
+            if (!rehydrateRelatedData && cachedUserData) {
+                return cachedUserData;
+            }
+
+            const userSnap = await getDoc(userRef);
+            const userData = userSnap.exists() ? userSnap.data() : {};
+
+            if (!rehydrateRelatedData) {
+                cachedUserData = userData;
+            }
+
+            return userData;
+        };
+
+        const getRelatedData = async () => {
+            if (!rehydrateRelatedData && cachedRelatedData) {
+                return cachedRelatedData;
+            }
+
+            const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
+                this.getWorkouts(userId),
+                this.getRoutineHistory(userId),
+                this.getExtraActivities(userId),
+                this.getExtraActivitiesCatalog(userId)
+            ]);
+
+            const nextRelatedData = {
+                historial,
+                historialRutinas,
+                extraActivities,
+                catalogExtras,
+            };
+
+            if (!rehydrateRelatedData) {
+                cachedRelatedData = nextRelatedData;
+            }
+
+            return nextRelatedData;
+        };
 
         return onSnapshot(profileRef, async (snap) => {
             if (!snap.exists()) {
                 callback(null);
                 return;
             }
+            if (ignorePendingWrites && snap.metadata.hasPendingWrites) {
+                return;
+            }
             const data = snap.data();
-            const userSnap = await getDoc(userRef);
-            const userData = userSnap.exists() ? userSnap.data() : {};
-
-            // Cargar historial, rutinas y actividades extras en paralelo
-            const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
-                this.getWorkouts(userId),
-                this.getRoutineHistory(userId),
-                this.getExtraActivities(userId),
-                this.getExtraActivitiesCatalog(userId)
+            const [userData, relatedData] = await Promise.all([
+                getUserData(),
+                getRelatedData()
             ]);
 
             callback({
@@ -171,8 +246,8 @@ export const firebaseService = {
                     analizadaPorIA: data.rutina.analizadaPorIA,
                     isDefault: data.rutina.isDefault || false,
                 } : null,
-                historial,
-                historialRutinas,
+                historial: relatedData.historial,
+                historialRutinas: relatedData.historialRutinas,
                 onboardingCompletado: data.onboardingCompletado,
                 partnerId: data.partnerId,
                 partners: data.partners || [],
@@ -197,8 +272,8 @@ export const firebaseService = {
                 alias: userData.displayName || '',
                 role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
                 weeklyTracking: data.weeklyTracking || {},
-                actividadesExtras: extraActivities,
-                catalogoExtras: catalogExtras,
+                actividadesExtras: relatedData.extraActivities,
+                catalogoExtras: relatedData.catalogExtras,
                 defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
             });
         });
@@ -220,7 +295,7 @@ export const firebaseService = {
         const cleanOld = oldAlias.toLowerCase().trim();
         if (cleanNew === cleanOld) return;
 
-        console.log('updateAlias called:', { userId, oldAlias, newAlias, cleanOld, cleanNew });
+        debugLog('updateAlias called:', { userId, oldAlias, newAlias, cleanOld, cleanNew });
 
         // Verificar disponibilidad de nuevo (por seguridad si no se hizo antes)
         const available = await this.isAliasAvailable(cleanNew, userId);
@@ -238,13 +313,13 @@ export const firebaseService = {
                 displayName: newAlias,
                 createdAt: new Date(),
             });
-            console.log('Created new alias ref:', cleanNew);
+            debugLog('Created new alias ref:', cleanNew);
 
             // 2. Eliminar antiguo alias lookup
             if (cleanOld) {
                 const oldAliasRef = doc(db, 'userAliases', cleanOld);
                 batch.delete(oldAliasRef);
-                console.log('Deleting old alias ref:', cleanOld);
+                debugLog('Deleting old alias ref:', cleanOld);
             }
 
             // 3. ActualizarDisplayName en el doc del usuario (usar set merge para evitar fallo si no existe)
@@ -253,10 +328,10 @@ export const firebaseService = {
                 displayName: newAlias,
                 lastAliasUpdate: new Date(),
             }, { merge: true });
-            console.log('Updating user doc:', userId);
+            debugLog('Updating user doc:', userId);
 
             await batch.commit();
-            console.log('Batch committed successfully');
+            debugLog('Batch committed successfully');
         } catch (error) {
             console.error('updateAlias error:', error);
             throw error;
@@ -406,23 +481,23 @@ export const firebaseService = {
     // ========== ACCOUNT LINKING ==========
 
     async sendLinkRequest(requesterId: string, requesterAlias: string, recipientId: string, recipientAlias?: string): Promise<void> {
-        console.log('[sendLinkRequest] Iniciando', { requesterId, requesterAlias, recipientId, recipientAlias });
+        debugLog('[sendLinkRequest] Iniciando', { requesterId, requesterAlias, recipientId, recipientAlias });
 
-        // Validación defensiva
+        // Validacion defensiva
         if (!requesterId || typeof requesterId !== 'string') {
-            console.error('[sendLinkRequest] ID de requester inválido:', requesterId);
+            console.error('[sendLinkRequest] ID de requester invalido:', requesterId);
             throw new Error('INVALID_REQUESTER_ID');
         }
         if (!recipientId || typeof recipientId !== 'string') {
-            console.error('[sendLinkRequest] ID de recipient inválido:', recipientId);
+            console.error('[sendLinkRequest] ID de recipient invalido:', recipientId);
             throw new Error('INVALID_RECIPIENT_ID');
         }
         if (!requesterAlias || typeof requesterAlias !== 'string') {
-            console.error('[sendLinkRequest] Alias de requester inválido:', requesterAlias);
+            console.error('[sendLinkRequest] Alias de requester invalido:', requesterAlias);
             throw new Error('INVALID_REQUESTER_ALIAS');
         }
         if (requesterId === recipientId) {
-            console.error('[sendLinkRequest] Intento de auto-vinculación');
+            console.error('[sendLinkRequest] Intento de auto-vinculacion');
             throw new Error('CANNOT_LINK_SELF');
         }
 
@@ -435,7 +510,7 @@ export const firebaseService = {
                 getDoc(doc(db, 'users', requesterId, 'profile', 'main')),
                 getDoc(doc(db, 'users', recipientId, 'profile', 'main')),
             ]);
-            console.log('[sendLinkRequest] Perfiles obtenidos', {
+            debugLog('[sendLinkRequest] Perfiles obtenidos', {
                 requesterExists: requesterProfileSnap.exists(),
                 recipientExists: recipientProfileSnap.exists()
             });
@@ -454,7 +529,7 @@ export const firebaseService = {
         const requesterProfile = requesterProfileSnap.data();
         const recipientProfile = recipientProfileSnap.data();
 
-        // PASO 2: Validar estado de vinculación
+        // PASO 2: Validar estado de vinculacion
         const requesterLinkedId =
             requesterProfile.activePartnerId ||
             requesterProfile.partnerId ||
@@ -468,7 +543,7 @@ export const firebaseService = {
             recipientProfile.partners?.[0]?.id ||
             null;
 
-        console.log('[sendLinkRequest] Estado de vinculación', {
+        debugLog('[sendLinkRequest] Estado de vinculacion', {
             requesterLinkedId,
             recipientLinkedId
         });
@@ -482,14 +557,14 @@ export const firebaseService = {
             throw new Error('RECIPIENT_ALREADY_HAS_PARTNER');
         }
         if (requesterLinkedId === recipientId && recipientLinkedId === requesterId) {
-            console.error('[sendLinkRequest] Ya están vinculados');
+            console.error('[sendLinkRequest] Ya estan vinculados');
             throw new Error('ALREADY_LINKED');
         }
 
         // PASO 3: Verificar requests existentes
         let directPending, reciprocalPending, acceptedDirect, acceptedReciprocal;
         try {
-            console.log('[sendLinkRequest] Verificando requests existentes...');
+            debugLog('[sendLinkRequest] Verificando requests existentes...');
             [directPending, reciprocalPending, acceptedDirect, acceptedReciprocal] = await Promise.all([
                 getDocs(query(
                     requestsRef,
@@ -516,7 +591,7 @@ export const firebaseService = {
                     where('status', '==', 'accepted')
                 ))
             ]);
-            console.log('[sendLinkRequest] Requests verificadas', {
+            debugLog('[sendLinkRequest] Requests verificadas', {
                 directPending: !directPending.empty,
                 reciprocalPending: !reciprocalPending.empty,
                 acceptedDirect: !acceptedDirect.empty,
@@ -533,15 +608,14 @@ export const firebaseService = {
         }
 
         if (!directPending.empty) {
-            console.log('[sendLinkRequest] Ya existe request pendiente directa, no se crea duplicada');
+            debugLog('[sendLinkRequest] Ya existe request pendiente directa, no se crea duplicada');
             return;
         }
 
-        // PASO 4: Auto-aceptar si hay request recíproca
+        // PASO 4: Auto-aceptar si hay request reciproca
         if (!reciprocalPending.empty) {
-            console.log('[sendLinkRequest] Request recíproca encontrada, auto-aceptando...');
+            debugLog('[sendLinkRequest] Request reciproca encontrada, auto-aceptando...');
             const reciprocalDoc = reciprocalPending.docs[0];
-            void reciprocalDoc.data() as LinkRequest;
 
             try {
                 // Update the reciprocal request status
@@ -549,12 +623,12 @@ export const firebaseService = {
                     status: 'accepted',
                     resolvedAt: new Date().toISOString(),
                 });
-                console.log('[sendLinkRequest] Request recíproca actualizada a accepted');
+                debugLog('[sendLinkRequest] Request reciproca actualizada a accepted');
 
                 // Fetch real display names
                 const recipientDisplayName = await this.fetchUserDisplayName(recipientId);
                 const requesterDisplayName = await this.fetchUserDisplayName(requesterId);
-                console.log('[sendLinkRequest] Display names obtenidos:', {
+                debugLog('[sendLinkRequest] Display names obtenidos:', {
                     recipientDisplayName,
                     requesterDisplayName
                 });
@@ -572,9 +646,9 @@ export const firebaseService = {
                         nombre: requesterDisplayName, // NOMBRE REAL
                     })
                 ]);
-                console.log('[sendLinkRequest] ✓ Partners vinculados exitosamente (auto-aceptación)');
+                debugLog('[sendLinkRequest] [ok] Partners vinculados exitosamente (auto-aceptacion)');
             } catch (error) {
-                console.error('[sendLinkRequest] Error en auto-aceptación:', error);
+                console.error('[sendLinkRequest] Error en auto-aceptacion:', error);
                 throw error;
             }
 
@@ -591,9 +665,9 @@ export const firebaseService = {
                 status: 'pending' as const,
                 createdAt: new Date().toISOString(),
             };
-            console.log('[sendLinkRequest] Creando documento de request:', linkRequestData);
+            debugLog('[sendLinkRequest] Creando documento de request:', linkRequestData);
             await addDoc(requestsRef, linkRequestData);
-            console.log('[sendLinkRequest] ✓ Solicitud creada exitosamente');
+            debugLog('[sendLinkRequest] [ok] Solicitud creada exitosamente');
         } catch (error) {
             console.error('[sendLinkRequest] Error al crear documento:', error);
             throw error;
@@ -618,59 +692,22 @@ export const firebaseService = {
         const actionsRef = collection(db, 'relationshipActions');
         const sentQ = query(requestsRef, where('requesterId', '==', userId), where('status', '==', 'accepted'));
         const receivedQ = query(requestsRef, where('recipientId', '==', userId), where('status', '==', 'accepted'));
-        const unlinkBySourceQ = query(actionsRef, where('sourceUserId', '==', userId), where('actionType', '==', 'UNLINK'));
         const unlinkByTargetQ = query(actionsRef, where('targetUserId', '==', userId), where('actionType', '==', 'UNLINK'));
         const parseTimestamp = (value?: string) => {
             if (!value) return 0;
             const ms = Date.parse(value);
             return Number.isFinite(ms) ? ms : 0;
         };
-        const latestById = <T>(items: T[], idGetter: (item: T) => string, timeGetter: (item: T) => number) => {
-            const map = new Map<string, T>();
-            items.forEach((item) => {
-                const id = idGetter(item);
-                const current = map.get(id);
-                if (!current || timeGetter(item) >= timeGetter(current)) {
-                    map.set(id, item);
-                }
-            });
-            return map;
-        };
-
-        type AcceptedPartner = { partner: PartnerInfo; acceptedAtMs: number };
-        type UnlinkEvent = { partnerId: string; createdAtMs: number };
-
-        let sentPartners: AcceptedPartner[] = [];
-        let receivedPartners: AcceptedPartner[] = [];
-        let unlinksBySource: UnlinkEvent[] = [];
-        let unlinksByTarget: UnlinkEvent[] = [];
+        let sentPartners: AcceptedPartnerEvent[] = [];
+        let receivedPartners: AcceptedPartnerEvent[] = [];
+        let unlinksByTarget: UnlinkPartnerEvent[] = [];
 
         const emit = () => {
-            const accepted = latestById(
+            const activePartners = resolveActivePartnersFromEvents(
                 [...sentPartners, ...receivedPartners],
-                (item) => item.partner.id,
-                (item) => item.acceptedAtMs
+                unlinksByTarget,
+                1
             );
-            const unlinkedAtByPartner = latestById(
-                [...unlinksBySource, ...unlinksByTarget],
-                (item) => item.partnerId,
-                (item) => item.createdAtMs
-            );
-
-            const activePartners = Array.from(accepted.values())
-                .filter((item) => {
-                    const unlinkEvent = unlinkedAtByPartner.get(item.partner.id);
-                    return !unlinkEvent || item.acceptedAtMs > unlinkEvent.createdAtMs;
-                })
-                .sort((a, b) => b.acceptedAtMs - a.acceptedAtMs)
-                .map((item) => item.partner)
-                .slice(0, 1);
-
-            // Auto-reconciliación: detectar y reparar inconsistencias
-            this.reconcilePartnerState(userId, activePartners).catch(err => {
-                console.error('[reconcilePartnerState] Error:', err);
-            });
-
             callback(activePartners);
         };
 
@@ -685,16 +722,16 @@ export const firebaseService = {
                         nombre: alias,
                     },
                     acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
-                } as AcceptedPartner;
+                } as AcceptedPartnerEvent;
             });
 
             // Auto-actualizar perfil del requester cuando detecta nueva request aceptada
             snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added' || change.type === 'modified') {
+                if (change.type === 'added' && !change.doc.metadata.hasPendingWrites) {
                     const data = change.doc.data() as LinkRequest;
                     if (data.status === 'accepted') {
                         const alias = data.recipientAlias || data.recipientId;
-                        console.log('[onAcceptedLinkRequestsChange] Detectada request aceptada, actualizando perfil...', {
+                        debugLog('[onAcceptedLinkRequestsChange] Detectada request aceptada, actualizando perfil...', {
                             recipientId: data.recipientId,
                             alias
                         });
@@ -706,7 +743,7 @@ export const firebaseService = {
                                 nombre: displayName, // NOMBRE REAL
                             });
                         }).then(() => {
-                            console.log('[onAcceptedLinkRequestsChange] ✓ Perfil del requester actualizado');
+                            debugLog('[onAcceptedLinkRequestsChange] [ok] Perfil del requester actualizado');
                         }).catch((error) => {
                             console.error('[onAcceptedLinkRequestsChange] Error actualizando perfil:', error);
                         });
@@ -727,18 +764,7 @@ export const firebaseService = {
                         nombre: data.requesterAlias,
                     },
                     acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
-                } as AcceptedPartner;
-            });
-            emit();
-        });
-
-        const unsubscribeUnlinkBySource = onSnapshot(unlinkBySourceQ, (snapshot) => {
-            unlinksBySource = snapshot.docs.map((docSnap) => {
-                const data = docSnap.data() as RelationshipAction;
-                return {
-                    partnerId: data.targetUserId,
-                    createdAtMs: parseTimestamp(data.createdAt),
-                };
+                } as AcceptedPartnerEvent;
             });
             emit();
         });
@@ -751,13 +777,28 @@ export const firebaseService = {
                     createdAtMs: parseTimestamp(data.createdAt),
                 };
             });
+
+            // Procesar mirror actions - cuando partner desvincula, auto-removerse
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added' && !change.doc.metadata.hasPendingWrites) {
+                    const data = change.doc.data() as RelationshipAction;
+                    if (data.actionType === 'UNLINK' && data.targetUserId === userId) {
+                        debugLog('[Listener] Mirror unlink detectado, auto-removiendo partner:', data.sourceUserId);
+
+                        // Auto-remover partner del perfil (async, fire-and-forget)
+                        this.removePartnerFromOwnProfile(userId, data.sourceUserId).catch((error) => {
+                            console.error('[Listener] Error auto-removiendo partner:', error);
+                        });
+                    }
+                }
+            });
+
             emit();
         });
 
         return () => {
             unsubscribeSent();
             unsubscribeReceived();
-            unsubscribeUnlinkBySource();
             unsubscribeUnlinkByTarget();
         };
     },
@@ -771,10 +812,13 @@ export const firebaseService = {
         if (!snap.exists()) return;
 
         const currentProfile = snap.data();
-        const currentPartnerIds = new Set(currentProfile.partnerIds || []);
+        const rawCurrentPartnerIds = Array.isArray(currentProfile.partnerIds)
+            ? currentProfile.partnerIds.filter((id): id is string => typeof id === 'string')
+            : [];
+        const currentPartnerIds = new Set(rawCurrentPartnerIds);
         const expectedPartnerIds = new Set(expectedPartners.map(p => p.id));
 
-        // Detectar partners que deberían estar removidos
+        // Detectar partners que deberian estar removidos
         const toRemove: string[] = [];
         currentPartnerIds.forEach(id => {
             if (!expectedPartnerIds.has(id)) {
@@ -784,7 +828,7 @@ export const firebaseService = {
 
         // Auto-reparar inconsistencias
         if (toRemove.length > 0) {
-            console.log('[reconcilePartnerState] Detectada inconsistencia, removiendo:', toRemove);
+            debugLog('[reconcilePartnerState] Detectada inconsistencia, removiendo:', toRemove);
             for (const partnerId of toRemove) {
                 await this.removePartnerFromOwnProfile(userId, partnerId);
             }
@@ -818,17 +862,17 @@ export const firebaseService = {
     },
 
     async acceptLinkRequest(request: LinkRequest): Promise<void> {
-        console.log('[acceptLinkRequest] Iniciando aceptación', request);
+        debugLog('[acceptLinkRequest] Iniciando aceptacion', request);
 
-        // Obtener alias del recipient si no está presente
+        // Obtener alias del recipient si no esta presente
         let recipientAlias = request.recipientAlias;
         if (!recipientAlias) {
-            console.log('[acceptLinkRequest] recipientAlias no presente, obteniendo desde perfil...');
+            debugLog('[acceptLinkRequest] recipientAlias no presente, obteniendo desde perfil...');
             try {
                 const recipientUserDoc = await getDoc(doc(db, 'users', request.recipientId));
                 if (recipientUserDoc.exists()) {
                     recipientAlias = recipientUserDoc.data()?.displayName || request.recipientId;
-                    console.log('[acceptLinkRequest] recipientAlias obtenido:', recipientAlias);
+                    debugLog('[acceptLinkRequest] recipientAlias obtenido:', recipientAlias);
                 }
             } catch (error) {
                 console.error('[acceptLinkRequest] Error obteniendo recipientAlias:', error);
@@ -842,21 +886,21 @@ export const firebaseService = {
             resolvedAt: new Date().toISOString(),
             recipientAlias: recipientAlias, // Guardar el alias para que el requester lo vea
         });
-        console.log('[acceptLinkRequest] Request actualizada a accepted');
+        debugLog('[acceptLinkRequest] Request actualizada a accepted');
 
-        // Solo actualizar el perfil del usuario que está aceptando (recipient)
-        // El requester actualizará su propio perfil cuando detecte la aceptación
+        // Solo actualizar el perfil del usuario que esta aceptando (recipient)
+        // El requester actualizara su propio perfil cuando detecte la aceptacion
         try {
             // Fetch display name del requester
             const requesterDisplayName = await this.fetchUserDisplayName(request.requesterId);
-            console.log('[acceptLinkRequest] Display name obtenido:', requesterDisplayName);
+            debugLog('[acceptLinkRequest] Display name obtenido:', requesterDisplayName);
 
             await this.upsertOwnPartner(request.recipientId, {
                 id: request.requesterId,
                 alias: request.requesterAlias,
                 nombre: requesterDisplayName, // NOMBRE REAL
             });
-            console.log('[acceptLinkRequest] ✓ Partner agregado al perfil del recipient');
+            debugLog('[acceptLinkRequest] [ok] Partner agregado al perfil del recipient');
         } catch (error) {
             console.error('[acceptLinkRequest] Error actualizando perfil:', error);
             throw error;
@@ -869,7 +913,7 @@ export const firebaseService = {
     },
 
     async unlinkPartner(userId: string, partnerToRemove: PartnerInfo): Promise<void> {
-        console.log('[unlinkPartner] Iniciando desvinculación bidireccional', {
+        debugLog('[unlinkPartner] Iniciando desvinculacion bidireccional', {
             userId,
             partnerId: partnerToRemove.id
         });
@@ -884,25 +928,29 @@ export const firebaseService = {
 
             const updatePromises: Promise<void>[] = [];
             snap1.forEach(docSnap => {
+                const data = docSnap.data() as LinkRequest;
                 updatePromises.push(updateDoc(doc(db, 'linkRequests', docSnap.id), {
                     status: 'unlinked',
-                    unlinkedAt: new Date().toISOString()
+                    unlinkedAt: new Date().toISOString(),
+                    recipientAlias: data.recipientAlias || data.recipientId
                 }));
             });
             snap2.forEach(docSnap => {
+                const data = docSnap.data() as LinkRequest;
                 updatePromises.push(updateDoc(doc(db, 'linkRequests', docSnap.id), {
                     status: 'unlinked',
-                    unlinkedAt: new Date().toISOString()
+                    unlinkedAt: new Date().toISOString(),
+                    recipientAlias: data.recipientAlias || data.recipientId
                 }));
             });
 
             if (updatePromises.length > 0) {
                 await Promise.all(updatePromises);
-                console.log('[unlinkPartner] LinkRequests marcados como unlinked:', updatePromises.length);
+                debugLog('[unlinkPartner] LinkRequests marcados como unlinked:', updatePromises.length);
             }
         } catch (error) {
             console.error('[unlinkPartner] Error marcando linkRequests:', error);
-            // Continuar de todas formas
+            throw new Error(`Failed to mark linkRequests as unlinked: ${error}`);
         }
 
         // PASO 1: Crear action principal
@@ -911,15 +959,14 @@ export const firebaseService = {
             initiatedBy: userId,
             sourceUserId: userId,
             targetUserId: partnerToRemove.id,
-            status: 'client_processed',
+            status: 'pending',
             createdAt: new Date().toISOString(),
-            processedAt: new Date().toISOString(),
         });
-        console.log('[unlinkPartner] Action creada:', actionDoc.id);
+        debugLog('[unlinkPartner] Action creada:', actionDoc.id);
 
         // PASO 2: Actualizar mi perfil
         await this.removePartnerFromOwnProfile(userId, partnerToRemove.id);
-        console.log('[unlinkPartner] Perfil propio actualizado');
+        debugLog('[unlinkPartner] Perfil propio actualizado');
 
         // PASO 3: Crear mirror action para partner
         await addDoc(collection(db, 'relationshipActions'), {
@@ -927,14 +974,13 @@ export const firebaseService = {
             initiatedBy: userId,
             sourceUserId: partnerToRemove.id, // INVERTIDO
             targetUserId: userId,               // INVERTIDO
-            status: 'client_processed',
+            status: 'pending',
             createdAt: new Date().toISOString(),
-            processedAt: new Date().toISOString(),
             mirrorOf: actionDoc.id,
         });
-        console.log('[unlinkPartner] Mirror action creada para partner');
+        debugLog('[unlinkPartner] Mirror action creada para partner');
 
-        // El listener del partner detectará la mirror action y se auto-desvinculará
+        // El listener del partner detectara la mirror action y se auto-desvinculara
     },
 
     async removePartnerFromOwnProfile(userId: string, partnerIdToRemove: string): Promise<void> {
@@ -951,7 +997,20 @@ export const firebaseService = {
         const nextPartners = currentPartners.filter(p => p.id !== partnerIdToRemove);
         const nextPartnerIds = nextPartners.map(p => p.id);
 
-        const updates: any = {
+        const updates: {
+            partners: PartnerInfo[];
+            partnerIds: string[];
+            updatedAt: string;
+            activePartnerId?: string | null;
+            partnerId?: string | null;
+            routineSync?: {
+                enabled: boolean;
+                partnerId: null;
+                mode: 'manual';
+                syncId: null;
+                updatedAt: string;
+            };
+        } = {
             partners: nextPartners,
             partnerIds: nextPartnerIds,
             updatedAt: new Date().toISOString(),
@@ -977,7 +1036,7 @@ export const firebaseService = {
         }
 
         await updateDoc(profileRef, updates);
-        console.log('[removePartnerFromOwnProfile] ✓ Partner removido');
+        debugLog('[removePartnerFromOwnProfile] [ok] Partner removido');
     },
 
     async breakRoutineSync(userId: string, partnerId: string): Promise<void> {
@@ -1148,7 +1207,7 @@ export const firebaseService = {
     },
 
     async initializeCatalog(initialData: EjercicioBase[]): Promise<void> {
-        // Subir en lotes de 500 (l?mite de Firestore batch)
+        // Subir en lotes de 500 (limite de Firestore batch)
         const chunks = [];
         for (let i = 0; i < initialData.length; i += 400) {
             chunks.push(initialData.slice(i, i + 400));
@@ -1157,7 +1216,7 @@ export const firebaseService = {
         for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((ex) => {
-                // Usar el nombre como ID para f?cil lookup o generar uno nuevo
+                // Usar el nombre como ID para facil lookup o generar uno nuevo
                 // Preferible generar ID sanitizando el nombre o usar el ID existente si lo hay
                 const id = ex.id || ex.nombre.toLowerCase().replace(/[^a-z0-9]/g, '_');
                 const ref = doc(db, 'exercises', id);
@@ -1167,9 +1226,9 @@ export const firebaseService = {
         }
     },
 
-    // Función temporal para limpiar inconsistencias de partners
+    // Funcion temporal para limpiar inconsistencias de partners
     async forceCleanPartnerInconsistency(userId: string): Promise<void> {
-        console.log('[forceCleanPartner] Limpiando inconsistencia para userId:', userId);
+        debugLog('[forceCleanPartner] Limpiando inconsistencia para userId:', userId);
 
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
 
@@ -1182,11 +1241,12 @@ export const firebaseService = {
                 linkSetupPendingPartnerId: null,
             });
 
-            console.log('[forceCleanPartner] ✓ Perfil limpiado exitosamente');
+            debugLog('[forceCleanPartner] [ok] Perfil limpiado exitosamente');
         } catch (error) {
             console.error('[forceCleanPartner] Error al limpiar perfil:', error);
             throw error;
         }
     }
 };
+
 

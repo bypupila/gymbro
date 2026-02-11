@@ -14,21 +14,21 @@ interface Message {
 }
 
 export const CoachPage: React.FC = () => {
-    const { perfil } = useUserStore();
+    const perfil = useUserStore((state) => state.perfil);
     const [messages, setMessages] = useState<Message[]>([
         {
             id: '1',
             role: 'assistant',
-            content: `¡Hola ${perfil.usuario.nombre || 'atleta'}! ğŸ‘‹ Soy tu Coach IA personal. ¿En qué puedo ayudarte hoy? Puedo darte consejos sobre tu rutina, nutrición, o ayudarte a planificar tus entrenamientos.`,
+            content: `Hola ${perfil.usuario.nombre || 'atleta'}! ğŸ‘‹ Soy tu Coach IA personal. En que puedo ayudarte hoy? Puedo darte consejos sobre tu rutina, nutricion, o ayudarte a planificar tus entrenamientos.`,
         },
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
 
     const quickReplies = [
-        '¿Qué entreno hoy?',
-        'Dame tips de nutrición',
-        '¿Cómo mejoro mi técnica?',
+        'Que entreno hoy?',
+        'Dame tips de nutricion',
+        'Como mejoro mi tecnica?',
     ];
 
     const handleSend = async (text: string) => {
@@ -67,7 +67,7 @@ export const CoachPage: React.FC = () => {
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: "Hubo un error al contactar con mi cerebro digital. ¿Podrías intentar de nuevo?",
+                content: "Hubo un error al contactar con mi cerebro digital. Podrias intentar de nuevo?",
             };
             setMessages((prev) => [...prev, errorMessage]);
         } finally {
@@ -133,7 +133,7 @@ export const CoachPage: React.FC = () => {
             <div style={styles.inputContainer}>
                 <input
                     style={styles.input}
-                    placeholder="Pregúntale a tu Coach..."
+                    placeholder="Preguntale a tu Coach..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSend(input)}
@@ -272,4 +272,5 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default CoachPage;
+
 

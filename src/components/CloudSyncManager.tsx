@@ -1,13 +1,27 @@
 
 import React, { useEffect, useRef, useState } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 import { useUserStore } from '../stores/userStore';
+import type { PerfilCompleto } from '../stores/userStore';
 import { firebaseService } from '../services/firebaseService';
 import { RoutineCopyModal } from './RoutineCopyModal';
 import { requestNotificationPermission, onForegroundMessage } from '../services/pushNotificationService';
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 export const CloudSyncManager: React.FC = () => {
-    const { userId, perfil, setIsSyncing, setLastSyncError, setLinkSetupPendingPartnerId } = useUserStore();
+    const userId = useUserStore((state) => state.userId);
+    const perfil = useUserStore((state) => state.perfil);
+    const setIsSyncing = useUserStore((state) => state.setIsSyncing);
+    const setLastSyncError = useUserStore((state) => state.setLastSyncError);
+    const setLinkSetupPendingPartnerId = useUserStore((state) => state.setLinkSetupPendingPartnerId);
     const lastSavedData = useRef<string>('');
+    const lastSavedProfile = useRef<PerfilCompleto | null>(null);
     const syncTimeout = useRef<NodeJS.Timeout | null>(null);
 
     // Flag to prevent double initial pull
@@ -30,7 +44,8 @@ export const CloudSyncManager: React.FC = () => {
                 if (cloudData) {
                     // Update store with cloud data
                     useUserStore.setState({ perfil: cloudData });
-                    lastSavedData.current = JSON.stringify(cloudData);
+                    lastSavedData.current = firebaseService.getProfileSyncFingerprint(cloudData);
+                    lastSavedProfile.current = cloudData;
                 } else {
                     // If no data in cloud, initialize name with alias if empty
                     const { perfil } = useUserStore.getState();
@@ -62,9 +77,13 @@ export const CloudSyncManager: React.FC = () => {
             if (cloudProfile) {
                 // Update local store and ref to prevent echo
                 useUserStore.setState({ perfil: cloudProfile });
-                lastSavedData.current = JSON.stringify(cloudProfile);
+                lastSavedData.current = firebaseService.getProfileSyncFingerprint(cloudProfile);
+                lastSavedProfile.current = cloudProfile;
                 setLastSyncError(null);
             }
+        }, {
+            rehydrateRelatedData: false,
+            ignorePendingWrites: true,
         });
 
         return () => unsubscribe();
@@ -74,7 +93,7 @@ export const CloudSyncManager: React.FC = () => {
     useEffect(() => {
         if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
 
-        const currentDataStr = JSON.stringify(perfil);
+        const currentDataStr = firebaseService.getProfileSyncFingerprint(perfil);
 
         // Don't sync if data hasn't changed from last save
         if (currentDataStr === lastSavedData.current) return;
@@ -85,8 +104,9 @@ export const CloudSyncManager: React.FC = () => {
         syncTimeout.current = setTimeout(async () => {
             try {
                 setIsSyncing(true);
-                await firebaseService.saveProfile(userId, perfil);
+                await firebaseService.saveProfileDiff(userId, lastSavedProfile.current, perfil);
                 lastSavedData.current = currentDataStr;
+                lastSavedProfile.current = JSON.parse(JSON.stringify(perfil)) as PerfilCompleto;
                 setLastSyncError(null);
             } catch (err: unknown) {
                 console.error('Auto-sync failed:', err);
@@ -105,6 +125,8 @@ export const CloudSyncManager: React.FC = () => {
     // Push notification setup - request permission after initial load
     useEffect(() => {
         if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
+        let isDisposed = false;
+        let unsubscribeForeground: (() => void) | null = null;
 
         // Request notification permission (non-blocking)
         const initPush = async () => {
@@ -114,9 +136,13 @@ export const CloudSyncManager: React.FC = () => {
                 const unsubMsg = await onForegroundMessage((payload) => {
                     // Foreground messages are handled by TrainingInvitationNotifier via Firestore
                     // This is just for logging/debugging
-                    console.log('Foreground push received:', payload);
+                    debugLog('Foreground push received:', payload);
                 });
-                return unsubMsg;
+                if (!isDisposed) {
+                    unsubscribeForeground = unsubMsg || null;
+                } else if (unsubMsg) {
+                    unsubMsg();
+                }
             } catch (e) {
                 // Push notifications are optional - don't break the app
                 console.warn('Push notification setup skipped:', e);
@@ -128,7 +154,13 @@ export const CloudSyncManager: React.FC = () => {
             initPush();
         }, 5000);
 
-        return () => clearTimeout(timer);
+        return () => {
+            isDisposed = true;
+            clearTimeout(timer);
+            if (unsubscribeForeground) {
+                unsubscribeForeground();
+            }
+        };
     }, [userId, perfil.onboardingCompletado]);
 
     // Effect to detect new partner link and trigger first-time setup modal
@@ -170,8 +202,6 @@ export const CloudSyncManager: React.FC = () => {
                         // Also clear from Firestore to prevent modal loop on reload
                         if (userId) {
                             try {
-                                const { doc, updateDoc } = await import('firebase/firestore');
-                                const { db } = await import('@/config/firebase');
                                 const profileRef = doc(db, 'users', userId, 'profile', 'main');
                                 await updateDoc(profileRef, {
                                     linkSetupPendingPartnerId: null,
@@ -187,3 +217,4 @@ export const CloudSyncManager: React.FC = () => {
         </>
     );
 };
+
