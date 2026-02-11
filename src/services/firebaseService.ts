@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
+import { useUserStore } from '../stores/userStore';
 import type { EjercicioBase } from '../data/exerciseDatabase';
 import {
     buildProfileDiffPatch,
@@ -79,8 +80,27 @@ export const firebaseService = {
 
         try {
             await updateDoc(profileRef, patch);
-        } catch {
-            await setDoc(profileRef, nextPayload);
+        } catch (error: any) {
+            console.error('[saveProfileDiff] updateDoc error:', error);
+
+            // Detect permission-denied errors
+            if (error?.code === 'permission-denied') {
+                throw new Error('No tienes permisos para editar esta rutina. Puede ser una rutina sincronizada con tu partner.');
+            }
+
+            // If updateDoc fails for other reasons, try setDoc as fallback
+            try {
+                await setDoc(profileRef, nextPayload);
+            } catch (setError: any) {
+                console.error('[saveProfileDiff] setDoc error:', setError);
+
+                if (setError?.code === 'permission-denied') {
+                    throw new Error('No tienes permisos para editar esta rutina.');
+                }
+
+                // Re-throw the error to be caught by CloudSyncManager
+                throw setError;
+            }
         }
 
         return true;
@@ -197,40 +217,52 @@ export const firebaseService = {
                 return cachedRelatedData;
             }
 
-            const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
-                this.getWorkouts(userId),
-                this.getRoutineHistory(userId),
-                this.getExtraActivities(userId),
-                this.getExtraActivitiesCatalog(userId)
-            ]);
+            try {
+                const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
+                    this.getWorkouts(userId),
+                    this.getRoutineHistory(userId),
+                    this.getExtraActivities(userId),
+                    this.getExtraActivitiesCatalog(userId)
+                ]);
 
-            const nextRelatedData = {
-                historial,
-                historialRutinas,
-                extraActivities,
-                catalogExtras,
-            };
+                const nextRelatedData = {
+                    historial,
+                    historialRutinas,
+                    extraActivities,
+                    catalogExtras,
+                };
 
-            if (!rehydrateRelatedData) {
-                cachedRelatedData = nextRelatedData;
+                if (!rehydrateRelatedData) {
+                    cachedRelatedData = nextRelatedData;
+                }
+
+                return nextRelatedData;
+            } catch (error: any) {
+                // If permissions fail, return empty data instead of crashing
+                debugLog('[getRelatedData] Error fetching related data:', error?.code);
+                return {
+                    historial: [],
+                    historialRutinas: [],
+                    extraActivities: [],
+                    catalogExtras: [],
+                };
             }
-
-            return nextRelatedData;
         };
 
         return onSnapshot(profileRef, async (snap) => {
-            if (!snap.exists()) {
-                callback(null);
-                return;
-            }
-            if (ignorePendingWrites && snap.metadata.hasPendingWrites) {
-                return;
-            }
-            const data = snap.data();
-            const [userData, relatedData] = await Promise.all([
-                getUserData(),
-                getRelatedData()
-            ]);
+            try {
+                if (!snap.exists()) {
+                    callback(null);
+                    return;
+                }
+                if (ignorePendingWrites && snap.metadata.hasPendingWrites) {
+                    return;
+                }
+                const data = snap.data();
+                const [userData, relatedData] = await Promise.all([
+                    getUserData(),
+                    getRelatedData()
+                ]);
 
             callback({
                 usuario: data.usuario,
@@ -276,6 +308,15 @@ export const firebaseService = {
                 catalogoExtras: relatedData.catalogExtras,
                 defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
             });
+            } catch (error: any) {
+                // Handle permission errors gracefully (common during partner unlink)
+                if (error?.code === 'permission-denied') {
+                    debugLog('[onProfileChange] Permission denied (likely during partner unlink), ignoring');
+                    return;
+                }
+                console.error('[onProfileChange] Error:', error);
+                // Don't throw - just skip this update
+            }
         });
     },
 
@@ -984,6 +1025,17 @@ export const firebaseService = {
     },
 
     async removePartnerFromOwnProfile(userId: string, partnerIdToRemove: string): Promise<void> {
+        // PROTECTION: Wait if there's a pending save to avoid write conflicts
+        const waitForPendingSave = async (maxWaitMs = 5000) => {
+            const startTime = Date.now();
+            while (useUserStore.getState().pendingSave && (Date.now() - startTime) < maxWaitMs) {
+                debugLog('[removePartnerFromOwnProfile] Waiting for pending save...');
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        };
+
+        await waitForPendingSave();
+
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         const snap = await getDoc(profileRef);
 

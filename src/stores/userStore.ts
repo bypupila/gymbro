@@ -232,11 +232,13 @@ interface UserStore {
     isSyncing: boolean;
     lastSyncError: string | null;
     linkRequests: LinkRequest[];
+    pendingSave: boolean;
 
     setUserId: (id: string | null) => void;
     setIsSyncing: (status: boolean) => void;
     setLastSyncError: (error: string | null) => void;
     setLinkRequests: (requests: LinkRequest[]) => void;
+    setPendingSave: (pending: boolean) => void;
     setDatosPersonales: (datos: Partial<DatosPersonales>) => void;
     setDatosPareja: (datos: DatosPersonales | null) => void;
     setHorario: (horario: HorarioSemanal) => void;
@@ -307,11 +309,13 @@ export const useUserStore = create<UserStore>()(
             isSyncing: false,
             lastSyncError: null,
             linkRequests: [],
+            pendingSave: false,
 
             setUserId: (id) => set({ userId: id }),
             setIsSyncing: (status) => set({ isSyncing: status }),
             setLastSyncError: (error) => set({ lastSyncError: error }),
             setLinkRequests: (requests) => set({ linkRequests: requests }),
+            setPendingSave: (pending) => set({ pendingSave: pending }),
             setPartnerId: (id) => set((state) => ({
                 perfil: {
                     ...state.perfil,

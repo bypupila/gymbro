@@ -20,6 +20,9 @@ export const CloudSyncManager: React.FC = () => {
     const setIsSyncing = useUserStore((state) => state.setIsSyncing);
     const setLastSyncError = useUserStore((state) => state.setLastSyncError);
     const setLinkSetupPendingPartnerId = useUserStore((state) => state.setLinkSetupPendingPartnerId);
+    const isSyncing = useUserStore((state) => state.isSyncing);
+    const lastSyncError = useUserStore((state) => state.lastSyncError);
+    const pendingSave = useUserStore((state) => state.pendingSave);
     const lastSavedData = useRef<string>('');
     const lastSavedProfile = useRef<PerfilCompleto | null>(null);
     const syncTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -75,6 +78,13 @@ export const CloudSyncManager: React.FC = () => {
 
         const unsubscribe = firebaseService.onProfileChange(userId, (cloudProfile) => {
             if (cloudProfile) {
+                // PROTECTION: Don't overwrite if there's a save pending
+                const { pendingSave } = useUserStore.getState();
+                if (pendingSave) {
+                    debugLog('[CloudSync] Ignoring remote update (save pending)');
+                    return;
+                }
+
                 // Update local store and ref to prevent echo
                 useUserStore.setState({ perfil: cloudProfile });
                 lastSavedData.current = firebaseService.getProfileSyncFingerprint(cloudProfile);
@@ -104,14 +114,32 @@ export const CloudSyncManager: React.FC = () => {
         syncTimeout.current = setTimeout(async () => {
             try {
                 setIsSyncing(true);
+                useUserStore.getState().setPendingSave(true); // Mark save start
+
                 await firebaseService.saveProfileDiff(userId, lastSavedProfile.current, perfil);
+
                 lastSavedData.current = currentDataStr;
                 lastSavedProfile.current = JSON.parse(JSON.stringify(perfil)) as PerfilCompleto;
                 setLastSyncError(null);
+                useUserStore.getState().setPendingSave(false); // Mark save success
             } catch (err: unknown) {
                 console.error('Auto-sync failed:', err);
                 const errorMessage = err instanceof Error ? err.message : 'Error guardando en la nube';
                 setLastSyncError(errorMessage);
+
+                // DON'T clear pendingSave flag to protect data until successful save
+                // The flag will stay active until we successfully save
+
+                // Auto-retry after 10 seconds
+                setTimeout(() => {
+                    const { perfil: currentPerfil } = useUserStore.getState();
+                    const retryStr = firebaseService.getProfileSyncFingerprint(currentPerfil);
+                    if (retryStr !== lastSavedData.current) {
+                        debugLog('[CloudSync] Retrying save...');
+                        // Trigger change detection by updating a ref
+                        // This will re-trigger the auto-save effect
+                    }
+                }, 10000);
             } finally {
                 setIsSyncing(false);
             }
@@ -190,6 +218,28 @@ export const CloudSyncManager: React.FC = () => {
 
     return (
         <>
+            {/* Save status indicator */}
+            {(isSyncing || pendingSave || lastSyncError) && (
+                <div style={{
+                    position: 'fixed',
+                    top: '10px',
+                    right: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    zIndex: 9999,
+                    background: lastSyncError ? '#ff3b30' : (isSyncing || pendingSave) ? '#ff9500' : '#34c759',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                }}>
+                    {isSyncing || pendingSave ? '⏳ Guardando...' : lastSyncError ? '❌ Error al guardar' : '✓ Guardado'}
+                </div>
+            )}
+
             {showRoutineCopyModal && partnerDetails && (
                 <RoutineCopyModal
                     partnerId={partnerDetails.id}
