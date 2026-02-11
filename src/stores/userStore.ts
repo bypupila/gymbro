@@ -526,8 +526,8 @@ export const useUserStore = create<UserStore>()(
                     targetSeries: ex.series,
                     targetReps: ex.repeticiones,
                     categoria: ex.categoria,
-                    imagen: ex.imagen,
-                    isOptional: ex.isOptional,
+                    ...(ex.imagen ? { imagen: ex.imagen } : {}),
+                    isOptional: ex.isOptional ?? false,
                     isCompleted: false,
                     sets: Array.from({ length: ex.series }, () => ({
                         completed: false,

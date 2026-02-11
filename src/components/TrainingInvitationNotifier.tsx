@@ -63,7 +63,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
                 targetSeries: ex.series,
                 targetReps: ex.repeticiones,
                 categoria: ex.categoria,
-                isOptional: ex.isOptional,
+                isOptional: ex.isOptional ?? false,
                 isCompleted: false,
                 sets: Array.from({ length: ex.series }, () => ({
                     completed: false,
@@ -142,7 +142,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
             targetSeries: ex.series,
             targetReps: ex.repeticiones,
             categoria: ex.categoria,
-            isOptional: ex.isOptional,
+            isOptional: ex.isOptional ?? false,
             isCompleted: false,
             sets: Array.from({ length: ex.series }, () => ({
                 completed: false,

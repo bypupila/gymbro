@@ -90,4 +90,43 @@ export const routineRequestService = {
             await deleteDoc(doc(db, 'routineRequests', requestId));
         }
     },
+
+    /**
+     * Listen for accepted routine requests where the current user is the targetUserId.
+     * Covers the case where someone accepted a request to copy a routine TO us.
+     * Uses a single where clause to avoid needing a composite Firestore index.
+     */
+    onAcceptedRequestsAsTarget(
+        userId: string,
+        callback: (requests: RoutineRequest[]) => void
+    ): () => void {
+        const q = query(
+            collection(db, 'routineRequests'),
+            where('targetUserId', '==', userId),
+        );
+        return onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs
+                .map((d) => ({ id: d.id, ...d.data() } as RoutineRequest))
+                .filter((r) => r.status === 'accepted' && r.applyStatus !== 'applied');
+            callback(requests);
+        });
+    },
+
+    /**
+     * Mark a routine request as applied (client-side copy completed).
+     * Only works when the current user is the toUserId (Firestore rules).
+     */
+    async markAsApplied(requestId: string): Promise<void> {
+        try {
+            await updateDoc(doc(db, 'routineRequests', requestId), {
+                applyStatus: 'applied',
+                appliedAt: new Date().toISOString(),
+                appliedBy: 'client',
+            });
+        } catch (e) {
+            // May fail if user is not the toUserId (Firestore rules).
+            // This is OK — the Cloud Function will handle it as backup.
+            console.warn('[routineRequestService] markAsApplied failed (expected for fromUser):', e);
+        }
+    },
 };

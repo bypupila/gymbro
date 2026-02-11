@@ -152,7 +152,8 @@ service cloud.firestore {
     match /routineRequests/{requestId} {
       allow read: if isAuthenticated() && (
         resource.data.fromUserId == request.auth.uid ||
-        resource.data.toUserId == request.auth.uid
+        resource.data.toUserId == request.auth.uid ||
+        resource.data.targetUserId == request.auth.uid
       );
       allow create: if isAuthenticated() &&
         request.resource.data.fromUserId == request.auth.uid &&
@@ -165,6 +166,12 @@ service cloud.firestore {
         (
           resource.data.fromUserId == request.auth.uid &&
           request.resource.data.status == 'cancelled'
+        ) ||
+        (
+          // Target user can mark the routine copy as applied
+          resource.data.targetUserId == request.auth.uid &&
+          resource.data.status == 'accepted' &&
+          request.resource.data.applyStatus == 'applied'
         )
       );
       allow delete: if false;

@@ -1,27 +1,85 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, Clock, Copy, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Colors from '@/styles/colors';
 import { useUserStore } from '@/stores/userStore';
 import { RoutineRequest, routineRequestService } from '@/services/routineRequestService';
+import { firebaseService } from '@/services/firebaseService';
 
 export const RoutineRequestNotifier: React.FC = () => {
     const userId = useUserStore((state) => state.userId);
+    const setRutina = useUserStore((state) => state.setRutina);
     const [requests, setRequests] = useState<RoutineRequest[]>([]);
 
+    // Track which requests we've already processed client-side to avoid duplicates
+    const processedIds = useRef(new Set<string>());
+
+    // Listener for incoming requests (notifications for toUserId)
     useEffect(() => {
         if (!userId) return;
         const unsubscribe = routineRequestService.onIncomingRequests(userId, setRequests);
         return () => unsubscribe();
     }, [userId]);
 
+    // Listener for accepted requests where I am the target (Case B)
+    // Covers: I requested my partner's routine, they accepted, now I need to copy it
+    useEffect(() => {
+        if (!userId) return;
+
+        const unsubscribe = routineRequestService.onAcceptedRequestsAsTarget(
+            userId,
+            async (acceptedRequests) => {
+                for (const req of acceptedRequests) {
+                    if (processedIds.current.has(req.id)) continue;
+                    processedIds.current.add(req.id);
+
+                    try {
+                        const sourceProfile = await firebaseService.getProfile(req.sourceUserId);
+                        if (sourceProfile?.rutina) {
+                            setRutina(sourceProfile.rutina);
+                            toast.success('Rutina de tu partner copiada exitosamente!');
+                            // Try to mark as applied (may fail for fromUser due to Firestore rules, that's OK)
+                            void routineRequestService.markAsApplied(req.id);
+                        }
+                    } catch (error) {
+                        console.error('[RoutineRequestNotifier] Error copying routine (target listener):', error);
+                    }
+                }
+            }
+        );
+
+        return () => unsubscribe();
+    }, [userId, setRutina]);
+
     if (requests.length === 0) return null;
 
-    const handleAccept = async (requestId: string) => {
+    const handleAccept = async (request: RoutineRequest) => {
         try {
-            await routineRequestService.acceptRequest(requestId);
-            toast.success('Solicitud aceptada. Copiando rutina...');
-            setRequests((prev) => prev.filter((r) => r.id !== requestId));
+            await routineRequestService.acceptRequest(request.id);
+            setRequests((prev) => prev.filter((r) => r.id !== request.id));
+
+            // If the accepting user IS the target, perform client-side copy immediately
+            if (userId === request.targetUserId) {
+                toast.success('Solicitud aceptada. Copiando rutina...');
+                processedIds.current.add(request.id);
+
+                try {
+                    const sourceProfile = await firebaseService.getProfile(request.sourceUserId);
+                    if (sourceProfile?.rutina) {
+                        setRutina(sourceProfile.rutina);
+                        toast.success('Rutina copiada exitosamente!');
+                        void routineRequestService.markAsApplied(request.id);
+                    } else {
+                        toast('El source no tiene rutina activa. Esperando al servidor...', { icon: '⏳' });
+                    }
+                } catch (copyError) {
+                    console.error('[RoutineRequestNotifier] Client-side copy failed:', copyError);
+                    toast('Aceptada. Esperando al servidor para copiar...', { icon: '⏳' });
+                }
+            } else {
+                // Accepting user is the source — the target will pick it up via the listener above
+                toast.success('Solicitud aceptada. Tu partner recibira la rutina.');
+            }
         } catch {
             toast.error('No se pudo aceptar la solicitud');
         }
@@ -56,7 +114,7 @@ export const RoutineRequestNotifier: React.FC = () => {
                             <X size={16} />
                             Rechazar
                         </button>
-                        <button style={styles.acceptBtn} onClick={() => handleAccept(req.id)}>
+                        <button style={styles.acceptBtn} onClick={() => handleAccept(req)}>
                             <Check size={16} />
                             Aceptar
                         </button>

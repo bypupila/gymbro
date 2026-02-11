@@ -12,10 +12,26 @@ import { ActiveWorkout } from '@/components/ActiveWorkout';
 import { SyncStatus } from '@/components/SyncStatus';
 import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
 import { MoodStats } from '@/components/MoodStats';
-import { trainingInvitationService } from '@/services/trainingInvitationService';
+import { trainingInvitationService, InvitationExercisePayload } from '@/services/trainingInvitationService';
 import { liveSessionService } from '@/services/liveSessionService';
 import { toast } from 'react-hot-toast';
 import { useRenderMetric } from '@/utils/renderMetrics';
+
+/** Strip undefined fields from exercises before sending to Firestore */
+function sanitizeExercisesForInvitation(exercises: EjercicioRutina[]): InvitationExercisePayload[] {
+    return exercises.map((ex) => ({
+        id: ex.id,
+        nombre: ex.nombre,
+        series: ex.series,
+        targetSeries: ex.series,
+        repeticiones: ex.repeticiones,
+        targetReps: ex.repeticiones,
+        segundos: ex.segundos || 0,
+        descanso: ex.descanso || 60,
+        categoria: ex.categoria || 'maquina',
+        isOptional: ex.isOptional ?? false,
+    }));
+}
 
 export const HomePage: React.FC = () => {
     useRenderMetric('HomePage');
@@ -162,8 +178,8 @@ export const HomePage: React.FC = () => {
                             nombre: ex.nombre,
                             targetSeries: ex.series,
                             targetReps: ex.repeticiones,
-                            categoria: ex.categoria,
-                            isOptional: ex.isOptional,
+                            categoria: ex.categoria || 'maquina',
+                            isOptional: ex.isOptional ?? false,
                             isCompleted: false,
                             sets: Array.from({ length: ex.series }, () => ({
                                 completed: false,
@@ -187,7 +203,7 @@ export const HomePage: React.FC = () => {
                     tempSessionData.name,
                     {
                         dayName: tempSessionData.day,
-                        exercises: tempSessionData.exercises,
+                        exercises: sanitizeExercisesForInvitation(tempSessionData.exercises),
                         trackingDate: selectedTrackingDate,
                         liveSessionId,
                     }
