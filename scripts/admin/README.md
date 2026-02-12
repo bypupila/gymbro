@@ -98,6 +98,10 @@ Variables actualizadas:
 4. `GYMBRO_PASSWORD_2`
 5. `GYMBRO_BASE_URL` (si no existia)
 
+Nota:
+
+1. El perfil QA se reescribe completo (sin merge) para evitar residuos de `routineSync/syncMeta` entre corridas.
+
 ## Seguridad
 
 - Nunca subas el JSON de service account al repositorio.

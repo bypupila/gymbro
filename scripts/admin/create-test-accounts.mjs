@@ -104,7 +104,7 @@ async function createOrResetAccount(auth, db, email, password, displayName) {
         role: 'user',
         updatedAt: new Date().toISOString(),
     }, { merge: true });
-    batch.set(db.doc(`users/${uid}/profile/main`), buildProfilePayload(displayName), { merge: true });
+    batch.set(db.doc(`users/${uid}/profile/main`), buildProfilePayload(displayName));
     await batch.commit();
     return { uid, email, password, displayName };
 }

@@ -176,6 +176,10 @@ export const CloudSyncManager: React.FC = () => {
                     updatedAt: new Date().toISOString(),
                 },
             }));
+            // Persist immediately to avoid losing synced routine on refresh if autosave is delayed.
+            void firebaseService.saveRoutine(userId, partnerRoutine).catch((error) => {
+                console.error('[CloudSync] Failed persisting synced partner routine:', error);
+            });
         }, {
             rehydrateRelatedData: false,
             ignorePendingWrites: true,

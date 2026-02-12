@@ -451,10 +451,22 @@ export const firebaseService = {
 
     async saveRoutine(userId: string, routine: RutinaUsuario | null): Promise<void> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
-        await setDoc(profileRef, {
+        const payload = {
             rutina: toRoutineSyncPayload(routine),
             updatedAt: new Date().toISOString(),
-        }, { merge: true });
+        };
+        try {
+            // updateDoc replaces the whole "rutina" field map, avoiding stale nested keys
+            // (for example old syncMeta/fechaExpiracion lingering after partial writes).
+            await updateDoc(profileRef, payload);
+        } catch (error) {
+            const firestoreError = error as { code?: string };
+            if (firestoreError?.code === 'not-found') {
+                await setDoc(profileRef, payload, { merge: true });
+                return;
+            }
+            throw error;
+        }
     },
 
     async archiveRoutine(userId: string, routine: RutinaUsuario): Promise<void> {

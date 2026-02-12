@@ -261,3 +261,76 @@ Validación:
 1. `npm run lint`: 0 errores, warnings no bloqueantes existentes.
 2. `npx playwright test --project=chromium --reporter=line`: 11/11 pass.
 3. `npm run build`: OK.
+
+### 2026-02-12 - Deploy-first + validacion E2E partner/rutina
+
+Autor: `Codex`
+
+Despliegue ejecutado:
+
+1. `vercel --prod --yes` (alias activo `https://gym.bypupila.com`).
+2. `firebase deploy --only firestore:rules --project gymbro-582c3`.
+
+Validaciones ejecutadas contra produccion:
+
+1. `tests/live-auth-smoke.spec.ts` cuenta 1: PASS.
+2. `tests/live-auth-smoke.spec.ts` cuenta 2: PASS.
+3. `tests/partner-routine-sync-live.spec.ts`: FAIL.
+
+Fallo observado en E2E live:
+
+1. La solicitud de rutina creada por usuario A queda en `routineRequests` con `status: pending` y `applyStatus: pending`.
+2. Usuario B no llega a aplicar copia de rutina en ese ciclo E2E.
+3. La validacion de propagacion posterior (A modifica -> B recibe) queda bloqueada por el punto anterior.
+
+Cambios de soporte aplicados:
+
+1. `src/components/LinkRequestsNotifier.tsx`: boton de aceptar con `title` y `aria-label` para accion estable/automatizable.
+2. `tests/partner-routine-sync-live.spec.ts`: usa primero el modal de vinculacion inicial para enviar copia, y luego fallback al boton del perfil.
+
+### 2026-02-12 - Cierre de sync partner-rutina en Spark (flujo E2E verde)
+
+Autor: `Codex`
+
+Problemas raiz cerrados en esta tanda:
+
+1. Acumulacion de `routineRequests` pendientes que generaba aceptaciones ambiguas.
+2. `routineSync` local/remoto desalineado tras aceptar copia.
+3. Campos anidados stale en `rutina` por writes con merge, que podian dejar `syncMeta` viejo.
+4. Carrera temporal al activar sync auto donde el primer cambio podia no propagarse al partner.
+
+Cambios aplicados:
+
+1. `src/services/routineRequestService.ts`
+   1. Dedupe al crear request: cancela pendientes duplicadas del mismo flujo sender/target.
+   2. `onIncomingRequests` emite solo la solicitud mas nueva por flujo.
+2. `src/components/RoutineRequestNotifier.tsx`
+   1. Alinear `routineSync` en store local para source y target al aceptar/aplicar.
+   2. Seed de `syncMeta` local en origen y persistencia inmediata (`saveRoutine`) al consolidar sync.
+   3. `aria-label/title` en boton aceptar solicitud de rutina.
+3. `src/services/firebaseService.ts`
+   1. `saveRoutine` ahora usa `updateDoc` (con fallback `setDoc` si `not-found`) para reemplazar `rutina` completa y evitar campos stale anidados.
+4. `src/components/CloudSyncManager.tsx`
+   1. Al recibir rutina nueva del partner (`incomingVersion > localVersion`), persiste inmediatamente en nube para evitar perdida por refresh si el autosave se retrasa.
+5. `scripts/admin/create-test-accounts.mjs`
+   1. Reset de perfil QA sin `merge` para evitar residuos de estado en cuentas de prueba.
+6. `tests/partner-routine-sync-live.spec.ts`
+   1. Limpieza completa de requests entrantes/salientes de ambas cuentas al iniciar.
+   2. Seleccion de solicitud por remitente (`aliasA`) para evitar falsos positivos.
+   3. Verificacion de propagacion final basada en perfil nube + confirmacion UI en `/routine`.
+
+Despliegue ejecutado:
+
+1. Frontend publicado y aliasado en `https://gym.bypupila.com` (ultima corrida).
+
+Validacion final:
+
+1. `tests/partner-routine-sync-live.spec.ts` (Chromium, prod): PASS.
+2. `tests/live-auth-smoke.spec.ts` cuenta 1 (prod): PASS.
+3. `tests/live-auth-smoke.spec.ts` cuenta 2 (prod): PASS.
+
+Revalidacion adicional (misma fecha):
+
+1. Segunda corrida de `tests/partner-routine-sync-live.spec.ts` en prod: PASS (38s).
+2. Nueva corrida de smoke cuenta 1: PASS.
+3. Nueva corrida de smoke cuenta 2: PASS.

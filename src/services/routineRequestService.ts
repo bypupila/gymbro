@@ -3,6 +3,7 @@ import {
     collection,
     deleteDoc,
     doc,
+    getDocs,
     onSnapshot,
     query,
     updateDoc,
@@ -45,6 +46,34 @@ export const routineRequestService = {
     ): Promise<string> {
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+        // Prevent stacked pending requests for the same sender->target flow.
+        // Spark-safe: query only by indexed/easy fields and filter client-side.
+        const pendingFromSenderQ = query(
+            collection(db, 'routineRequests'),
+            where('fromUserId', '==', payload.fromUserId),
+            where('status', '==', 'pending')
+        );
+        const pendingFromSenderSnap = await getDocs(pendingFromSenderQ);
+        const duplicates = pendingFromSenderSnap.docs.filter((docSnap) => {
+            const data = docSnap.data() as RoutineRequest;
+            return (
+                data.toUserId === payload.toUserId &&
+                data.sourceUserId === payload.sourceUserId &&
+                data.targetUserId === payload.targetUserId &&
+                data.type === payload.type
+            );
+        });
+        await Promise.all(
+            duplicates.map((docSnap) =>
+                updateDoc(doc(db, 'routineRequests', docSnap.id), {
+                    status: 'cancelled',
+                    resolvedAt: now.toISOString(),
+                    cancelledReason: 'superseded_by_new_request',
+                })
+            )
+        );
+
         const docRef = await addDoc(collection(db, 'routineRequests'), {
             ...payload,
             status: 'pending',
@@ -66,7 +95,19 @@ export const routineRequestService = {
             const requests = snapshot.docs
                 .map((d) => ({ id: d.id, ...d.data() } as RoutineRequest))
                 .filter((r) => new Date(r.expiresAt).getTime() > now);
-            callback(requests);
+
+            // Keep only the newest pending request per sender/flow to avoid duplicated cards.
+            const latestByFlow = new Map<string, RoutineRequest>();
+            for (const req of requests) {
+                const key = `${req.fromUserId}|${req.sourceUserId}|${req.targetUserId}|${req.type}`;
+                const current = latestByFlow.get(key);
+                const reqMs = Date.parse(req.createdAt);
+                const currentMs = current ? Date.parse(current.createdAt) : 0;
+                if (!current || reqMs >= currentMs) {
+                    latestByFlow.set(key, req);
+                }
+            }
+            callback(Array.from(latestByFlow.values()));
         }, (error) => {
             const firestoreError = error as { code?: string; message?: string };
             if (firestoreError?.code === 'permission-denied') {

@@ -11,6 +11,7 @@ export const RoutineRequestNotifier: React.FC = () => {
     const userId = useUserStore((state) => state.userId);
     const perfil = useUserStore((state) => state.perfil);
     const setRutinaInPlace = useUserStore((state) => state.setRutinaInPlace);
+    const setRoutineSync = useUserStore((state) => state.setRoutineSync);
     const [requests, setRequests] = useState<RoutineRequest[]>([]);
     const [authUid, setAuthUid] = useState<string | null>(() => authService.getCurrentUser()?.uid ?? null);
 
@@ -68,6 +69,13 @@ export const RoutineRequestNotifier: React.FC = () => {
                         setRutinaInPlace(syncedRoutine);
                         await firebaseService.saveRoutine(userId, syncedRoutine);
                         await firebaseService.configureOwnRoutineSync(userId, req.sourceUserId, syncId);
+                        setRoutineSync({
+                            enabled: true,
+                            partnerId: req.sourceUserId,
+                            mode: 'auto',
+                            syncId,
+                            updatedAt: nowIso,
+                        });
                         await routineRequestService.markAsApplied(req.id);
                         processedTargetIds.current.add(req.id);
                         toast.success('Rutina aplicada y guardada.');
@@ -80,7 +88,7 @@ export const RoutineRequestNotifier: React.FC = () => {
         );
 
         return () => unsubscribe();
-    }, [authUid, perfil.activePartnerId, perfil.partnerId, setRutinaInPlace, userId]);
+    }, [authUid, perfil.activePartnerId, perfil.partnerId, setRoutineSync, setRutinaInPlace, userId]);
 
     // Listener for accepted requests where I am the source user.
     // Spark fallback: enable auto routineSync on the sender side too.
@@ -98,8 +106,36 @@ export const RoutineRequestNotifier: React.FC = () => {
                     if (linkedPartnerId && req.targetUserId !== linkedPartnerId) continue;
                     if (processedSourceIds.current.has(req.id)) continue;
                     try {
+                        const nowIso = new Date().toISOString();
                         const syncId = `sync_${req.id}`;
                         await firebaseService.configureOwnRoutineSync(userId, req.targetUserId, syncId);
+                        setRoutineSync({
+                            enabled: true,
+                            partnerId: req.targetUserId,
+                            mode: 'auto',
+                            syncId,
+                            updatedAt: nowIso,
+                        });
+                        const currentRoutine = useUserStore.getState().perfil.rutina;
+                        if (currentRoutine) {
+                            const nextVersion = Number(currentRoutine.syncMeta?.version || 1) + 1;
+                            const synchronizedRoutine = {
+                                ...currentRoutine,
+                                syncMeta: {
+                                    syncId,
+                                    version: nextVersion,
+                                    updatedBy: userId,
+                                    updatedAt: nowIso,
+                                },
+                            };
+                            useUserStore.setState((state) => ({
+                                perfil: {
+                                    ...state.perfil,
+                                    rutina: synchronizedRoutine,
+                                },
+                            }));
+                            await firebaseService.saveRoutine(userId, synchronizedRoutine);
+                        }
                         processedSourceIds.current.add(req.id);
                     } catch (error) {
                         console.error('[RoutineRequestNotifier] Error configuring source sync:', error);
@@ -109,7 +145,7 @@ export const RoutineRequestNotifier: React.FC = () => {
         );
 
         return () => unsubscribe();
-    }, [authUid, perfil.activePartnerId, perfil.partnerId, userId]);
+    }, [authUid, perfil.activePartnerId, perfil.partnerId, setRoutineSync, userId]);
 
     if (requests.length === 0) return null;
 
@@ -152,7 +188,12 @@ export const RoutineRequestNotifier: React.FC = () => {
                             <X size={16} />
                             Rechazar
                         </button>
-                        <button style={styles.acceptBtn} onClick={() => handleAccept(req)}>
+                        <button
+                            style={styles.acceptBtn}
+                            onClick={() => handleAccept(req)}
+                            title={`Aceptar solicitud de rutina de ${req.fromName}`}
+                            aria-label={`Aceptar solicitud de rutina de ${req.fromName}`}
+                        >
                             <Check size={16} />
                             Aceptar
                         </button>

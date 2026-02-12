@@ -117,21 +117,25 @@ test.describe('Partner routine sync live flow', () => {
                 analizadaPorIA: false,
                 isDefault: false,
             },
-        }, { merge: true });
-        resetBatch.set(db.doc(`users/${uidB}/profile/main`), createBaseProfile(aliasB), { merge: true });
+        });
+        resetBatch.set(db.doc(`users/${uidB}/profile/main`), createBaseProfile(aliasB));
         await resetBatch.commit();
 
-        const [linkReqA, linkReqB, routineReqA, routineReqB] = await Promise.all([
+        const [linkReqA, linkReqB, routineReqA, routineReqB, routineIncomingA, routineIncomingB] = await Promise.all([
             db.collection('linkRequests').where('requesterId', '==', uidA).get(),
             db.collection('linkRequests').where('requesterId', '==', uidB).get(),
             db.collection('routineRequests').where('fromUserId', '==', uidA).get(),
             db.collection('routineRequests').where('fromUserId', '==', uidB).get(),
+            db.collection('routineRequests').where('toUserId', '==', uidA).get(),
+            db.collection('routineRequests').where('toUserId', '==', uidB).get(),
         ]);
         await Promise.all([
             ...linkReqA.docs.map((d) => d.ref.delete()),
             ...linkReqB.docs.map((d) => d.ref.delete()),
             ...routineReqA.docs.map((d) => d.ref.delete()),
             ...routineReqB.docs.map((d) => d.ref.delete()),
+            ...routineIncomingA.docs.map((d) => d.ref.delete()),
+            ...routineIncomingB.docs.map((d) => d.ref.delete()),
         ]);
 
         const contextA = await browser.newContext();
@@ -163,13 +167,33 @@ test.describe('Partner routine sync live flow', () => {
             return linkedA && linkedB;
         }, { timeout: 45000, intervals: [1000, 2000, 3000] }).toBeTruthy();
 
-        await pageA.locator('button[title=\"Copiar rutina\"]').click();
-        await pageA.getByRole('button', { name: /Solicitar enviar mi rutina/i }).click();
+        const initialCopyButton = pageA.getByRole('button', { name: /Solicitar enviar mi rutina/i });
+        if (await initialCopyButton.count()) {
+            await initialCopyButton.first().click();
+        } else {
+            await pageA.reload({ waitUntil: 'domcontentloaded' });
+            await expect(pageA.locator('button[title=\"Copiar rutina\"]')).toBeVisible({ timeout: 45000 });
+            await pageA.locator('button[title=\"Copiar rutina\"]').click();
+            await pageA.getByRole('button', { name: /Solicitar enviar mi rutina/i }).click();
+        }
 
         await pageB.goto(`${baseUrl}/profile`, { waitUntil: 'domcontentloaded' });
-        const routineCard = pageB.locator('div', { hasText: 'Solicitud de rutina' }).first();
+        const routineCard = pageB.locator('div', { hasText: 'Solicitud de rutina' }).filter({ hasText: aliasA }).first();
         await expect(routineCard).toBeVisible({ timeout: 45000 });
         await routineCard.getByRole('button', { name: 'Aceptar' }).click();
+
+        await expect.poll(async () => {
+            const reqSnap = await db
+                .collection('routineRequests')
+                .where('fromUserId', '==', uidA)
+                .get();
+            const doc = reqSnap.docs
+                .filter((candidate) => candidate.data().toUserId === uidB)
+                .sort((a, b) => Date.parse(b.data().createdAt || '') - Date.parse(a.data().createdAt || ''))[0];
+            if (!doc) return '';
+            const data = doc.data();
+            return `${data.status}:${data.applyStatus || ''}`;
+        }, { timeout: 45000, intervals: [1000, 2000, 3000] }).toBe('accepted:applied');
 
         await pageB.goto(`${baseUrl}/routine`, { waitUntil: 'domcontentloaded' });
         await expect(pageB.getByText(baseExerciseName)).toBeVisible({ timeout: 45000 });
@@ -180,11 +204,14 @@ test.describe('Partner routine sync live flow', () => {
         await pageA.getByRole('button', { name: /Anadir Ejercicio/i }).click();
         await expect(pageA.getByText(extraExerciseName)).toBeVisible({ timeout: 30000 });
 
-        await pageB.goto(`${baseUrl}/routine`, { waitUntil: 'domcontentloaded' });
         await expect.poll(async () => {
-            await pageB.reload({ waitUntil: 'domcontentloaded' });
-            return await pageB.getByText(extraExerciseName).count();
-        }, { timeout: 60000, intervals: [1000, 2000, 3000] }).toBeGreaterThan(0);
+            const targetSnap = await db.doc(`users/${uidB}/profile/main`).get();
+            const names = (targetSnap.data()?.rutina?.ejercicios || []).map((exercise: { nombre?: string }) => exercise.nombre || '');
+            return names.includes(extraExerciseName);
+        }, { timeout: 90000, intervals: [1000, 2000, 3000, 5000] }).toBeTruthy();
+
+        await pageB.goto(`${baseUrl}/routine`, { waitUntil: 'domcontentloaded' });
+        await expect(pageB.getByText(extraExerciseName)).toBeVisible({ timeout: 30000 });
 
         await contextA.close();
         await contextB.close();
