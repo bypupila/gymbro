@@ -334,6 +334,10 @@ export const useUserStore = create<UserStore>()(
             })),
             setPartners: (partners) => set((state) => {
                 const normalizedPartners = partners.slice(0, 1);
+                const hadAnyPartner =
+                    Boolean(state.perfil.activePartnerId || state.perfil.partnerId) ||
+                    (state.perfil.partners?.length || 0) > 0;
+                const hasAnyPartnerNow = normalizedPartners.length > 0;
                 const nextActivePartnerId = state.perfil.activePartnerId && normalizedPartners.some((p) => p.id === state.perfil.activePartnerId)
                     ? state.perfil.activePartnerId
                     : (normalizedPartners[0]?.id || null);
@@ -355,6 +359,13 @@ export const useUserStore = create<UserStore>()(
                         partnerId: normalizedPartners[0]?.id || undefined,
                         activePartnerId: nextActivePartnerId,
                         routineSync: nextRoutineSync,
+                        // Prompt routine-copy modal only once on first detected link.
+                        linkSetupPendingPartnerId:
+                            !hadAnyPartner &&
+                            hasAnyPartnerNow &&
+                            !state.perfil.linkSetupPendingPartnerId
+                                ? normalizedPartners[0].id
+                                : state.perfil.linkSetupPendingPartnerId,
                     }
                 };
             }),

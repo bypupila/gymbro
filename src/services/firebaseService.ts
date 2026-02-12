@@ -15,6 +15,7 @@ import {
     toProfileSyncPayload,
 } from './firebaseService.sync-utils';
 import type { AcceptedPartnerEvent, ProfileSyncPayload, UnlinkPartnerEvent } from './firebaseService.sync-utils';
+import { getDefaultScheduleDays } from '@/utils/scheduleDefaults';
 
 export interface LinkRequest {
     id: string;
@@ -458,6 +459,24 @@ export const firebaseService = {
         try {
             // updateDoc replaces the whole "rutina" field map, avoiding stale nested keys
             // (for example old syncMeta/fechaExpiracion lingering after partial writes).
+            await updateDoc(profileRef, payload);
+        } catch (error) {
+            const firestoreError = error as { code?: string };
+            if (firestoreError?.code === 'not-found') {
+                await setDoc(profileRef, payload, { merge: true });
+                return;
+            }
+            throw error;
+        }
+    },
+
+    async saveSchedule(userId: string, days: PerfilCompleto['horario']['dias']): Promise<void> {
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        const payload = {
+            horario: { dias: days },
+            updatedAt: new Date().toISOString(),
+        };
+        try {
             await updateDoc(profileRef, payload);
         } catch (error) {
             const firestoreError = error as { code?: string };
@@ -1015,6 +1034,7 @@ export const firebaseService = {
             updatedAt: string;
             activePartnerId?: string | null;
             partnerId?: string | null;
+            linkSetupPendingPartnerId?: string | null;
             routineSync?: {
                 enabled: boolean;
                 partnerId: null;
@@ -1034,6 +1054,9 @@ export const firebaseService = {
         }
         if (data.partnerId === partnerIdToRemove) {
             updates.partnerId = nextPartners[0]?.id || null;
+        }
+        if (data.linkSetupPendingPartnerId === partnerIdToRemove) {
+            updates.linkSetupPendingPartnerId = null;
         }
 
         // Limpiar routineSync si era con el removido
@@ -1174,7 +1197,7 @@ export const firebaseService = {
                         lesiones: ''
                     },
                     pareja: null,
-                    horario: { dias: [] },
+                    horario: { dias: getDefaultScheduleDays() },
                     rutina: routineCopy, // Set as active routine
                     historial: [],
                     historialRutinas: [],

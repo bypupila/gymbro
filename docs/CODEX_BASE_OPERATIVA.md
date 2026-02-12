@@ -334,3 +334,65 @@ Revalidacion adicional (misma fecha):
 1. Segunda corrida de `tests/partner-routine-sync-live.spec.ts` en prod: PASS (38s).
 2. Nueva corrida de smoke cuenta 1: PASS.
 3. Nueva corrida de smoke cuenta 2: PASS.
+
+### 2026-02-12 - Fix horario editable/persistente para cuentas con `dias` vacio
+
+Autor: `Codex`
+
+Problema:
+
+1. Algunas cuentas (incluyendo QA) tenian `perfil.horario.dias = []`.
+2. En ese estado, la edicion de horario quedaba inconsistente y no siempre persistia correctamente en nube.
+
+Cambios aplicados:
+
+1. Nuevo util `src/utils/scheduleDefaults.ts`:
+   1. `ensureScheduleDays(...)` para autocorregir horarios vacios.
+   2. `getDefaultScheduleDays()` con los 7 dias base.
+2. `src/pages/SchedulePage.tsx`:
+   1. Inicializa dias con `ensureScheduleDays(...)` (siempre renderiza 7 dias).
+   2. Guardado explicito en nube con `firebaseService.saveSchedule(...)` al presionar `Guardar Cambios`.
+3. `src/pages/Onboarding.tsx`:
+   1. Misma normalizacion de dias.
+   2. Guardado explicito en nube al completar onboarding de horarios.
+4. `src/services/firebaseService.ts`:
+   1. Nuevo metodo `saveSchedule(userId, days)`.
+   2. Creacion de perfil fallback en `shareRoutine` ahora usa dias por defecto, no `[]`.
+5. `scripts/admin/create-test-accounts.mjs`:
+   1. Cuentas QA se crean con horario de 7 dias por defecto (no vacio).
+
+Validacion:
+
+1. Build: OK.
+2. Verificacion en produccion (`/profile/schedule`) con cuenta QA:
+   1. Se muestran los dias (incluyendo `Lunes`).
+   2. Toggle + guardar persiste en Firestore (`horario.dias.length = 7`, `Lunes.entrena` actualizado).
+
+### 2026-02-12 - Rutina desacoplada de filtro duro por horario (`entrena=true`)
+
+Autor: `Codex`
+
+Problema reportado:
+
+1. En cuentas con horario inconsistente o sin dias activos, en `RoutineDetailPage` solo aparecia `Limpiar` al agregar/editar ejercicios.
+2. El flujo de rutina estaba usando `perfil.horario.dias.filter(d => d.entrena)` como filtro estricto de chips de dias.
+3. Esto contradecia la regla funcional: el horario semanal es guia, no restriccion para ejecutar/editar rutina.
+
+Cambios aplicados:
+
+1. `src/pages/RoutineDetailPage.tsx`
+   1. Se normaliza horario con `ensureScheduleDays(...)`.
+   2. Se calculan `availableRoutineDays` con los 7 dias base + dias ya usados en la rutina.
+   3. Se reemplaza el filtro estricto `entrena=true` por opciones siempre disponibles en:
+      1. modal `Anadir Ejercicio`.
+      2. edicion de ejercicio (`ExerciseCardComponent`).
+   4. Se mantiene `Limpiar` para dejar ejercicio sin dia asignado (entrenamiento libre).
+   5. Se agregan pistas visuales:
+      1. chips de dias no marcados en horario siguen habilitados pero con menor enfasis.
+      2. helper text explicito: "Guia opcional...".
+   6. Correccion menor de clave de estilo de dia: `Sabado` (antes `Sibado`).
+
+Validacion:
+
+1. `npx eslint src/pages/RoutineDetailPage.tsx`: OK.
+2. `npm run build`: OK.

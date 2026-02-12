@@ -34,6 +34,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Derive active partners from accepted/unlink events (works on Firebase Spark without Cloud Functions).
                 unsubscribeAcceptedLinkRequests = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
                     setPartners(partners);
+                    // Keep cloud profile symmetric on unlink even without Cloud Functions:
+                    // if a previously persisted partner is no longer active, clear it in own profile.
+                    const state = useUserStore.getState();
+                    const activeIds = new Set(partners.map((partner) => partner.id));
+                    const persistedIds = new Set<string>();
+                    if (state.perfil.partnerId) persistedIds.add(state.perfil.partnerId);
+                    (state.perfil.partnerIds || []).forEach((id) => persistedIds.add(id));
+                    (state.perfil.partners || []).forEach((partner) => persistedIds.add(partner.id));
+
+                    persistedIds.forEach((partnerId) => {
+                        if (!activeIds.has(partnerId)) {
+                            void firebaseService.removePartnerFromOwnProfile(user.uid, partnerId).catch((error) => {
+                                console.error('[AuthProvider] Failed to cleanup stale partner link:', error);
+                            });
+                        }
+                    });
                 });
             } else {
                 setUserId(null);

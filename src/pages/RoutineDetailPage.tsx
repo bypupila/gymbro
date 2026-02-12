@@ -39,6 +39,7 @@ import { reorganizeRoutine } from '@/services/geminiService';
 import { firebaseService } from '@/services/firebaseService';
 import { routineRequestService } from '@/services/routineRequestService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
+import { ensureScheduleDays } from '@/utils/scheduleDefaults';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 
@@ -48,7 +49,7 @@ const DAY_STYLE: Record<string, { color: string, bg: string }> = {
     'Miercoles': { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.05)' },
     'Jueves': { color: '#5856D6', bg: 'rgba(88, 86, 214, 0.05)' },
     'Viernes': { color: '#34C759', bg: 'rgba(52, 199, 89, 0.05)' },
-    'Sibado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
+    'Sabado': { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.05)' },
     'Domingo': { color: '#FF3B30', bg: 'rgba(255, 59, 48, 0.05)' },
     'default': { color: Colors.primary, bg: 'rgba(0, 230, 153, 0.05)' }
 };
@@ -660,6 +661,12 @@ const styles: Record<string, React.CSSProperties> = {
         marginBottom: '6px',
         fontWeight: 600,
     },
+    helperText: {
+        margin: '0 0 8px 0',
+        fontSize: '12px',
+        color: Colors.textTertiary,
+        lineHeight: 1.4,
+    },
     formInput: {
         width: '100%',
         padding: '12px 14px',
@@ -835,6 +842,7 @@ interface ExerciseCardProps {
     handleStartEdit: (ex: EjercicioRutina) => void;
     handleDeleteExercise: (id: string) => void;
     availableDays: string[];
+    guidedDays: Set<string>;
     onQuickUpdate: (id: string, fields: Partial<EjercicioRutina>) => void;
     setRutina: (rutina: RutinaUsuario | null) => void | Promise<void>;
     dragControls?: DragControls;
@@ -852,6 +860,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
     handleStartEdit,
     handleDeleteExercise,
     availableDays,
+    guidedDays,
     onQuickUpdate,
     setRutina,
     dragControls
@@ -1012,16 +1021,19 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                             <div style={styles.dayChipsRow}>
                                 {availableDays.map(day => {
                                     const isSelected = localSelectedDays.includes(day);
+                                    const isGuided = guidedDays.has(day);
                                     return (
                                         <button
                                             key={day}
                                             type="button"
                                             onClick={() => toggleDay(day)}
+                                            title={isGuided ? `${day} (dia de entrenamiento)` : `${day} (disponible, no marcado en horario)`}
                                             style={{
                                                 ...styles.dayChip,
                                                 background: isSelected ? Colors.primary : Colors.surfaceLight,
                                                 color: isSelected ? '#000' : Colors.textSecondary,
                                                 borderColor: isSelected ? Colors.primary : Colors.border,
+                                                opacity: !isSelected && !isGuided ? 0.7 : 1,
                                             }}
                                         >
                                             {day.slice(0, 2)}
@@ -1303,6 +1315,21 @@ export const RoutineDetailPage: React.FC = () => {
     const setLastSyncError = useUserStore((state) => state.setLastSyncError);
     const userId = useUserStore((state) => state.userId);
     const rutina = perfil.rutina;
+    const scheduleDays = useMemo(() => ensureScheduleDays(perfil.horario.dias), [perfil.horario.dias]);
+    const guidedDays = useMemo(
+        () => new Set(scheduleDays.filter((d) => d.entrena).map((d) => d.dia)),
+        [scheduleDays]
+    );
+    const availableRoutineDays = useMemo(() => {
+        const baseDays = scheduleDays.map((d) => d.dia);
+        if (!rutina) return baseDays;
+
+        const routineDays = rutina.ejercicios
+            .map((exercise) => exercise.dia?.trim())
+            .filter((day): day is string => Boolean(day && day !== 'No Asignado'));
+
+        return Array.from(new Set([...baseDays, ...routineDays]));
+    }, [rutina, scheduleDays]);
 
     const updateRoutine = useCallback(async (newRoutine: RutinaUsuario | null) => {
         if (!userId) {
@@ -1794,7 +1821,8 @@ export const RoutineDetailPage: React.FC = () => {
                                                         handleMoveExercise={handleMoveExercise}
                                                         handleStartEdit={handleStartEdit}
                                                         handleDeleteExercise={handleDeleteExercise}
-                                                        availableDays={perfil.horario.dias.filter(d => d.entrena).map(d => d.dia)}
+                                                        availableDays={availableRoutineDays}
+                                                        guidedDays={guidedDays}
                                                         onQuickUpdate={(id, fields) => {
                                                             if (!rutina) return;
                                                             const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
@@ -1843,7 +1871,8 @@ export const RoutineDetailPage: React.FC = () => {
                                                                 handleMoveExercise={handleMoveExercise}
                                                                 handleStartEdit={handleStartEdit}
                                                                 handleDeleteExercise={handleDeleteExercise}
-                                                                availableDays={perfil.horario.dias.filter(d => d.entrena).map(d => d.dia)}
+                                                                availableDays={availableRoutineDays}
+                                                                guidedDays={guidedDays}
                                                                 onQuickUpdate={(id, fields) => {
                                                                     if (!rutina) return;
                                                                     const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
@@ -1892,8 +1921,11 @@ export const RoutineDetailPage: React.FC = () => {
                                 <div style={styles.formRow}>
                                     <div style={{ ...styles.formGroup, flex: 1 }}>
                                         <label style={styles.formLabel}>Dias</label>
+                                        <p style={styles.helperText}>
+                                            Guia opcional: puedes entrenar cualquier dia y dejar ejercicios sin dia asignado.
+                                        </p>
                                         <div style={styles.dayChipsRow}>
-                                            {perfil.horario.dias.filter(d => d.entrena).map(d => {
+                                            {scheduleDays.map(d => {
                                                 const isSelected = newExerciseDays.includes(d.dia);
                                                 return (
                                                     <button
@@ -1911,6 +1943,7 @@ export const RoutineDetailPage: React.FC = () => {
                                                             background: isSelected ? Colors.primary : Colors.surfaceLight,
                                                             color: isSelected ? '#000' : Colors.textSecondary,
                                                             borderColor: isSelected ? Colors.primary : Colors.border,
+                                                            opacity: !isSelected && !d.entrena ? 0.7 : 1,
                                                         }}
                                                     >
                                                         {d.dia.slice(0, 2)}

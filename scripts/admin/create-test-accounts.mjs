@@ -50,7 +50,15 @@ function buildProfilePayload(name) {
         },
         pareja: null,
         horario: {
-            dias: [],
+            dias: [
+                { dia: 'Lunes', entrena: true, hora: '07:00', grupoMuscular: 'Pecho' },
+                { dia: 'Martes', entrena: true, hora: '07:00', grupoMuscular: 'Espalda' },
+                { dia: 'Miercoles', entrena: false, hora: '07:00', grupoMuscular: 'Descanso' },
+                { dia: 'Jueves', entrena: true, hora: '07:00', grupoMuscular: 'Hombros' },
+                { dia: 'Viernes', entrena: true, hora: '07:00', grupoMuscular: 'Piernas' },
+                { dia: 'Sabado', entrena: true, hora: '09:00', grupoMuscular: 'Brazos' },
+                { dia: 'Domingo', entrena: false, hora: '09:00', grupoMuscular: 'Descanso' },
+            ],
         },
         rutina: null,
         onboardingCompletado: true,

@@ -6,8 +6,11 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { NivelExperiencia, ObjetivoFitness, useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
+import { firebaseService } from '@/services/firebaseService';
+import { ensureScheduleDays } from '@/utils/scheduleDefaults';
 import { Brain, Calendar, Check, ChevronRight, Dumbbell, Users } from 'lucide-react';
 import React, { useState } from 'react';
+import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
 // Welcome Screen
@@ -211,9 +214,10 @@ export const OnboardingDatos: React.FC = () => {
 export const OnboardingHorarios: React.FC = () => {
     const navigate = useNavigate();
     const perfil = useUserStore((state) => state.perfil);
+    const userId = useUserStore((state) => state.userId);
     const setHorario = useUserStore((state) => state.setHorario);
     const completarOnboarding = useUserStore((state) => state.completarOnboarding);
-    const [dias, setDias] = useState(perfil.horario.dias);
+    const [dias, setDias] = useState(() => ensureScheduleDays(perfil.horario.dias));
 
     const toggleDia = (index: number) => {
         const newDias = [...dias];
@@ -225,8 +229,19 @@ export const OnboardingHorarios: React.FC = () => {
         setDias(newDias);
     };
 
-    const handleComplete = () => {
-        setHorario({ dias });
+    const handleComplete = async () => {
+        const normalizedDays = ensureScheduleDays(dias);
+        setHorario({ dias: normalizedDays });
+
+        if (userId) {
+            try {
+                await firebaseService.saveSchedule(userId, normalizedDays);
+            } catch (error) {
+                console.error('[OnboardingHorarios] Failed to save schedule:', error);
+                toast.error('No se pudo guardar el horario.');
+            }
+        }
+
         completarOnboarding();
         navigate('/onboarding/completado');
     };

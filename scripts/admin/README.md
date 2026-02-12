@@ -101,6 +101,7 @@ Variables actualizadas:
 Nota:
 
 1. El perfil QA se reescribe completo (sin merge) para evitar residuos de `routineSync/syncMeta` entre corridas.
+2. El horario QA se inicializa con 7 dias base para que siempre pueda editarse desde `Configurar Horario`.
 
 ## Seguridad
 

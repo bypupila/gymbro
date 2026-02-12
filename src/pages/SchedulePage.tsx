@@ -6,15 +6,19 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
+import { firebaseService } from '@/services/firebaseService';
+import { ensureScheduleDays } from '@/utils/scheduleDefaults';
 import { Check, ChevronLeft } from 'lucide-react';
 import React, { useState } from 'react';
+import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
 export const SchedulePage: React.FC = () => {
     const navigate = useNavigate();
     const perfil = useUserStore((state) => state.perfil);
+    const userId = useUserStore((state) => state.userId);
     const setHorario = useUserStore((state) => state.setHorario);
-    const [dias, setDias] = useState(perfil.horario.dias);
+    const [dias, setDias] = useState(() => ensureScheduleDays(perfil.horario.dias));
 
     const toggleDia = (index: number) => {
         const newDias = [...dias];
@@ -26,8 +30,19 @@ export const SchedulePage: React.FC = () => {
         setDias(newDias);
     };
 
-    const handleSave = () => {
-        setHorario({ dias });
+    const handleSave = async () => {
+        const normalizedDays = ensureScheduleDays(dias);
+        setHorario({ dias: normalizedDays });
+
+        if (userId) {
+            try {
+                await firebaseService.saveSchedule(userId, normalizedDays);
+            } catch (error) {
+                console.error('[SchedulePage] Failed to save schedule:', error);
+                toast.error('No se pudo guardar el horario en la nube.');
+            }
+        }
+
         navigate('/profile');
     };
 

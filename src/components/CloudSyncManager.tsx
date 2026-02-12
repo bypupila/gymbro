@@ -52,7 +52,6 @@ export const CloudSyncManager: React.FC = () => {
     // State for routine copy modal
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
-    const prevPartnerId = useRef(perfil.activePartnerId || perfil.partnerId);
 
     useEffect(() => {
         return authService.onAuthChange((user) => {
@@ -314,10 +313,8 @@ export const CloudSyncManager: React.FC = () => {
 
     // Effect to detect new partner link and trigger first-time setup modal
     useEffect(() => {
-        const currentPartnerId = perfil.activePartnerId || perfil.partnerId;
-        const previousPartnerId = prevPartnerId.current;
         const pendingPartnerId = perfil.linkSetupPendingPartnerId;
-        const partnerIdToPrompt = pendingPartnerId || (currentPartnerId && currentPartnerId !== previousPartnerId ? currentPartnerId : null);
+        const partnerIdToPrompt = pendingPartnerId || null;
 
         if (partnerIdToPrompt) {
             const fetchPartnerDetails = async () => {
@@ -334,7 +331,6 @@ export const CloudSyncManager: React.FC = () => {
             fetchPartnerDetails();
         }
 
-        prevPartnerId.current = currentPartnerId;
     }, [perfil.activePartnerId, perfil.partnerId, perfil.linkSetupPendingPartnerId]);
 
     return (
