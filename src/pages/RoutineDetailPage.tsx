@@ -32,7 +32,7 @@ import {
     Dumbbell,
     BookOpen,
 } from 'lucide-react';
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RoutineUpload } from '@/components/RoutineUpload';
 import { reorganizeRoutine } from '@/services/geminiService';
@@ -1309,6 +1309,44 @@ export const RoutineDetailPage: React.FC = () => {
     const userId = useUserStore((state) => state.userId);
     const rutina = perfil.rutina;
 
+    const updateRoutine = useCallback(async (newRoutine: RutinaUsuario | null) => {
+        if (!userId) {
+            setRutina(newRoutine);
+            return;
+        }
+
+        const previousRoutine = rutina;
+
+        // Optimistic update
+        setRutina(newRoutine);
+
+        try {
+            // Immediate save to cloud
+            await firebaseService.saveRoutine(userId, newRoutine);
+        } catch (error) {
+            console.error('[RoutineDetailPage] Failed to save routine:', error);
+            toast.error('No se pudo guardar la rutina. Re-sincronizando desde la nube...');
+
+            try {
+                const cloudProfile = await firebaseService.getProfile(userId);
+                useUserStore.setState((state) => ({
+                    perfil: {
+                        ...state.perfil,
+                        rutina: cloudProfile?.rutina ?? previousRoutine ?? null,
+                    }
+                }));
+            } catch (syncError) {
+                console.error('[RoutineDetailPage] Failed to re-sync routine after save error:', syncError);
+                useUserStore.setState((state) => ({
+                    perfil: {
+                        ...state.perfil,
+                        rutina: previousRoutine ?? null,
+                    }
+                }));
+            }
+        }
+    }, [rutina, setRutina, userId]);
+
     const [editingExercise, setEditingExercise] = useState<string | null>(null);
     const [editedExercise, setEditedExercise] = useState<EjercicioRutina | null>(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1383,7 +1421,7 @@ export const RoutineDetailPage: React.FC = () => {
         setIsReorganizing(true);
         try {
             const result = await reorganizeRoutine(rutina.ejercicios);
-            setRutina({
+            updateRoutine({
                 ...rutina,
                 ejercicios: cleanupRoutineExercises(result.exercises),
                 nombre: result.routineName || rutina.nombre
@@ -1402,10 +1440,10 @@ export const RoutineDetailPage: React.FC = () => {
             const cleaned = cleanupRoutineExercises(rutina.ejercicios);
             if (cleaned.length !== rutina.ejercicios.length) {
                 debugLog("Auto-cleaning duplicates on mount");
-                setRutina({ ...rutina, ejercicios: cleaned });
+                updateRoutine({ ...rutina, ejercicios: cleaned });
             }
         }
-    }, [rutina, setRutina, rutina?.ejercicios?.length]);
+    }, [rutina, rutina?.ejercicios?.length, updateRoutine]);
 
     const exercisesByDay = useMemo(() => {
         if (!rutina) return {};
@@ -1469,7 +1507,7 @@ export const RoutineDetailPage: React.FC = () => {
     }
 
     const handleDeleteRoutine = () => {
-        setRutina(null);
+        updateRoutine(null);
         setShowDeleteModal(false);
         navigate('/');
     };
@@ -1500,7 +1538,7 @@ export const RoutineDetailPage: React.FC = () => {
                     <button
                         onClick={() => {
                             const updatedEjercicios = rutina.ejercicios.filter(ej => ej.id !== id);
-                            setRutina({ ...rutina, ejercicios: updatedEjercicios });
+                            updateRoutine({ ...rutina, ejercicios: updatedEjercicios });
                             toast.dismiss(t.id);
                             toast.success('Ejercicio eliminado');
                         }}
@@ -1519,7 +1557,7 @@ export const RoutineDetailPage: React.FC = () => {
         if (newIndex < 0 || newIndex >= rutina.ejercicios.length) return;
         const newEjercicios = [...rutina.ejercicios];
         [newEjercicios[index], newEjercicios[newIndex]] = [newEjercicios[newIndex], newEjercicios[index]];
-        setRutina({ ...rutina, ejercicios: newEjercicios });
+        updateRoutine({ ...rutina, ejercicios: newEjercicios });
     };
 
     const handleGroupReorder = (newSubset: EjercicioRutina[]) => {
@@ -1533,7 +1571,7 @@ export const RoutineDetailPage: React.FC = () => {
         originalIndices.forEach((globalIndex, i) => {
             newGlobalList[globalIndex] = newSubset[i];
         });
-        setRutina({ ...rutina, ejercicios: newGlobalList });
+        updateRoutine({ ...rutina, ejercicios: newGlobalList });
     };
 
     const handleAddExercise = () => {
@@ -1565,7 +1603,7 @@ export const RoutineDetailPage: React.FC = () => {
             } as EjercicioRutina));
         }
 
-        setRutina({
+        updateRoutine({
             ...rutina,
             ejercicios: cleanupRoutineExercises([...rutina.ejercicios, ...nuevosEjercicios])
         });
@@ -1593,7 +1631,7 @@ export const RoutineDetailPage: React.FC = () => {
 
     const handleRenewRoutine = () => {
         if (!rutina) return;
-        setRutina({ ...rutina, fechaInicio: new Date().toISOString() });
+        updateRoutine({ ...rutina, fechaInicio: new Date().toISOString() });
     };
 
     const formatDate = (date: Date) => date.toLocaleDateString('es-ES', {
@@ -1792,9 +1830,9 @@ export const RoutineDetailPage: React.FC = () => {
                                                         onQuickUpdate={(id, fields) => {
                                                             if (!rutina) return;
                                                             const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
-                                                            setRutina({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
+                                                            updateRoutine({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
                                                         }}
-                                                        setRutina={setRutina}
+                                                        setRutina={updateRoutine}
                                                     />
                                                 ))}
                                             </Reorder.Group>
@@ -1841,9 +1879,9 @@ export const RoutineDetailPage: React.FC = () => {
                                                                 onQuickUpdate={(id, fields) => {
                                                                     if (!rutina) return;
                                                                     const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
-                                                                    setRutina({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
+                                                                    updateRoutine({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
                                                                 }}
-                                                                setRutina={setRutina}
+                                                                setRutina={updateRoutine}
                                                             />
                                                         </React.Fragment>
                                                     );

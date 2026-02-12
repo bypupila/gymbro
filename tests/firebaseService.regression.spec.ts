@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
     buildProfileDiffPatch,
     resolveActivePartnersFromEvents,
+    toProfileSyncPayload,
     toProfileComparablePayload,
 } from '../src/services/firebaseService.sync-utils';
 import type { PerfilCompleto } from '../src/stores/userStore';
@@ -162,5 +163,43 @@ test.describe('firebaseService regression helpers', () => {
         );
 
         expect(active).toEqual([{ id: 'p1', alias: 'alice-new', nombre: 'Alice New' }]);
+    });
+
+    test('toProfileSyncPayload preserves syncMeta for routines', () => {
+        const profile = createBaseProfile();
+        profile.rutina = {
+            id: 'routine_1',
+            nombre: 'Rutina base',
+            duracionSemanas: 8,
+            ejercicios: [],
+            fechaInicio: '2026-02-12T00:00:00.000Z',
+            analizadaPorIA: false,
+            syncMeta: {
+                syncId: 'sync_123',
+                version: 3,
+                updatedBy: 'user_1',
+                updatedAt: '2026-02-12T00:00:00.000Z',
+            },
+        };
+
+        const payload = toProfileSyncPayload(profile);
+        expect(payload.rutina?.syncMeta).toEqual(profile.rutina.syncMeta);
+    });
+
+    test('toProfileSyncPayload omits undefined routine optional fields', () => {
+        const profile = createBaseProfile();
+        profile.rutina = {
+            id: 'routine_2',
+            nombre: 'Rutina limpia',
+            duracionSemanas: 6,
+            ejercicios: [],
+            fechaInicio: '2026-02-12T00:00:00.000Z',
+            analizadaPorIA: false,
+            fechaExpiracion: undefined,
+        };
+
+        const payload = toProfileSyncPayload(profile);
+        expect(payload.rutina).toBeTruthy();
+        expect(payload.rutina && Object.prototype.hasOwnProperty.call(payload.rutina, 'fechaExpiracion')).toBe(false);
     });
 });

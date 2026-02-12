@@ -43,6 +43,78 @@ const debugLog = (...args: unknown[]) => {
     }
 };
 
+const toRoutinePayload = (routine: RutinaUsuario | null): ProfileSyncPayload['rutina'] => {
+    if (!routine) {
+        return null;
+    }
+
+    const payload: NonNullable<ProfileSyncPayload['rutina']> = {
+        id: routine.id,
+        nombre: routine.nombre,
+        duracionSemanas: routine.duracionSemanas,
+        ejercicios: routine.ejercicios,
+        fechaInicio: routine.fechaInicio,
+        analizadaPorIA: routine.analizadaPorIA,
+        isDefault: routine.isDefault || false,
+    };
+
+    if (typeof routine.fechaExpiracion === 'string') {
+        payload.fechaExpiracion = routine.fechaExpiracion;
+    }
+
+    if (routine.syncMeta) {
+        payload.syncMeta = {
+            syncId: routine.syncMeta.syncId,
+            version: routine.syncMeta.version,
+            updatedBy: routine.syncMeta.updatedBy,
+            updatedAt: routine.syncMeta.updatedAt,
+        };
+    }
+
+    return payload;
+};
+
+const fromRoutinePayload = (routineData: unknown): RutinaUsuario | null => {
+    if (!routineData || typeof routineData !== 'object') {
+        return null;
+    }
+
+    const raw = routineData as Record<string, unknown>;
+    const parsed: RutinaUsuario = {
+        id: String(raw.id || ''),
+        nombre: String(raw.nombre || ''),
+        duracionSemanas: Number(raw.duracionSemanas || 0),
+        ejercicios: Array.isArray(raw.ejercicios) ? (raw.ejercicios as RutinaUsuario['ejercicios']) : [],
+        fechaInicio: String(raw.fechaInicio || new Date().toISOString()),
+        analizadaPorIA: Boolean(raw.analizadaPorIA),
+        isDefault: Boolean(raw.isDefault),
+    };
+
+    if (typeof raw.fechaExpiracion === 'string') {
+        parsed.fechaExpiracion = raw.fechaExpiracion;
+    }
+
+    const rawSyncMeta = raw.syncMeta;
+    if (rawSyncMeta && typeof rawSyncMeta === 'object') {
+        const syncMeta = rawSyncMeta as Record<string, unknown>;
+        if (
+            typeof syncMeta.syncId === 'string' &&
+            typeof syncMeta.version === 'number' &&
+            typeof syncMeta.updatedBy === 'string' &&
+            typeof syncMeta.updatedAt === 'string'
+        ) {
+            parsed.syncMeta = {
+                syncId: syncMeta.syncId,
+                version: syncMeta.version,
+                updatedBy: syncMeta.updatedBy,
+                updatedAt: syncMeta.updatedAt,
+            };
+        }
+    }
+
+    return parsed;
+};
+
 export const firebaseService = {
     // ========== PROFILE MANAGEMENT ==========
 
@@ -132,16 +204,7 @@ export const firebaseService = {
             usuario: data.usuario,
             pareja: data.pareja,
             horario: data.horario,
-            rutina: data.rutina ? {
-                id: data.rutina.id,
-                nombre: data.rutina.nombre,
-                duracionSemanas: data.rutina.duracionSemanas,
-                ejercicios: data.rutina.ejercicios,
-                fechaInicio: data.rutina.fechaInicio,
-                fechaExpiracion: data.rutina.fechaExpiracion,
-                analizadaPorIA: data.rutina.analizadaPorIA,
-                isDefault: data.rutina.isDefault || false,
-            } : null,
+            rutina: fromRoutinePayload(data.rutina),
             historial,
             historialRutinas,
             onboardingCompletado: data.onboardingCompletado,
@@ -171,6 +234,7 @@ export const firebaseService = {
             actividadesExtras: extraActivities,
             catalogoExtras: catalogExtras,
             defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
+            updatedAt: data.updatedAt || new Date().toISOString(),
         };
     },
 
@@ -268,16 +332,7 @@ export const firebaseService = {
                 usuario: data.usuario,
                 pareja: data.pareja,
                 horario: data.horario,
-                rutina: data.rutina ? {
-                    id: data.rutina.id,
-                    nombre: data.rutina.nombre,
-                    duracionSemanas: data.rutina.duracionSemanas,
-                    ejercicios: data.rutina.ejercicios,
-                    fechaInicio: data.rutina.fechaInicio,
-                    fechaExpiracion: data.rutina.fechaExpiracion,
-                    analizadaPorIA: data.rutina.analizadaPorIA,
-                    isDefault: data.rutina.isDefault || false,
-                } : null,
+                rutina: fromRoutinePayload(data.rutina),
                 historial: relatedData.historial,
                 historialRutinas: relatedData.historialRutinas,
                 onboardingCompletado: data.onboardingCompletado,
@@ -307,6 +362,7 @@ export const firebaseService = {
                 actividadesExtras: relatedData.extraActivities,
                 catalogoExtras: relatedData.catalogExtras,
                 defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
+                updatedAt: data.updatedAt || new Date().toISOString(),
             });
             } catch (error: any) {
                 // Handle permission errors gracefully (common during partner unlink)
@@ -415,16 +471,7 @@ export const firebaseService = {
     async saveRoutine(userId: string, routine: RutinaUsuario | null): Promise<void> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         await setDoc(profileRef, {
-            rutina: routine ? {
-                id: routine.id,
-                nombre: routine.nombre,
-                duracionSemanas: routine.duracionSemanas,
-                ejercicios: routine.ejercicios,
-                fechaInicio: routine.fechaInicio,
-                fechaExpiracion: routine.fechaExpiracion,
-                analizadaPorIA: routine.analizadaPorIA,
-                isDefault: routine.isDefault || false,
-            } : null
+            rutina: toRoutinePayload(routine)
         }, { merge: true });
     },
 
@@ -665,29 +712,7 @@ export const firebaseService = {
                     resolvedAt: new Date().toISOString(),
                 });
                 debugLog('[sendLinkRequest] Request reciproca actualizada a accepted');
-
-                // Fetch real display names
-                const recipientDisplayName = await this.fetchUserDisplayName(recipientId);
-                const requesterDisplayName = await this.fetchUserDisplayName(requesterId);
-                debugLog('[sendLinkRequest] Display names obtenidos:', {
-                    recipientDisplayName,
-                    requesterDisplayName
-                });
-
-                // Add partner info to both users' profiles
-                await Promise.all([
-                    this.upsertOwnPartner(requesterId, {
-                        id: recipientId,
-                        alias: recipientAlias || recipientId,
-                        nombre: recipientDisplayName, // NOMBRE REAL
-                    }),
-                    this.upsertOwnPartner(recipientId, {
-                        id: requesterId,
-                        alias: requesterAlias,
-                        nombre: requesterDisplayName, // NOMBRE REAL
-                    })
-                ]);
-                debugLog('[sendLinkRequest] [ok] Partners vinculados exitosamente (auto-aceptacion)');
+                debugLog('[sendLinkRequest] Esperando consolidacion bilateral via Cloud Function');
             } catch (error) {
                 console.error('[sendLinkRequest] Error en auto-aceptacion:', error);
                 throw error;
@@ -766,32 +791,6 @@ export const firebaseService = {
                 } as AcceptedPartnerEvent;
             });
 
-            // Auto-actualizar perfil del requester cuando detecta nueva request aceptada
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added' && !change.doc.metadata.hasPendingWrites) {
-                    const data = change.doc.data() as LinkRequest;
-                    if (data.status === 'accepted') {
-                        const alias = data.recipientAlias || data.recipientId;
-                        debugLog('[onAcceptedLinkRequestsChange] Detectada request aceptada, actualizando perfil...', {
-                            recipientId: data.recipientId,
-                            alias
-                        });
-                        // Fetch display name y actualizar el perfil del requester (usuario actual)
-                        this.fetchUserDisplayName(data.recipientId).then((displayName) => {
-                            return this.upsertOwnPartner(userId, {
-                                id: data.recipientId,
-                                alias,
-                                nombre: displayName, // NOMBRE REAL
-                            });
-                        }).then(() => {
-                            debugLog('[onAcceptedLinkRequestsChange] [ok] Perfil del requester actualizado');
-                        }).catch((error) => {
-                            console.error('[onAcceptedLinkRequestsChange] Error actualizando perfil:', error);
-                        });
-                    }
-                }
-            });
-
             emit();
         });
 
@@ -817,21 +816,6 @@ export const firebaseService = {
                     partnerId: data.sourceUserId,
                     createdAtMs: parseTimestamp(data.createdAt),
                 };
-            });
-
-            // Procesar mirror actions - cuando partner desvincula, auto-removerse
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added' && !change.doc.metadata.hasPendingWrites) {
-                    const data = change.doc.data() as RelationshipAction;
-                    if (data.actionType === 'UNLINK' && data.targetUserId === userId) {
-                        debugLog('[Listener] Mirror unlink detectado, auto-removiendo partner:', data.sourceUserId);
-
-                        // Auto-remover partner del perfil (async, fire-and-forget)
-                        this.removePartnerFromOwnProfile(userId, data.sourceUserId).catch((error) => {
-                            console.error('[Listener] Error auto-removiendo partner:', error);
-                        });
-                    }
-                }
             });
 
             emit();

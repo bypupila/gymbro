@@ -31,9 +31,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setLinkRequests(requests);
                 });
 
-                // Setup listener for accepted links (fallback client-sync if backend trigger is delayed)
+                // Setup listener for accepted links (kept for side-effects: updating requester profile)
+                // We DON'T update local state here because CloudSyncManager handles the profile sync
+                // which includes the authoritative partner list with correct names.
                 unsubscribeAcceptedLinks = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
-                    setPartners(partners);
+                    // setPartners(partners); // DISABLED: Let CloudSyncManager handle it to avoid race conditions
+                    console.log('Accepted link request detected:', partners.length);
                 });
             } else {
                 setUserId(null);

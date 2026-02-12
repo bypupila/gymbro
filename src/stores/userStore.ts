@@ -161,6 +161,7 @@ export interface PerfilCompleto {
     actividadesExtras: ExtraActivity[]; // Extra activities logged
     catalogoExtras: string[]; // Unique activity types discovered
     defaultRoutineId?: string; // New: ID of the default routine
+    updatedAt?: string;
 }
 
 const datosIniciales: DatosPersonales = {

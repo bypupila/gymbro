@@ -13,6 +13,12 @@ export type ProfileSyncPayload = {
         fechaExpiracion?: string;
         analizadaPorIA: boolean;
         isDefault: boolean;
+        syncMeta?: {
+            syncId: string;
+            version: number;
+            updatedBy: string;
+            updatedAt: string;
+        };
     } | null;
     onboardingCompletado: boolean;
     partnerId: string | null;
@@ -43,20 +49,42 @@ const isEqualForSync = (a: unknown, b: unknown): boolean => {
     return JSON.stringify(a) === JSON.stringify(b);
 };
 
+const toRoutineSyncPayload = (routine: PerfilCompleto['rutina']) => {
+    if (!routine) {
+        return null;
+    }
+
+    const payload: NonNullable<ProfileSyncPayload['rutina']> = {
+        id: routine.id,
+        nombre: routine.nombre,
+        duracionSemanas: routine.duracionSemanas,
+        ejercicios: routine.ejercicios,
+        fechaInicio: routine.fechaInicio,
+        analizadaPorIA: routine.analizadaPorIA,
+        isDefault: routine.isDefault || false,
+    };
+
+    if (typeof routine.fechaExpiracion === 'string') {
+        payload.fechaExpiracion = routine.fechaExpiracion;
+    }
+
+    if (routine.syncMeta) {
+        payload.syncMeta = {
+            syncId: routine.syncMeta.syncId,
+            version: routine.syncMeta.version,
+            updatedBy: routine.syncMeta.updatedBy,
+            updatedAt: routine.syncMeta.updatedAt,
+        };
+    }
+
+    return payload;
+};
+
 export const toProfileSyncPayload = (profile: PerfilCompleto, nowIso = new Date().toISOString()): ProfileSyncPayload => ({
     usuario: profile.usuario,
     pareja: profile.pareja,
     horario: profile.horario,
-    rutina: profile.rutina ? {
-        id: profile.rutina.id,
-        nombre: profile.rutina.nombre,
-        duracionSemanas: profile.rutina.duracionSemanas,
-        ejercicios: profile.rutina.ejercicios,
-        fechaInicio: profile.rutina.fechaInicio,
-        fechaExpiracion: profile.rutina.fechaExpiracion,
-        analizadaPorIA: profile.rutina.analizadaPorIA,
-        isDefault: profile.rutina.isDefault || false,
-    } : null,
+    rutina: toRoutineSyncPayload(profile.rutina),
     onboardingCompletado: profile.onboardingCompletado,
     partnerId: profile.partnerId || null,
     partners: profile.partners || [],

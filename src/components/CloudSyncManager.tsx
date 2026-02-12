@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useUserStore } from '../stores/userStore';
@@ -14,6 +14,13 @@ const debugLog = (...args: unknown[]) => {
     }
 };
 
+const getProfileUpdatedAtMs = (profile: PerfilCompleto | null): number => {
+    const updatedAt = profile?.updatedAt;
+    if (!updatedAt) return 0;
+    const ms = Date.parse(updatedAt);
+    return Number.isFinite(ms) ? ms : 0;
+};
+
 export const CloudSyncManager: React.FC = () => {
     const userId = useUserStore((state) => state.userId);
     const perfil = useUserStore((state) => state.perfil);
@@ -26,6 +33,10 @@ export const CloudSyncManager: React.FC = () => {
     const lastSavedData = useRef<string>('');
     const lastSavedProfile = useRef<PerfilCompleto | null>(null);
     const syncTimeout = useRef<NodeJS.Timeout | null>(null);
+    const retryTimeout = useRef<NodeJS.Timeout | null>(null);
+    const deferredRemoteProfile = useRef<PerfilCompleto | null>(null);
+    const lastAppliedRemoteUpdatedAtMs = useRef(0);
+    const [retryTick, setRetryTick] = useState(0);
 
     // Flag to prevent double initial pull
     const initialPullDone = useRef(false);
@@ -34,6 +45,22 @@ export const CloudSyncManager: React.FC = () => {
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
     const prevPartnerId = useRef(perfil.activePartnerId || perfil.partnerId);
+
+    const applyRemoteProfile = useCallback((cloudProfile: PerfilCompleto, source: 'initial' | 'live' | 'deferred') => {
+        const remoteUpdatedAtMs = getProfileUpdatedAtMs(cloudProfile);
+        if (remoteUpdatedAtMs > 0 && remoteUpdatedAtMs < lastAppliedRemoteUpdatedAtMs.current) {
+            debugLog('[CloudSync] Ignoring stale remote snapshot', { source, remoteUpdatedAtMs });
+            return;
+        }
+
+        useUserStore.setState({ perfil: cloudProfile });
+        lastSavedData.current = firebaseService.getProfileSyncFingerprint(cloudProfile);
+        lastSavedProfile.current = cloudProfile;
+        if (remoteUpdatedAtMs > 0) {
+            lastAppliedRemoteUpdatedAtMs.current = remoteUpdatedAtMs;
+        }
+        setLastSyncError(null);
+    }, [setLastSyncError]);
 
 
     // Initial Fetch (On App Start or Login)
@@ -45,10 +72,7 @@ export const CloudSyncManager: React.FC = () => {
                 setIsSyncing(true);
                 const cloudData = await firebaseService.getProfile(userId);
                 if (cloudData) {
-                    // Update store with cloud data
-                    useUserStore.setState({ perfil: cloudData });
-                    lastSavedData.current = firebaseService.getProfileSyncFingerprint(cloudData);
-                    lastSavedProfile.current = cloudData;
+                    applyRemoteProfile(cloudData, 'initial');
                 } else {
                     // If no data in cloud, initialize name with alias if empty
                     const { perfil } = useUserStore.getState();
@@ -70,7 +94,7 @@ export const CloudSyncManager: React.FC = () => {
         };
 
         loadInitialData();
-    }, [userId, setIsSyncing]);
+    }, [applyRemoteProfile, userId, setIsSyncing]);
 
     // Real-time Cloud Listener
     useEffect(() => {
@@ -78,18 +102,24 @@ export const CloudSyncManager: React.FC = () => {
 
         const unsubscribe = firebaseService.onProfileChange(userId, (cloudProfile) => {
             if (cloudProfile) {
-                // PROTECTION: Don't overwrite if there's a save pending
-                const { pendingSave } = useUserStore.getState();
-                if (pendingSave) {
-                    debugLog('[CloudSync] Ignoring remote update (save pending)');
+                const state = useUserStore.getState();
+                const hasUnsavedLocalChanges =
+                    firebaseService.getProfileSyncFingerprint(state.perfil) !== lastSavedData.current;
+                if (state.pendingSave || hasUnsavedLocalChanges) {
+                    const incomingUpdatedAtMs = getProfileUpdatedAtMs(cloudProfile);
+                    const deferredUpdatedAtMs = getProfileUpdatedAtMs(deferredRemoteProfile.current);
+                    if (incomingUpdatedAtMs >= deferredUpdatedAtMs) {
+                        deferredRemoteProfile.current = cloudProfile;
+                    }
+                    debugLog('[CloudSync] Deferred remote update', {
+                        pendingSave: state.pendingSave,
+                        hasUnsavedLocalChanges,
+                        incomingUpdatedAtMs,
+                    });
                     return;
                 }
 
-                // Update local store and ref to prevent echo
-                useUserStore.setState({ perfil: cloudProfile });
-                lastSavedData.current = firebaseService.getProfileSyncFingerprint(cloudProfile);
-                lastSavedProfile.current = cloudProfile;
-                setLastSyncError(null);
+                applyRemoteProfile(cloudProfile, 'live');
             }
         }, {
             rehydrateRelatedData: false,
@@ -97,7 +127,7 @@ export const CloudSyncManager: React.FC = () => {
         });
 
         return () => unsubscribe();
-    }, [userId, setLastSyncError]);
+    }, [applyRemoteProfile, userId]);
 
     // Auto-Save Effect
     useEffect(() => {
@@ -120,35 +150,61 @@ export const CloudSyncManager: React.FC = () => {
 
                 lastSavedData.current = currentDataStr;
                 lastSavedProfile.current = JSON.parse(JSON.stringify(perfil)) as PerfilCompleto;
+                const savedUpdatedAtMs = getProfileUpdatedAtMs(perfil);
+                if (savedUpdatedAtMs > 0) {
+                    lastAppliedRemoteUpdatedAtMs.current = Math.max(
+                        lastAppliedRemoteUpdatedAtMs.current,
+                        savedUpdatedAtMs
+                    );
+                }
                 setLastSyncError(null);
-                useUserStore.getState().setPendingSave(false); // Mark save success
             } catch (err: unknown) {
                 console.error('Auto-sync failed:', err);
                 const errorMessage = err instanceof Error ? err.message : 'Error guardando en la nube';
                 setLastSyncError(errorMessage);
 
-                // DON'T clear pendingSave flag to protect data until successful save
-                // The flag will stay active until we successfully save
-
                 // Auto-retry after 10 seconds
-                setTimeout(() => {
+                if (retryTimeout.current) {
+                    clearTimeout(retryTimeout.current);
+                }
+                retryTimeout.current = setTimeout(() => {
                     const { perfil: currentPerfil } = useUserStore.getState();
                     const retryStr = firebaseService.getProfileSyncFingerprint(currentPerfil);
                     if (retryStr !== lastSavedData.current) {
                         debugLog('[CloudSync] Retrying save...');
-                        // Trigger change detection by updating a ref
-                        // This will re-trigger the auto-save effect
+                        setRetryTick((value) => value + 1);
                     }
                 }, 10000);
             } finally {
+                useUserStore.getState().setPendingSave(false);
                 setIsSyncing(false);
+
+                if (deferredRemoteProfile.current) {
+                    const deferredProfile = deferredRemoteProfile.current;
+                    const { perfil: currentPerfil } = useUserStore.getState();
+                    const hasUnsavedLocalChanges =
+                        firebaseService.getProfileSyncFingerprint(currentPerfil) !== lastSavedData.current;
+
+                    if (!hasUnsavedLocalChanges) {
+                        deferredRemoteProfile.current = null;
+                        applyRemoteProfile(deferredProfile, 'deferred');
+                    }
+                }
             }
         }, 3000); // 3 second debounce
 
         return () => {
             if (syncTimeout.current) clearTimeout(syncTimeout.current);
         };
-    }, [perfil, userId, setIsSyncing, setLastSyncError]);
+    }, [applyRemoteProfile, perfil, retryTick, userId, setIsSyncing, setLastSyncError]);
+
+    useEffect(() => {
+        return () => {
+            if (retryTimeout.current) {
+                clearTimeout(retryTimeout.current);
+            }
+        };
+    }, []);
 
     // Push notification setup - request permission after initial load
     useEffect(() => {
