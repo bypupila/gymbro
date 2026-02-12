@@ -973,32 +973,44 @@ export const firebaseService = {
             throw new Error(`Failed to mark linkRequests as unlinked: ${error}`);
         }
 
-        // PASO 1: Crear action principal
-        const actionDoc = await addDoc(collection(db, 'relationshipActions'), {
-            actionType: 'UNLINK',
-            initiatedBy: userId,
-            sourceUserId: userId,
-            targetUserId: partnerToRemove.id,
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-        });
-        debugLog('[unlinkPartner] Action creada:', actionDoc.id);
+        // PASO 1: Crear action principal (best-effort)
+        let actionDocId: string | null = null;
+        try {
+            const actionDoc = await addDoc(collection(db, 'relationshipActions'), {
+                actionType: 'UNLINK',
+                initiatedBy: userId,
+                sourceUserId: userId,
+                targetUserId: partnerToRemove.id,
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+            });
+            actionDocId = actionDoc.id;
+            debugLog('[unlinkPartner] Action creada:', actionDoc.id);
+        } catch (error) {
+            console.error('[unlinkPartner] No se pudo crear action principal (continuando con cleanup):', error);
+        }
 
         // PASO 2: Actualizar mi perfil
         await this.removePartnerFromOwnProfile(userId, partnerToRemove.id);
         debugLog('[unlinkPartner] Perfil propio actualizado');
 
-        // PASO 3: Crear mirror action para partner
-        await addDoc(collection(db, 'relationshipActions'), {
-            actionType: 'UNLINK',
-            initiatedBy: userId,
-            sourceUserId: partnerToRemove.id, // INVERTIDO
-            targetUserId: userId,               // INVERTIDO
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-            mirrorOf: actionDoc.id,
-        });
-        debugLog('[unlinkPartner] Mirror action creada para partner');
+        // PASO 3: Crear mirror action para partner (best-effort, requiere mirrorOf)
+        if (actionDocId) {
+            try {
+                await addDoc(collection(db, 'relationshipActions'), {
+                    actionType: 'UNLINK',
+                    initiatedBy: userId,
+                    sourceUserId: partnerToRemove.id, // INVERTIDO
+                    targetUserId: userId,               // INVERTIDO
+                    status: 'pending',
+                    createdAt: new Date().toISOString(),
+                    mirrorOf: actionDocId,
+                });
+                debugLog('[unlinkPartner] Mirror action creada para partner');
+            } catch (error) {
+                console.error('[unlinkPartner] No se pudo crear mirror action:', error);
+            }
+        }
 
         // El listener del partner detectara la mirror action y se auto-desvinculara
     },

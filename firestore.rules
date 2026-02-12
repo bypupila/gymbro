@@ -30,9 +30,19 @@ service cloud.firestore {
       );
     }
 
+    function targetHasLinkedCaller(targetUserId) {
+      let targetDoc = get(/databases/$(database)/documents/users/$(targetUserId)/profile/main);
+      let targetProfile = targetDoc.data;
+      return targetProfile != null && (
+        targetProfile.partnerId == request.auth.uid ||
+        targetProfile.activePartnerId == request.auth.uid ||
+        (targetProfile.partnerIds != null && request.auth.uid in targetProfile.partnerIds)
+      );
+    }
+
     // Profile: owner write/read, partners read.
     match /users/{userId}/profile/{document=**} {
-      // Permitir lectura a usuarios autenticados para permitir vinculación
+      // Permitir lectura a usuarios autenticados para permitir vinculacion
       allow read: if isAuthenticated();
       allow write: if isOwner(userId);
     }
@@ -138,8 +148,19 @@ service cloud.firestore {
         request.resource.data.initiatedBy == request.auth.uid &&
         (
           // Acción normal (usuario como source)
-          (request.resource.data.sourceUserId == request.auth.uid &&
-           callerHasLinkedTarget(request.resource.data.targetUserId)) ||
+          (
+            request.resource.data.actionType == 'UNLINK' &&
+            request.resource.data.sourceUserId == request.auth.uid &&
+            (
+              callerHasLinkedTarget(request.resource.data.targetUserId) ||
+              targetHasLinkedCaller(request.resource.data.targetUserId)
+            )
+          ) ||
+          (
+            request.resource.data.actionType in ['BREAK_SYNC', 'SYNC_NOW'] &&
+            request.resource.data.sourceUserId == request.auth.uid &&
+            callerHasLinkedTarget(request.resource.data.targetUserId)
+          ) ||
           // Mirror action (usuario como target, para desvinculación bidireccional)
           (request.resource.data.targetUserId == request.auth.uid &&
            request.resource.data.mirrorOf is string)

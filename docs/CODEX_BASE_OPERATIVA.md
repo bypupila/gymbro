@@ -52,6 +52,12 @@ Regla de seguridad:
 1. No se hacen writes cross-user desde cliente.
 2. Cada usuario escribe solo su `users/{uid}/profile/main`.
 
+Comportamiento de desvinculacion en Spark:
+
+1. El usuario que inicia `unlink` se limpia inmediatamente en nube.
+2. El otro usuario se limpia automaticamente al abrir sesion (event-driven), sin write cross-user.
+3. No depende de Cloud Functions.
+
 ### 3.2 Guardado de rutina
 
 Patrón vigente:
@@ -119,6 +125,10 @@ Orden estándar:
    1. `npm run admin:check`
    2. `npm run admin:audit:partners`
    3. `npm run admin:fix:partners -- --apply`
+
+Nota operativa (Windows/npm): si `--apply` no se propaga via npm script, ejecutar directo:
+
+1. `node scripts/admin/fix-partner-consistency.mjs --apply`
 
 Nota:
 
@@ -213,6 +223,23 @@ Al finalizar cambios:
 3. Registrar archivos modificados y razón técnica.
 
 ## 10. Changelog Codex
+
+### 2026-02-12 - Diagnostico previo fix: desvinculacion unilateral
+
+Autor: `Codex`
+
+Hallazgo confirmado antes del cambio:
+
+1. Se detecto estado unilateral real en Firestore:
+   1. `linkRequests` entre usuarios QA en `status: unlinked`.
+   2. eventos `relationshipActions/UNLINK` presentes para ambos `targetUserId`.
+   3. aun asi, uno de los `users/{uid}/profile/main` seguia con `partnerId` persistido.
+2. Causa operativa en plan Spark:
+   1. el perfil del usuario remoto puede quedar stale si no ejecuta cliente/app luego del unlink.
+   2. el modelo actual depende de materializacion client-driven para limpiar su propio perfil.
+3. Decicion tecnica para el fix:
+   1. pasar a limpieza bilateral inmediata en el momento de `unlink` (sin depender de que el partner abra la app).
+   2. mantener fallback event-driven existente para robustez.
 
 ### 2026-02-12 - Estabilización Spark + rutina + PWA
 
@@ -396,3 +423,44 @@ Validacion:
 
 1. `npx eslint src/pages/RoutineDetailPage.tsx`: OK.
 2. `npm run build`: OK.
+
+### 2026-02-12 - Estabilizacion de desvinculacion bilateral (Spark-safe)
+
+Autor: `Codex`
+
+Diagnostico raiz:
+
+1. Se detecto caso real con `linkRequests` en `unlinked` y un perfil aun vinculado.
+2. La limpieza bilateral en Spark depende de ejecucion del cliente del segundo usuario.
+3. Habia un bug de orden en `AuthProvider`: el cleanup stale tomaba ids despues de `setPartners(...)`.
+
+Cambios aplicados:
+
+1. `src/components/AuthProvider.tsx`
+   1. ahora toma `persistedIdsBefore` antes de `setPartners(...)`.
+   2. limpia ids stale usando ese snapshot previo.
+2. `src/services/firebaseService.ts`
+   1. `unlinkPartner(...)` endurecido:
+      1. marca `linkRequests` como `unlinked`.
+      2. crea `relationshipActions` principal/mirror en best-effort para no romper el flujo por carreras de permisos.
+      3. siempre limpia el perfil propio.
+3. `firestore.rules`
+   1. se mantiene `profile` con politica simple: owner-only write.
+   2. `relationshipActions` para `UNLINK` permite crear accion si el vinculo aun aparece en perfil del caller o del target (reduce `permission-denied` por carreras).
+4. `tests/partner-unlink-symmetry-live.spec.ts`
+   1. nuevo test live:
+      1. unlink desde un lado.
+      2. apertura de sesion del otro usuario.
+      3. ambos perfiles terminan desvinculados.
+
+Despliegues:
+
+1. `firebase deploy --only firestore:rules --project gymbro-582c3`.
+2. frontend publicado en `https://gym.bypupila.com`.
+
+Validacion:
+
+1. `npx playwright test tests/partner-unlink-symmetry-live.spec.ts --project=chromium`: PASS.
+2. `npx playwright test tests/live-auth-smoke.spec.ts tests/partner-routine-sync-live.spec.ts --project=chromium`: PASS.
+3. `node scripts/admin/fix-partner-consistency.mjs --apply` ejecutado para reparar datos existentes.
+4. `npm run admin:audit:partners`: findings 0.

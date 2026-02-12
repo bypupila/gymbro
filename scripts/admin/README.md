@@ -56,6 +56,12 @@ Reparar y aplicar cambios:
 npm run admin:fix:partners -- --apply
 ```
 
+Si usas Windows y npm no pasa `--apply` correctamente, usa este fallback:
+
+```bash
+node scripts/admin/fix-partner-consistency.mjs --apply
+```
+
 Filtrar por usuarios concretos:
 
 ```bash
