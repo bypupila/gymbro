@@ -49,6 +49,10 @@ const isEqualForSync = (a: unknown, b: unknown): boolean => {
     return JSON.stringify(a) === JSON.stringify(b);
 };
 
+const sanitizeForFirestore = <T>(value: T): T => {
+    return JSON.parse(JSON.stringify(value)) as T;
+};
+
 const toRoutineSyncPayload = (routine: PerfilCompleto['rutina']) => {
     if (!routine) {
         return null;
@@ -77,10 +81,10 @@ const toRoutineSyncPayload = (routine: PerfilCompleto['rutina']) => {
         };
     }
 
-    return payload;
+    return sanitizeForFirestore(payload);
 };
 
-export const toProfileSyncPayload = (profile: PerfilCompleto, nowIso = new Date().toISOString()): ProfileSyncPayload => ({
+export const toProfileSyncPayload = (profile: PerfilCompleto, nowIso = new Date().toISOString()): ProfileSyncPayload => sanitizeForFirestore({
     usuario: profile.usuario,
     pareja: profile.pareja,
     horario: profile.horario,

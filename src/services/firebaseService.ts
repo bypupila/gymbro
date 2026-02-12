@@ -43,6 +43,10 @@ const debugLog = (...args: unknown[]) => {
     }
 };
 
+const sanitizeForFirestore = <T>(value: T): T => {
+    return JSON.parse(JSON.stringify(value)) as T;
+};
+
 const toRoutinePayload = (routine: RutinaUsuario | null): ProfileSyncPayload['rutina'] => {
     if (!routine) {
         return null;
@@ -71,7 +75,7 @@ const toRoutinePayload = (routine: RutinaUsuario | null): ProfileSyncPayload['ru
         };
     }
 
-    return payload;
+    return sanitizeForFirestore(payload);
 };
 
 const fromRoutinePayload = (routineData: unknown): RutinaUsuario | null => {
@@ -193,12 +197,21 @@ export const firebaseService = {
         const userData = userSnap.exists() ? userSnap.data() : {};
 
         // Cargar historial y rutinas en paralelo
-        const [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
-            this.getWorkouts(userId),
-            this.getRoutineHistory(userId),
-            this.getExtraActivities(userId),
-            this.getExtraActivitiesCatalog(userId)
-        ]);
+        let historial: EntrenamientoRealizado[] = [];
+        let historialRutinas: RutinaUsuario[] = [];
+        let extraActivities: ExtraActivity[] = [];
+        let catalogExtras: string[] = [];
+
+        try {
+            [historial, historialRutinas, extraActivities, catalogExtras] = await Promise.all([
+                this.getWorkouts(userId),
+                this.getRoutineHistory(userId),
+                this.getExtraActivities(userId),
+                this.getExtraActivitiesCatalog(userId)
+            ]);
+        } catch (error: any) {
+            debugLog('[getProfile] Error fetching related data:', error?.code || error?.message || error);
+        }
 
         return {
             usuario: data.usuario,
@@ -373,6 +386,13 @@ export const firebaseService = {
                 console.error('[onProfileChange] Error:', error);
                 // Don't throw - just skip this update
             }
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[onProfileChange] Listener permission denied, ignored');
+                return;
+            }
+            console.error('[onProfileChange] Listener error:', firestoreError?.message || error);
         });
     },
 
@@ -750,6 +770,13 @@ export const firebaseService = {
                 ...doc.data()
             } as LinkRequest));
             callback(requests);
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[onLinkRequestsChange] Listener permission denied, ignored');
+                return;
+            }
+            console.error('[onLinkRequestsChange] Listener error:', firestoreError?.message || error);
         });
     },
 
@@ -792,6 +819,15 @@ export const firebaseService = {
             });
 
             emit();
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[onAcceptedLinkRequestsChange] sentQ permission denied, ignored');
+                sentPartners = [];
+                emit();
+                return;
+            }
+            console.error('[onAcceptedLinkRequestsChange] sentQ error:', firestoreError?.message || error);
         });
 
         const unsubscribeReceived = onSnapshot(receivedQ, (snapshot) => {
@@ -807,6 +843,15 @@ export const firebaseService = {
                 } as AcceptedPartnerEvent;
             });
             emit();
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[onAcceptedLinkRequestsChange] receivedQ permission denied, ignored');
+                receivedPartners = [];
+                emit();
+                return;
+            }
+            console.error('[onAcceptedLinkRequestsChange] receivedQ error:', firestoreError?.message || error);
         });
 
         const unsubscribeUnlinkByTarget = onSnapshot(unlinkByTargetQ, (snapshot) => {
@@ -819,6 +864,15 @@ export const firebaseService = {
             });
 
             emit();
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[onAcceptedLinkRequestsChange] unlinkByTargetQ permission denied, ignored');
+                unlinksByTarget = [];
+                emit();
+                return;
+            }
+            console.error('[onAcceptedLinkRequestsChange] unlinkByTargetQ error:', firestoreError?.message || error);
         });
 
         return () => {
