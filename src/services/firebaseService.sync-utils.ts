@@ -34,6 +34,7 @@ export type ProfileSyncPayload = {
 };
 
 export type ProfileSyncComparablePayload = Omit<ProfileSyncPayload, 'updatedAt'>;
+export type RoutineSyncPayload = ProfileSyncPayload['rutina'];
 
 export type AcceptedPartnerEvent = {
     partner: PartnerInfo;
@@ -53,7 +54,7 @@ const sanitizeForFirestore = <T>(value: T): T => {
     return JSON.parse(JSON.stringify(value)) as T;
 };
 
-const toRoutineSyncPayload = (routine: PerfilCompleto['rutina']) => {
+export const toRoutineSyncPayload = (routine: PerfilCompleto['rutina']): RoutineSyncPayload => {
     if (!routine) {
         return null;
     }

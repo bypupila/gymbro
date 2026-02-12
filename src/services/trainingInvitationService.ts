@@ -9,6 +9,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 export interface InvitationExercisePayload {
     id: string;
     nombre: string;
@@ -122,6 +128,14 @@ export const trainingInvitationService = {
                 .filter(inv => new Date(inv.expiresAt) > now); // Filter expired
 
             callback(invitations);
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[trainingInvitationService.onIncomingInvitations] permission denied, ignored');
+                callback([]);
+                return;
+            }
+            console.error('[trainingInvitationService.onIncomingInvitations] listener error:', firestoreError?.message || error);
         });
     },
 
@@ -143,6 +157,14 @@ export const trainingInvitationService = {
                 id: snap.id,
                 ...snap.data()
             } as TrainingInvitation);
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[trainingInvitationService.onInvitationStatusChange] permission denied, ignored');
+                callback(null);
+                return;
+            }
+            console.error('[trainingInvitationService.onInvitationStatusChange] listener error:', firestoreError?.message || error);
         });
     },
 

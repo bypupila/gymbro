@@ -10,6 +10,7 @@ import {
     buildProfileDiffPatch,
     getProfileSyncFingerprint as buildProfileSyncFingerprint,
     resolveActivePartnersFromEvents,
+    toRoutineSyncPayload,
     toProfileComparablePayload,
     toProfileSyncPayload,
 } from './firebaseService.sync-utils';
@@ -27,55 +28,15 @@ export interface LinkRequest {
     unlinkedAt?: string;
 }
 
-export interface RelationshipAction {
-    id: string;
-    actionType: 'UNLINK' | 'BREAK_SYNC' | 'SYNC_NOW';
-    initiatedBy: string;
+interface RelationshipAction {
     sourceUserId: string;
-    targetUserId: string;
-    status: 'pending' | 'processed' | 'failed';
-    createdAt: string;
+    createdAt?: string;
 }
 
 const debugLog = (...args: unknown[]) => {
     if (import.meta.env.DEV) {
         console.log(...args);
     }
-};
-
-const sanitizeForFirestore = <T>(value: T): T => {
-    return JSON.parse(JSON.stringify(value)) as T;
-};
-
-const toRoutinePayload = (routine: RutinaUsuario | null): ProfileSyncPayload['rutina'] => {
-    if (!routine) {
-        return null;
-    }
-
-    const payload: NonNullable<ProfileSyncPayload['rutina']> = {
-        id: routine.id,
-        nombre: routine.nombre,
-        duracionSemanas: routine.duracionSemanas,
-        ejercicios: routine.ejercicios,
-        fechaInicio: routine.fechaInicio,
-        analizadaPorIA: routine.analizadaPorIA,
-        isDefault: routine.isDefault || false,
-    };
-
-    if (typeof routine.fechaExpiracion === 'string') {
-        payload.fechaExpiracion = routine.fechaExpiracion;
-    }
-
-    if (routine.syncMeta) {
-        payload.syncMeta = {
-            syncId: routine.syncMeta.syncId,
-            version: routine.syncMeta.version,
-            updatedBy: routine.syncMeta.updatedBy,
-            updatedAt: routine.syncMeta.updatedAt,
-        };
-    }
-
-    return sanitizeForFirestore(payload);
 };
 
 const fromRoutinePayload = (routineData: unknown): RutinaUsuario | null => {
@@ -491,7 +452,8 @@ export const firebaseService = {
     async saveRoutine(userId: string, routine: RutinaUsuario | null): Promise<void> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         await setDoc(profileRef, {
-            rutina: toRoutinePayload(routine)
+            rutina: toRoutineSyncPayload(routine),
+            updatedAt: new Date().toISOString(),
         }, { merge: true });
     },
 
@@ -817,7 +779,6 @@ export const firebaseService = {
                     acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
                 } as AcceptedPartnerEvent;
             });
-
             emit();
         }, (error) => {
             const firestoreError = error as { code?: string; message?: string };
@@ -862,7 +823,6 @@ export const firebaseService = {
                     createdAtMs: parseTimestamp(data.createdAt),
                 };
             });
-
             emit();
         }, (error) => {
             const firestoreError = error as { code?: string; message?: string };
@@ -880,38 +840,6 @@ export const firebaseService = {
             unsubscribeReceived();
             unsubscribeUnlinkByTarget();
         };
-    },
-
-    async reconcilePartnerState(
-        userId: string,
-        expectedPartners: PartnerInfo[]
-    ): Promise<void> {
-        const profileRef = doc(db, 'users', userId, 'profile', 'main');
-        const snap = await getDoc(profileRef);
-        if (!snap.exists()) return;
-
-        const currentProfile = snap.data();
-        const rawCurrentPartnerIds = Array.isArray(currentProfile.partnerIds)
-            ? currentProfile.partnerIds.filter((id): id is string => typeof id === 'string')
-            : [];
-        const currentPartnerIds = new Set(rawCurrentPartnerIds);
-        const expectedPartnerIds = new Set(expectedPartners.map(p => p.id));
-
-        // Detectar partners que deberian estar removidos
-        const toRemove: string[] = [];
-        currentPartnerIds.forEach(id => {
-            if (!expectedPartnerIds.has(id)) {
-                toRemove.push(id);
-            }
-        });
-
-        // Auto-reparar inconsistencias
-        if (toRemove.length > 0) {
-            debugLog('[reconcilePartnerState] Detectada inconsistencia, removiendo:', toRemove);
-            for (const partnerId of toRemove) {
-                await this.removePartnerFromOwnProfile(userId, partnerId);
-            }
-        }
     },
 
     async upsertOwnPartner(userId: string, partner: PartnerInfo): Promise<boolean> {
@@ -966,24 +894,6 @@ export const firebaseService = {
             recipientAlias: recipientAlias, // Guardar el alias para que el requester lo vea
         });
         debugLog('[acceptLinkRequest] Request actualizada a accepted');
-
-        // Solo actualizar el perfil del usuario que esta aceptando (recipient)
-        // El requester actualizara su propio perfil cuando detecte la aceptacion
-        try {
-            // Fetch display name del requester
-            const requesterDisplayName = await this.fetchUserDisplayName(request.requesterId);
-            debugLog('[acceptLinkRequest] Display name obtenido:', requesterDisplayName);
-
-            await this.upsertOwnPartner(request.recipientId, {
-                id: request.requesterId,
-                alias: request.requesterAlias,
-                nombre: requesterDisplayName, // NOMBRE REAL
-            });
-            debugLog('[acceptLinkRequest] [ok] Partner agregado al perfil del recipient');
-        } catch (error) {
-            console.error('[acceptLinkRequest] Error actualizando perfil:', error);
-            throw error;
-        }
     },
 
     async declineLinkRequest(requestId: string): Promise<void> {
@@ -1149,6 +1059,37 @@ export const firebaseService = {
             status: 'pending',
             createdAt: new Date().toISOString(),
         });
+    },
+
+    async configureOwnRoutineSync(userId: string, partnerId: string, syncId: string): Promise<void> {
+        const profile = await this.getProfile(userId);
+        const nowIso = new Date().toISOString();
+        const currentRoutine = profile?.rutina;
+
+        const syncedRoutine = currentRoutine
+            ? {
+                ...currentRoutine,
+                syncMeta: {
+                    syncId,
+                    version: Number(currentRoutine.syncMeta?.version || 1),
+                    updatedBy: currentRoutine.syncMeta?.updatedBy || userId,
+                    updatedAt: currentRoutine.syncMeta?.updatedAt || nowIso,
+                },
+            }
+            : null;
+
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        await setDoc(profileRef, {
+            routineSync: {
+                enabled: true,
+                partnerId,
+                mode: 'auto',
+                syncId,
+                updatedAt: nowIso,
+            },
+            ...(syncedRoutine ? { rutina: toRoutineSyncPayload(syncedRoutine) } : {}),
+            updatedAt: nowIso,
+        }, { merge: true });
     },
 
     // ========== USER LOOKUP ==========

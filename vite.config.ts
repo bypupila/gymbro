@@ -8,7 +8,13 @@ export default defineConfig({
         react(),
         VitePWA({
             registerType: 'autoUpdate',
+            injectRegister: 'auto',
             includeAssets: ['favicon.svg'],
+            workbox: {
+                cleanupOutdatedCaches: true,
+                clientsClaim: true,
+                skipWaiting: true,
+            },
             manifest: {
                 name: 'GymBro - Tu Coach de Fitness IA',
                 short_name: 'GymBro',

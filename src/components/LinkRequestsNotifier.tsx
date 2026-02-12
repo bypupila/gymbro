@@ -9,7 +9,6 @@ import { toast } from 'react-hot-toast';
 
 export const LinkRequestsNotifier: React.FC = () => {
     const linkRequests = useUserStore((state) => state.linkRequests);
-    const addPartner = useUserStore((state) => state.addPartner);
 
     if (linkRequests.length === 0) {
         return null;
@@ -18,16 +17,7 @@ export const LinkRequestsNotifier: React.FC = () => {
     const handleAccept = async (request: LinkRequest) => {
         try {
             await firebaseService.acceptLinkRequest(request);
-
-            // Fetch display name del requester
-            const displayName = await firebaseService.fetchUserDisplayName(request.requesterId);
-
-            addPartner({
-                id: request.requesterId,
-                alias: request.requesterAlias,
-                nombre: displayName, // NOMBRE REAL
-            });
-            toast.success(`Ahora estas vinculado con ${displayName}!`);
+            toast.success('Solicitud aceptada. Sincronizando vinculacion...');
         } catch (error) {
             console.error('Error accepting request:', error);
             toast.error('No se pudo aceptar la solicitud.');
@@ -57,9 +47,16 @@ export const LinkRequestsNotifier: React.FC = () => {
                     </div>
                     <div style={styles.actions}>
                         <button style={{ ...styles.button, ...styles.declineButton }} onClick={() => handleDecline(req)}>
+                            <span style={styles.srOnly}>Rechazar solicitud</span>
                             <X size={16} />
                         </button>
-                        <button style={{ ...styles.button, ...styles.acceptButton }} onClick={() => handleAccept(req)}>
+                        <button
+                            style={{ ...styles.button, ...styles.acceptButton }}
+                            onClick={() => handleAccept(req)}
+                            title="Aceptar solicitud"
+                            aria-label="Aceptar solicitud"
+                        >
+                            <span style={styles.srOnly}>Aceptar solicitud</span>
                             <Check size={16} />
                         </button>
                     </div>
@@ -119,5 +116,16 @@ const styles: Record<string, React.CSSProperties> = {
     },
     declineButton: {
         background: Colors.error,
+    },
+    srOnly: {
+        position: 'absolute',
+        width: '1px',
+        height: '1px',
+        padding: 0,
+        margin: '-1px',
+        overflow: 'hidden',
+        clip: 'rect(0, 0, 0, 0)',
+        whiteSpace: 'nowrap',
+        border: 0,
     },
 };

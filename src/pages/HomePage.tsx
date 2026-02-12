@@ -14,6 +14,7 @@ import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
 import { MoodStats } from '@/components/MoodStats';
 import { trainingInvitationService, InvitationExercisePayload } from '@/services/trainingInvitationService';
 import { liveSessionService } from '@/services/liveSessionService';
+import { authService } from '@/services/authService';
 import { toast } from 'react-hot-toast';
 import { useRenderMetric } from '@/utils/renderMetrics';
 
@@ -52,12 +53,20 @@ export const HomePage: React.FC = () => {
     const [selectedPartner, setSelectedPartner] = useState<PartnerInfo | null>(null);
     const [pendingInvitationId, setPendingInvitationId] = useState<string | null>(null);
     const [isWaitingForAccept, setIsWaitingForAccept] = useState(false);
+    const userId = useUserStore((state) => state.userId);
+    const [authUid, setAuthUid] = useState<string | null>(() => authService.getCurrentUser()?.uid ?? null);
 
     // Day picker state
     const [showDayPickerModal, setShowDayPickerModal] = useState(false);
     const [selectedTrackingDate, setSelectedTrackingDate] = useState<string | undefined>(undefined);
 
     const hasPartners = (perfil.partners && perfil.partners.length > 0) || !!perfil.partnerId;
+
+    useEffect(() => {
+        return authService.onAuthChange((user) => {
+            setAuthUid(user?.uid ?? null);
+        });
+    }, []);
 
     // Get current week days for day picker
     const getWeekDaysForPicker = () => {
@@ -224,6 +233,8 @@ export const HomePage: React.FC = () => {
     // Listen for invitation acceptance
     useEffect(() => {
         if (!pendingInvitationId || !isWaitingForAccept) return;
+        if (!userId) return;
+        if (authUid !== userId) return;
 
         const unsubscribe = trainingInvitationService.onInvitationStatusChange(
             pendingInvitationId,
@@ -270,7 +281,7 @@ export const HomePage: React.FC = () => {
         );
 
         return () => unsubscribe();
-    }, [pendingInvitationId, isWaitingForAccept, resetModeModal, selectedPartner, selectedTrackingDate, startSession, tempMood, tempSessionData]);
+    }, [authUid, pendingInvitationId, isWaitingForAccept, resetModeModal, selectedPartner, selectedTrackingDate, startSession, tempMood, tempSessionData, userId]);
 
     const nombreUsuario = perfil.usuario.nombre || 'Daniel';
     const fechaHoyRaw = new Date().toLocaleDateString('es-ES', {

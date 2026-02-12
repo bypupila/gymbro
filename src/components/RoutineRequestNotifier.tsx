@@ -4,52 +4,112 @@ import { toast } from 'react-hot-toast';
 import Colors from '@/styles/colors';
 import { useUserStore } from '@/stores/userStore';
 import { RoutineRequest, routineRequestService } from '@/services/routineRequestService';
+import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
 
 export const RoutineRequestNotifier: React.FC = () => {
     const userId = useUserStore((state) => state.userId);
-    const setRutina = useUserStore((state) => state.setRutina);
+    const perfil = useUserStore((state) => state.perfil);
+    const setRutinaInPlace = useUserStore((state) => state.setRutinaInPlace);
     const [requests, setRequests] = useState<RoutineRequest[]>([]);
+    const [authUid, setAuthUid] = useState<string | null>(() => authService.getCurrentUser()?.uid ?? null);
 
-    // Track which requests we've already processed client-side to avoid duplicates
-    const processedIds = useRef(new Set<string>());
+    // Track which requests we've already processed client-side to avoid duplicate toasts.
+    const processedTargetIds = useRef(new Set<string>());
+    const processedSourceIds = useRef(new Set<string>());
+
+    useEffect(() => {
+        return authService.onAuthChange((user) => {
+            setAuthUid(user?.uid ?? null);
+        });
+    }, []);
 
     // Listener for incoming requests (notifications for toUserId)
     useEffect(() => {
         if (!userId) return;
+        if (authUid !== userId) return;
+
         const unsubscribe = routineRequestService.onIncomingRequests(userId, setRequests);
         return () => unsubscribe();
-    }, [userId]);
+    }, [authUid, userId]);
 
     // Listener for accepted requests where I am the target (Case B)
-    // Covers: I requested my partner's routine, they accepted, now I need to copy it
+    // Firebase Spark fallback: apply copy client-side for target user.
     useEffect(() => {
         if (!userId) return;
+        if (authUid !== userId) return;
 
         const unsubscribe = routineRequestService.onAcceptedRequestsAsTarget(
             userId,
             async (acceptedRequests) => {
                 for (const req of acceptedRequests) {
-                    if (processedIds.current.has(req.id)) continue;
-                    processedIds.current.add(req.id);
-
+                    const linkedPartnerId = perfil.activePartnerId || perfil.partnerId;
+                    if (linkedPartnerId && req.sourceUserId !== linkedPartnerId) continue;
+                    if (processedTargetIds.current.has(req.id)) continue;
                     try {
                         const sourceProfile = await firebaseService.getProfile(req.sourceUserId);
-                        if (sourceProfile?.rutina) {
-                            setRutina(sourceProfile.rutina);
-                            toast.success('Rutina de tu partner copiada exitosamente!');
-                            // Try to mark as applied (may fail for fromUser due to Firestore rules, that's OK)
-                            void routineRequestService.markAsApplied(req.id);
+                        if (!sourceProfile?.rutina) {
+                            toast.error('No se encontro rutina origen para aplicar.');
+                            continue;
                         }
+
+                        const nowIso = new Date().toISOString();
+                        const syncId = sourceProfile.routineSync?.syncId || sourceProfile.rutina.syncMeta?.syncId || `sync_${req.id}`;
+                        const syncedRoutine = {
+                            ...sourceProfile.rutina,
+                            syncMeta: {
+                                syncId,
+                                version: Number(sourceProfile.rutina.syncMeta?.version || 1),
+                                updatedBy: req.sourceUserId,
+                                updatedAt: sourceProfile.rutina.syncMeta?.updatedAt || nowIso,
+                            },
+                        };
+
+                        setRutinaInPlace(syncedRoutine);
+                        await firebaseService.saveRoutine(userId, syncedRoutine);
+                        await firebaseService.configureOwnRoutineSync(userId, req.sourceUserId, syncId);
+                        await routineRequestService.markAsApplied(req.id);
+                        processedTargetIds.current.add(req.id);
+                        toast.success('Rutina aplicada y guardada.');
                     } catch (error) {
-                        console.error('[RoutineRequestNotifier] Error copying routine (target listener):', error);
+                        console.error('[RoutineRequestNotifier] Error applying accepted request:', error);
+                        toast.error('No se pudo aplicar la rutina. Reintentando...');
                     }
                 }
             }
         );
 
         return () => unsubscribe();
-    }, [userId, setRutina]);
+    }, [authUid, perfil.activePartnerId, perfil.partnerId, setRutinaInPlace, userId]);
+
+    // Listener for accepted requests where I am the source user.
+    // Spark fallback: enable auto routineSync on the sender side too.
+    useEffect(() => {
+        if (!userId) return;
+        if (authUid !== userId) return;
+
+        const unsubscribe = routineRequestService.onAcceptedRequestsAsSource(
+            userId,
+            async (acceptedRequests) => {
+                for (const req of acceptedRequests) {
+                    if (!req.syncAfterAccept) continue;
+                    if (req.applyStatus !== 'applied') continue;
+                    const linkedPartnerId = perfil.activePartnerId || perfil.partnerId;
+                    if (linkedPartnerId && req.targetUserId !== linkedPartnerId) continue;
+                    if (processedSourceIds.current.has(req.id)) continue;
+                    try {
+                        const syncId = `sync_${req.id}`;
+                        await firebaseService.configureOwnRoutineSync(userId, req.targetUserId, syncId);
+                        processedSourceIds.current.add(req.id);
+                    } catch (error) {
+                        console.error('[RoutineRequestNotifier] Error configuring source sync:', error);
+                    }
+                }
+            }
+        );
+
+        return () => unsubscribe();
+    }, [authUid, perfil.activePartnerId, perfil.partnerId, userId]);
 
     if (requests.length === 0) return null;
 
@@ -57,29 +117,7 @@ export const RoutineRequestNotifier: React.FC = () => {
         try {
             await routineRequestService.acceptRequest(request.id);
             setRequests((prev) => prev.filter((r) => r.id !== request.id));
-
-            // If the accepting user IS the target, perform client-side copy immediately
-            if (userId === request.targetUserId) {
-                toast.success('Solicitud aceptada. Copiando rutina...');
-                processedIds.current.add(request.id);
-
-                try {
-                    const sourceProfile = await firebaseService.getProfile(request.sourceUserId);
-                    if (sourceProfile?.rutina) {
-                        setRutina(sourceProfile.rutina);
-                        toast.success('Rutina copiada exitosamente!');
-                        void routineRequestService.markAsApplied(request.id);
-                    } else {
-                        toast('El source no tiene rutina activa. Esperando al servidor...', { icon: '⏳' });
-                    }
-                } catch (copyError) {
-                    console.error('[RoutineRequestNotifier] Client-side copy failed:', copyError);
-                    toast('Aceptada. Esperando al servidor para copiar...', { icon: '⏳' });
-                }
-            } else {
-                // Accepting user is the source — the target will pick it up via the listener above
-                toast.success('Solicitud aceptada. Tu partner recibira la rutina.');
-            }
+            toast.success('Solicitud aceptada. Aplicando rutina...');
         } catch {
             toast.error('No se pudo aceptar la solicitud');
         }

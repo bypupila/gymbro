@@ -42,12 +42,6 @@ import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 
-const debugLog = (...args: unknown[]) => {
-    if (import.meta.env.DEV) {
-        console.log(...args);
-    }
-};
-
 const DAY_STYLE: Record<string, { color: string, bg: string }> = {
     'Lunes': { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.05)' },
     'Martes': { color: '#FF2D55', bg: 'rgba(255, 45, 85, 0.05)' },
@@ -842,7 +836,7 @@ interface ExerciseCardProps {
     handleDeleteExercise: (id: string) => void;
     availableDays: string[];
     onQuickUpdate: (id: string, fields: Partial<EjercicioRutina>) => void;
-    setRutina: (rutina: RutinaUsuario | null) => void;
+    setRutina: (rutina: RutinaUsuario | null) => void | Promise<void>;
     dragControls?: DragControls;
 }
 
@@ -1111,7 +1105,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                             <X size={16} />
                             Cancelar
                         </button>
-                        <button style={styles.saveEditBtn} onClick={() => {
+                        <button style={styles.saveEditBtn} onClick={async () => {
                             if (editedExercise && rutina) {
                                 if (localSelectedDays.length === 0) {
                                     const finalExercise = { ...editedExercise, dia: undefined };
@@ -1119,14 +1113,14 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     const updatedEjercicios = rutina.ejercicios.map((ej: EjercicioRutina) =>
                                         ej.id === editedExercise.id ? finalExercise : ej
                                     );
-                                    setRutina({ ...rutina, ejercicios: updatedEjercicios });
+                                    await setRutina({ ...rutina, ejercicios: updatedEjercicios });
                                     handleCancelEdit();
                                 } else if (localSelectedDays.length === 1) {
                                     const finalExercise = { ...editedExercise, dia: localSelectedDays[0] };
                                     const updatedEjercicios = rutina.ejercicios.map((ej: EjercicioRutina) =>
                                         ej.id === editedExercise.id ? finalExercise : ej
                                     );
-                                    setRutina({ ...rutina, ejercicios: updatedEjercicios });
+                                    await setRutina({ ...rutina, ejercicios: updatedEjercicios });
                                     handleCancelEdit();
                                 } else {
                                     const firstDay = localSelectedDays[0];
@@ -1140,9 +1134,9 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                                     const newExercises = rutina.ejercicios.flatMap((ej: EjercicioRutina) =>
                                         ej.id === editedExercise.id ? [updatedBase, ...Clones] : [ej]
                                     );
-                                    setRutina({
+                                    await setRutina({
                                         ...rutina,
-                                        ejercicios: cleanupRoutineExercises(newExercises)
+                                        ejercicios: newExercises
                                     });
                                     handleCancelEdit();
                                 }
@@ -1305,47 +1299,31 @@ const DraggableExerciseCard = (props: ExerciseCardProps) => {
 export const RoutineDetailPage: React.FC = () => {
     const navigate = useNavigate();
     const perfil = useUserStore((state) => state.perfil);
-    const setRutina = useUserStore((state) => state.setRutina);
+    const setRutinaInPlace = useUserStore((state) => state.setRutinaInPlace);
+    const setLastSyncError = useUserStore((state) => state.setLastSyncError);
     const userId = useUserStore((state) => state.userId);
     const rutina = perfil.rutina;
 
     const updateRoutine = useCallback(async (newRoutine: RutinaUsuario | null) => {
         if (!userId) {
-            setRutina(newRoutine);
+            setRutinaInPlace(newRoutine);
             return;
         }
 
-        const previousRoutine = rutina;
-
         // Optimistic update
-        setRutina(newRoutine);
+        setRutinaInPlace(newRoutine);
 
         try {
             // Immediate save to cloud
             await firebaseService.saveRoutine(userId, newRoutine);
+            setLastSyncError(null);
         } catch (error) {
             console.error('[RoutineDetailPage] Failed to save routine:', error);
-            toast.error('No se pudo guardar la rutina. Re-sincronizando desde la nube...');
-
-            try {
-                const cloudProfile = await firebaseService.getProfile(userId);
-                useUserStore.setState((state) => ({
-                    perfil: {
-                        ...state.perfil,
-                        rutina: cloudProfile?.rutina ?? previousRoutine ?? null,
-                    }
-                }));
-            } catch (syncError) {
-                console.error('[RoutineDetailPage] Failed to re-sync routine after save error:', syncError);
-                useUserStore.setState((state) => ({
-                    perfil: {
-                        ...state.perfil,
-                        rutina: previousRoutine ?? null,
-                    }
-                }));
-            }
+            const errorMessage = error instanceof Error ? error.message : 'No se pudo guardar la rutina en la nube.';
+            setLastSyncError(errorMessage);
+            toast.error('No se pudo guardar la rutina. Quedo pendiente de sincronizacion.');
         }
-    }, [rutina, setRutina, userId]);
+    }, [setLastSyncError, setRutinaInPlace, userId]);
 
     const [editingExercise, setEditingExercise] = useState<string | null>(null);
     const [editedExercise, setEditedExercise] = useState<EjercicioRutina | null>(null);
@@ -1434,16 +1412,6 @@ export const RoutineDetailPage: React.FC = () => {
             setIsReorganizing(false);
         }
     };
-
-    React.useEffect(() => {
-        if (rutina?.ejercicios) {
-            const cleaned = cleanupRoutineExercises(rutina.ejercicios);
-            if (cleaned.length !== rutina.ejercicios.length) {
-                debugLog("Auto-cleaning duplicates on mount");
-                updateRoutine({ ...rutina, ejercicios: cleaned });
-            }
-        }
-    }, [rutina, rutina?.ejercicios?.length, updateRoutine]);
 
     const exercisesByDay = useMemo(() => {
         if (!rutina) return {};
@@ -1605,7 +1573,7 @@ export const RoutineDetailPage: React.FC = () => {
 
         updateRoutine({
             ...rutina,
-            ejercicios: cleanupRoutineExercises([...rutina.ejercicios, ...nuevosEjercicios])
+            ejercicios: [...rutina.ejercicios, ...nuevosEjercicios]
         });
         setNewExercise({
             nombre: '', series: 3, repeticiones: '10-12', descanso: 60, categoria: 'maquina', grupoMuscular: ''
@@ -1830,7 +1798,7 @@ export const RoutineDetailPage: React.FC = () => {
                                                         onQuickUpdate={(id, fields) => {
                                                             if (!rutina) return;
                                                             const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
-                                                            updateRoutine({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
+                                                            updateRoutine({ ...rutina, ejercicios: updated });
                                                         }}
                                                         setRutina={updateRoutine}
                                                     />
@@ -1879,7 +1847,7 @@ export const RoutineDetailPage: React.FC = () => {
                                                                 onQuickUpdate={(id, fields) => {
                                                                     if (!rutina) return;
                                                                     const updated = rutina.ejercicios.map(e => e.id === id ? { ...e, ...fields } : e);
-                                                                    updateRoutine({ ...rutina, ejercicios: cleanupRoutineExercises(updated) });
+                                                                    updateRoutine({ ...rutina, ejercicios: updated });
                                                                 }}
                                                                 setRutina={updateRoutine}
                                                             />

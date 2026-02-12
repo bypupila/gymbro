@@ -82,6 +82,22 @@ Backup limitado (por ejemplo, primeras 200 filas):
 npm run admin:backup -- --collection=users --limit=200
 ```
 
+## 6) Crear cuentas QA para smoke tests
+
+Genera dos cuentas de prueba en Firebase Auth, asegura sus perfiles base en Firestore y actualiza `.env`:
+
+```bash
+npm run admin:create:test-accounts
+```
+
+Variables actualizadas:
+
+1. `GYMBRO_EMAIL`
+2. `GYMBRO_PASSWORD`
+3. `GYMBRO_EMAIL_2`
+4. `GYMBRO_PASSWORD_2`
+5. `GYMBRO_BASE_URL` (si no existia)
+
 ## Seguridad
 
 - Nunca subas el JSON de service account al repositorio.

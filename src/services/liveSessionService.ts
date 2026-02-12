@@ -13,6 +13,12 @@ import {
 import { db } from '../config/firebase';
 import { ExerciseTracking } from '../stores/userStore';
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 export interface LiveSessionMetadata {
     sessionId: string;
     startTime: string;
@@ -227,6 +233,13 @@ export const liveSessionService = {
             if (snapshot.exists()) {
                 callback(snapshot.data() as LiveSessionMetadata);
             }
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[liveSessionService.onSessionChange] permission denied, ignored');
+                return;
+            }
+            console.error('[liveSessionService.onSessionChange] listener error:', firestoreError?.message || error);
         });
     },
 
@@ -245,6 +258,14 @@ export const liveSessionService = {
             } else {
                 callback(null);
             }
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[liveSessionService.onPartnerExercisesChange] permission denied, ignored');
+                callback(null);
+                return;
+            }
+            console.error('[liveSessionService.onPartnerExercisesChange] listener error:', firestoreError?.message || error);
         });
     },
 

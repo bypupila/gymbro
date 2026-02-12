@@ -5,6 +5,7 @@ import { db } from '@/config/firebase';
 import { useUserStore } from '../stores/userStore';
 import type { PerfilCompleto } from '../stores/userStore';
 import { firebaseService } from '../services/firebaseService';
+import { authService } from '../services/authService';
 import { RoutineCopyModal } from './RoutineCopyModal';
 import { requestNotificationPermission, onForegroundMessage } from '../services/pushNotificationService';
 
@@ -21,6 +22,12 @@ const getProfileUpdatedAtMs = (profile: PerfilCompleto | null): number => {
     return Number.isFinite(ms) ? ms : 0;
 };
 
+const getRoutineVersion = (profile: PerfilCompleto | null): number => {
+    if (!profile?.rutina?.syncMeta?.version) return 0;
+    const version = Number(profile.rutina.syncMeta.version);
+    return Number.isFinite(version) ? version : 0;
+};
+
 export const CloudSyncManager: React.FC = () => {
     const userId = useUserStore((state) => state.userId);
     const perfil = useUserStore((state) => state.perfil);
@@ -30,6 +37,7 @@ export const CloudSyncManager: React.FC = () => {
     const isSyncing = useUserStore((state) => state.isSyncing);
     const lastSyncError = useUserStore((state) => state.lastSyncError);
     const pendingSave = useUserStore((state) => state.pendingSave);
+    const [authUid, setAuthUid] = useState<string | null>(() => authService.getCurrentUser()?.uid ?? null);
     const lastSavedData = useRef<string>('');
     const lastSavedProfile = useRef<PerfilCompleto | null>(null);
     const syncTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -45,6 +53,12 @@ export const CloudSyncManager: React.FC = () => {
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
     const prevPartnerId = useRef(perfil.activePartnerId || perfil.partnerId);
+
+    useEffect(() => {
+        return authService.onAuthChange((user) => {
+            setAuthUid(user?.uid ?? null);
+        });
+    }, []);
 
     const applyRemoteProfile = useCallback((cloudProfile: PerfilCompleto, source: 'initial' | 'live' | 'deferred') => {
         const remoteUpdatedAtMs = getProfileUpdatedAtMs(cloudProfile);
@@ -67,6 +81,7 @@ export const CloudSyncManager: React.FC = () => {
     useEffect(() => {
         const loadInitialData = async () => {
             if (!userId || initialPullDone.current) return;
+            if (authUid !== userId) return;
 
             try {
                 setIsSyncing(true);
@@ -94,11 +109,12 @@ export const CloudSyncManager: React.FC = () => {
         };
 
         loadInitialData();
-    }, [applyRemoteProfile, userId, setIsSyncing]);
+    }, [applyRemoteProfile, authUid, userId, setIsSyncing]);
 
     // Real-time Cloud Listener
     useEffect(() => {
         if (!userId) return;
+        if (authUid !== userId) return;
 
         const unsubscribe = firebaseService.onProfileChange(userId, (cloudProfile) => {
             if (cloudProfile) {
@@ -127,11 +143,55 @@ export const CloudSyncManager: React.FC = () => {
         });
 
         return () => unsubscribe();
-    }, [applyRemoteProfile, userId]);
+    }, [applyRemoteProfile, authUid, userId]);
+
+    // Spark fallback: keep routine synced from partner profile when routineSync is enabled in auto mode.
+    useEffect(() => {
+        if (!userId) return;
+        if (authUid !== userId) return;
+        const routineSync = perfil.routineSync;
+        if (!routineSync?.enabled || routineSync.mode !== 'auto' || !routineSync.partnerId || !routineSync.syncId) {
+            return;
+        }
+
+        const unsubscribe = firebaseService.onProfileChange(routineSync.partnerId, (partnerProfile) => {
+            if (!partnerProfile?.rutina || !partnerProfile.routineSync) return;
+            const partnerSync = partnerProfile.routineSync;
+            const partnerRoutine = partnerProfile.rutina;
+
+            if (!partnerSync.enabled || partnerSync.mode !== 'auto') return;
+            if (partnerSync.partnerId !== userId) return;
+            if (partnerSync.syncId !== routineSync.syncId) return;
+            if (partnerRoutine.syncMeta?.syncId !== routineSync.syncId) return;
+            if (partnerRoutine.syncMeta?.updatedBy !== routineSync.partnerId) return;
+
+            const localVersion = getRoutineVersion(useUserStore.getState().perfil);
+            const incomingVersion = Number(partnerRoutine.syncMeta?.version || 0);
+            if (!Number.isFinite(incomingVersion) || incomingVersion <= localVersion) return;
+
+            useUserStore.setState((state) => ({
+                perfil: {
+                    ...state.perfil,
+                    rutina: partnerRoutine,
+                    updatedAt: new Date().toISOString(),
+                },
+            }));
+        }, {
+            rehydrateRelatedData: false,
+            ignorePendingWrites: true,
+        });
+
+        return () => unsubscribe();
+    }, [
+        authUid,
+        perfil.routineSync,
+        userId,
+    ]);
 
     // Auto-Save Effect
     useEffect(() => {
         if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
+        if (authUid !== userId) return;
 
         const currentDataStr = firebaseService.getProfileSyncFingerprint(perfil);
 
@@ -196,7 +256,7 @@ export const CloudSyncManager: React.FC = () => {
         return () => {
             if (syncTimeout.current) clearTimeout(syncTimeout.current);
         };
-    }, [applyRemoteProfile, perfil, retryTick, userId, setIsSyncing, setLastSyncError]);
+    }, [applyRemoteProfile, authUid, perfil, retryTick, userId, setIsSyncing, setLastSyncError]);
 
     useEffect(() => {
         return () => {
@@ -209,6 +269,7 @@ export const CloudSyncManager: React.FC = () => {
     // Push notification setup - request permission after initial load
     useEffect(() => {
         if (!userId || !perfil.onboardingCompletado || !initialPullDone.current) return;
+        if (authUid !== userId) return;
         let isDisposed = false;
         let unsubscribeForeground: (() => void) | null = null;
 
@@ -245,7 +306,7 @@ export const CloudSyncManager: React.FC = () => {
                 unsubscribeForeground();
             }
         };
-    }, [userId, perfil.onboardingCompletado]);
+    }, [authUid, userId, perfil.onboardingCompletado]);
 
     // Effect to detect new partner link and trigger first-time setup modal
     useEffect(() => {

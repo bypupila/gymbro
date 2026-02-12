@@ -16,6 +16,7 @@ import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { liveSessionService } from '@/services/liveSessionService';
+import { authService } from '@/services/authService';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 export const TrainingInvitationNotifier: React.FC = () => {
@@ -23,10 +24,18 @@ export const TrainingInvitationNotifier: React.FC = () => {
     const startSession = useUserStore((state) => state.startSession);
     const navigate = useNavigate();
     const [invitations, setInvitations] = useState<TrainingInvitation[]>([]);
+    const [authUid, setAuthUid] = useState<string | null>(() => authService.getCurrentUser()?.uid ?? null);
     const isMobile = useMediaQuery('(max-width: 640px)');
 
     useEffect(() => {
+        return authService.onAuthChange((user) => {
+            setAuthUid(user?.uid ?? null);
+        });
+    }, []);
+
+    useEffect(() => {
         if (!userId) return;
+        if (authUid !== userId) return;
 
         const unsubscribe = trainingInvitationService.onIncomingInvitations(
             userId,
@@ -36,7 +45,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
         );
 
         return () => unsubscribe();
-    }, [userId]);
+    }, [authUid, userId]);
 
     const handleAccept = async (invitation: TrainingInvitation) => {
         try {
@@ -189,6 +198,9 @@ export const TrainingInvitationNotifier: React.FC = () => {
     }, [navigate, startSession, userId]);
 
     useEffect(() => {
+        if (!userId) return;
+        if (authUid !== userId) return;
+
         const params = new URLSearchParams(window.location.search);
         const invitationId = params.get('acceptInvitation');
         if (!invitationId) return;
@@ -211,12 +223,15 @@ export const TrainingInvitationNotifier: React.FC = () => {
             const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
             window.history.replaceState({}, '', nextUrl);
         });
-    }, [acceptFromDeepLink, invitations, userId]);
+    }, [acceptFromDeepLink, authUid, invitations, userId]);
 
     useEffect(() => {
+        if (!userId) return;
+        if (authUid !== userId) return;
+
         const params = new URLSearchParams(window.location.search);
         const invitationId = params.get('declineInvitation');
-        if (!invitationId || !userId) return;
+        if (!invitationId) return;
 
         void trainingInvitationService.declineInvitation(invitationId)
             .catch((error) => {
@@ -228,7 +243,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
                 const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
                 window.history.replaceState({}, '', nextUrl);
             });
-    }, [userId]);
+    }, [authUid, userId]);
 
     if (invitations.length === 0) return null;
 

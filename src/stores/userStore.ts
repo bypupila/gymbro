@@ -244,6 +244,7 @@ interface UserStore {
     setDatosPareja: (datos: DatosPersonales | null) => void;
     setHorario: (horario: HorarioSemanal) => void;
     setRutina: (rutina: RutinaUsuario | null) => void;
+    setRutinaInPlace: (rutina: RutinaUsuario | null) => void;
     agregarEntrenamiento: (entrenamiento: EntrenamientoRealizado) => void;
     completarOnboarding: () => void;
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
@@ -481,6 +482,43 @@ export const useUserStore = create<UserStore>()(
                         rutina: rutinaParaActivar,
                         historialRutinas: historialPrevio,
                         defaultRoutineId: updatedDefaultRoutineId
+                    }
+                };
+            }),
+
+            setRutinaInPlace: (newRutina) => set((state) => {
+                const syncState = state.perfil.routineSync;
+                const nowIso = new Date().toISOString();
+                let rutinaParaGuardar = newRutina;
+                let nextDefaultRoutineId = state.perfil.defaultRoutineId;
+
+                if (rutinaParaGuardar && syncState?.enabled && syncState.syncId && syncState.mode === 'auto') {
+                    const currentVersion =
+                        state.perfil.rutina?.syncMeta?.version ||
+                        rutinaParaGuardar.syncMeta?.version ||
+                        0;
+                    rutinaParaGuardar = {
+                        ...rutinaParaGuardar,
+                        syncMeta: {
+                            syncId: syncState.syncId,
+                            version: currentVersion + 1,
+                            updatedBy: state.userId || 'unknown',
+                            updatedAt: nowIso,
+                        },
+                    };
+                }
+
+                if (rutinaParaGuardar?.isDefault) {
+                    nextDefaultRoutineId = rutinaParaGuardar.id;
+                } else if (!rutinaParaGuardar && state.perfil.rutina && nextDefaultRoutineId === state.perfil.rutina.id) {
+                    nextDefaultRoutineId = undefined;
+                }
+
+                return {
+                    perfil: {
+                        ...state.perfil,
+                        rutina: rutinaParaGuardar,
+                        defaultRoutineId: nextDefaultRoutineId,
                     }
                 };
             }),

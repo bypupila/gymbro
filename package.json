@@ -11,7 +11,8 @@
     "admin:check": "node scripts/admin/check-admin-setup.mjs",
     "admin:audit:partners": "node scripts/admin/audit-partner-consistency.mjs",
     "admin:fix:partners": "node scripts/admin/fix-partner-consistency.mjs",
-    "admin:backup": "node scripts/admin/backup-collection.mjs"
+    "admin:backup": "node scripts/admin/backup-collection.mjs",
+    "admin:create:test-accounts": "node scripts/admin/create-test-accounts.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -10,6 +10,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 
+const debugLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 export type RoutineRequestType =
     | 'copy_my_routine_to_partner'
     | 'copy_partner_routine_to_me';
@@ -61,6 +67,14 @@ export const routineRequestService = {
                 .map((d) => ({ id: d.id, ...d.data() } as RoutineRequest))
                 .filter((r) => new Date(r.expiresAt).getTime() > now);
             callback(requests);
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[routineRequestService.onIncomingRequests] permission denied, ignored');
+                callback([]);
+                return;
+            }
+            console.error('[routineRequestService.onIncomingRequests] listener error:', firestoreError?.message || error);
         });
     },
 
@@ -109,6 +123,38 @@ export const routineRequestService = {
                 .map((d) => ({ id: d.id, ...d.data() } as RoutineRequest))
                 .filter((r) => r.status === 'accepted' && r.applyStatus !== 'applied');
             callback(requests);
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[routineRequestService.onAcceptedRequestsAsTarget] permission denied, ignored');
+                callback([]);
+                return;
+            }
+            console.error('[routineRequestService.onAcceptedRequestsAsTarget] listener error:', firestoreError?.message || error);
+        });
+    },
+
+    onAcceptedRequestsAsSource(
+        userId: string,
+        callback: (requests: RoutineRequest[]) => void
+    ): () => void {
+        const q = query(
+            collection(db, 'routineRequests'),
+            where('fromUserId', '==', userId),
+        );
+        return onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs
+                .map((d) => ({ id: d.id, ...d.data() } as RoutineRequest))
+                .filter((r) => r.status === 'accepted');
+            callback(requests);
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[routineRequestService.onAcceptedRequestsAsSource] permission denied, ignored');
+                callback([]);
+                return;
+            }
+            console.error('[routineRequestService.onAcceptedRequestsAsSource] listener error:', firestoreError?.message || error);
         });
     },
 

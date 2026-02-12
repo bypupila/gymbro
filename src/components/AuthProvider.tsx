@@ -10,7 +10,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     useEffect(() => {
         let unsubscribeLinkRequests: (() => void) | null = null;
-        let unsubscribeAcceptedLinks: (() => void) | null = null;
+        let unsubscribeAcceptedLinkRequests: (() => void) | null = null;
 
         // Firebase Auth Listener
         const unsubscribeAuth = authService.onAuthChange((user) => {
@@ -18,9 +18,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 unsubscribeLinkRequests();
                 unsubscribeLinkRequests = null;
             }
-            if (unsubscribeAcceptedLinks) {
-                unsubscribeAcceptedLinks();
-                unsubscribeAcceptedLinks = null;
+            if (unsubscribeAcceptedLinkRequests) {
+                unsubscribeAcceptedLinkRequests();
+                unsubscribeAcceptedLinkRequests = null;
             }
 
             if (user) {
@@ -31,12 +31,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setLinkRequests(requests);
                 });
 
-                // Setup listener for accepted links (kept for side-effects: updating requester profile)
-                // We DON'T update local state here because CloudSyncManager handles the profile sync
-                // which includes the authoritative partner list with correct names.
-                unsubscribeAcceptedLinks = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
-                    // setPartners(partners); // DISABLED: Let CloudSyncManager handle it to avoid race conditions
-                    console.log('Accepted link request detected:', partners.length);
+                // Derive active partners from accepted/unlink events (works on Firebase Spark without Cloud Functions).
+                unsubscribeAcceptedLinkRequests = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
+                    setPartners(partners);
                 });
             } else {
                 setUserId(null);
@@ -49,8 +46,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (unsubscribeLinkRequests) {
                 unsubscribeLinkRequests();
             }
-            if (unsubscribeAcceptedLinks) {
-                unsubscribeAcceptedLinks();
+            if (unsubscribeAcceptedLinkRequests) {
+                unsubscribeAcceptedLinkRequests();
             }
             unsubscribeAuth();
         };
@@ -61,4 +58,3 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return <>{children}</>;
 };
-
