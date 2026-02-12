@@ -61,7 +61,7 @@ export const CloudSyncManager: React.FC = () => {
 
     const applyRemoteProfile = useCallback((cloudProfile: PerfilCompleto, source: 'initial' | 'live' | 'deferred') => {
         const remoteUpdatedAtMs = getProfileUpdatedAtMs(cloudProfile);
-        if (remoteUpdatedAtMs > 0 && remoteUpdatedAtMs < lastAppliedRemoteUpdatedAtMs.current) {
+        if (remoteUpdatedAtMs > 0 && remoteUpdatedAtMs <= lastAppliedRemoteUpdatedAtMs.current) {
             debugLog('[CloudSync] Ignoring stale remote snapshot', { source, remoteUpdatedAtMs });
             return;
         }
@@ -86,7 +86,18 @@ export const CloudSyncManager: React.FC = () => {
                 setIsSyncing(true);
                 const cloudData = await firebaseService.getProfile(userId);
                 if (cloudData) {
-                    applyRemoteProfile(cloudData, 'initial');
+                    const localProfile = useUserStore.getState().perfil;
+                    const localUpdatedAtMs = getProfileUpdatedAtMs(localProfile);
+                    const remoteUpdatedAtMs = getProfileUpdatedAtMs(cloudData);
+
+                    if (localUpdatedAtMs > 0 && remoteUpdatedAtMs > 0 && localUpdatedAtMs > remoteUpdatedAtMs) {
+                        debugLog('[CloudSync] Skipping stale initial profile snapshot', {
+                            localUpdatedAtMs,
+                            remoteUpdatedAtMs,
+                        });
+                    } else {
+                        applyRemoteProfile(cloudData, 'initial');
+                    }
                 } else {
                     // If no data in cloud, initialize name with alias if empty
                     const { perfil } = useUserStore.getState();

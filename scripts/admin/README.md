@@ -109,6 +109,40 @@ Nota:
 1. El perfil QA se reescribe completo (sin merge) para evitar residuos de `routineSync/syncMeta` entre corridas.
 2. El horario QA se inicializa con 7 dias base para que siempre pueda editarse desde `Configurar Horario`.
 
+## 7) Borrar usuarios completos (Auth + Firestore)
+
+Dry-run por email:
+
+```bash
+npm run admin:delete:users -- --email=usuario1@mail.com --email=usuario2@mail.com
+```
+
+Aplicar borrado:
+
+```bash
+npm run admin:delete:users -- --email=usuario1@mail.com --email=usuario2@mail.com --apply
+```
+
+Por UID:
+
+```bash
+npm run admin:delete:users -- --uid=UID_1 --uid=UID_2 --apply
+```
+
+Si usas Windows y npm no pasa `--apply`, usa fallback directo:
+
+```bash
+node scripts/admin/delete-users.mjs --email=usuario1@mail.com --email=usuario2@mail.com --apply
+```
+
+Que elimina:
+
+1. Usuario en Firebase Auth.
+2. `users/{uid}` completo (incluye `profile`, subcolecciones, tokens).
+3. `userAliases` asociados.
+4. Referencias globales en `linkRequests`, `relationshipActions`, `routineRequests`, `trainingInvitations`.
+5. Sesiones en `liveSessions` relacionadas (por `participants` o `createdBy`).
+
 ## Seguridad
 
 - Nunca subas el JSON de service account al repositorio.

@@ -31,7 +31,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setLinkRequests(requests);
                 });
 
-                // Derive active partners from accepted/unlink events (works on Firebase Spark without Cloud Functions).
+                // Spark-safe fallback: derive current partner from accepted/unlink events.
+                // Important: this listener is read-only and must not mutate Firestore.
                 unsubscribeAcceptedLinkRequests = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
                     const stateBeforeUpdate = useUserStore.getState();
                     const persistedIdsBefore = new Set<string>();
@@ -40,10 +41,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     (stateBeforeUpdate.perfil.partners || []).forEach((partner) => persistedIdsBefore.add(partner.id));
 
                     setPartners(partners);
-                    // Keep cloud profile symmetric on unlink even without Cloud Functions.
-                    // Compare against the ids that existed BEFORE mutating local store.
-                    const activeIds = new Set(partners.map((partner) => partner.id));
 
+                    const activeIds = new Set(partners.map((partner) => partner.id));
                     persistedIdsBefore.forEach((partnerId) => {
                         if (!activeIds.has(partnerId)) {
                             void firebaseService.removePartnerFromOwnProfile(user.uid, partnerId).catch((error) => {

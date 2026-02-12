@@ -15,7 +15,7 @@ import {
     toProfileSyncPayload,
 } from './firebaseService.sync-utils';
 import type { AcceptedPartnerEvent, ProfileSyncPayload, UnlinkPartnerEvent } from './firebaseService.sync-utils';
-import { getDefaultScheduleDays } from '@/utils/scheduleDefaults';
+import { ensureScheduleDays, getDefaultScheduleDays } from '@/utils/scheduleDefaults';
 
 export interface LinkRequest {
     id: string;
@@ -79,6 +79,171 @@ const fromRoutinePayload = (routineData: unknown): RutinaUsuario | null => {
     }
 
     return parsed;
+};
+
+const DEFAULT_USUARIO: PerfilCompleto['usuario'] = {
+    nombre: '',
+    edad: 0,
+    peso: 0,
+    altura: 0,
+    nivel: 'principiante',
+    objetivo: 'ganar_musculo',
+    lesiones: '',
+};
+
+const toSafeNumber = (value: unknown, fallback = 0): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeUsuario = (rawValue: unknown): PerfilCompleto['usuario'] => {
+    if (!rawValue || typeof rawValue !== 'object') {
+        return { ...DEFAULT_USUARIO };
+    }
+
+    const raw = rawValue as Record<string, unknown>;
+    const nivel = raw.nivel;
+    const objetivo = raw.objetivo;
+
+    return {
+        nombre: typeof raw.nombre === 'string' ? raw.nombre : '',
+        edad: toSafeNumber(raw.edad, 0),
+        peso: toSafeNumber(raw.peso, 0),
+        altura: toSafeNumber(raw.altura, 0),
+        nivel: nivel === 'intermedio' || nivel === 'avanzado' ? nivel : 'principiante',
+        objetivo:
+            objetivo === 'perder_grasa' ||
+            objetivo === 'mantener' ||
+            objetivo === 'fuerza' ||
+            objetivo === 'resistencia'
+                ? objetivo
+                : 'ganar_musculo',
+        lesiones: typeof raw.lesiones === 'string' ? raw.lesiones : '',
+        ...(typeof raw.avatar === 'string' ? { avatar: raw.avatar } : {}),
+    };
+};
+
+const normalizePareja = (rawValue: unknown): PerfilCompleto['pareja'] => {
+    if (!rawValue || typeof rawValue !== 'object') {
+        return null;
+    }
+    return normalizeUsuario(rawValue);
+};
+
+const normalizeHorario = (rawValue: unknown): PerfilCompleto['horario'] => {
+    if (!rawValue || typeof rawValue !== 'object') {
+        return { dias: getDefaultScheduleDays() };
+    }
+    const raw = rawValue as { dias?: PerfilCompleto['horario']['dias'] };
+    return {
+        dias: ensureScheduleDays(raw.dias),
+    };
+};
+
+const normalizePartners = (rawValue: unknown): PartnerInfo[] => {
+    if (!Array.isArray(rawValue)) {
+        return [];
+    }
+
+    return rawValue
+        .map((item) => {
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+            const raw = item as Record<string, unknown>;
+            if (typeof raw.id !== 'string' || !raw.id) {
+                return null;
+            }
+            const alias = typeof raw.alias === 'string' && raw.alias ? raw.alias : raw.id;
+            const nombre = typeof raw.nombre === 'string' && raw.nombre ? raw.nombre : alias;
+            return {
+                id: raw.id,
+                alias,
+                nombre,
+            } as PartnerInfo;
+        })
+        .filter((item): item is PartnerInfo => Boolean(item));
+};
+
+const normalizeRoutineSync = (
+    rawValue: unknown,
+    nowIso: string
+): NonNullable<PerfilCompleto['routineSync']> => {
+    if (!rawValue || typeof rawValue !== 'object') {
+        return {
+            enabled: false,
+            partnerId: null,
+            mode: 'manual',
+            syncId: null,
+            updatedAt: nowIso,
+        };
+    }
+
+    const raw = rawValue as Record<string, unknown>;
+    return {
+        enabled: Boolean(raw.enabled),
+        partnerId: typeof raw.partnerId === 'string' ? raw.partnerId : null,
+        mode: raw.mode === 'auto' ? 'auto' : 'manual',
+        syncId: typeof raw.syncId === 'string' ? raw.syncId : null,
+        updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso,
+    };
+};
+
+type NormalizedRelatedData = {
+    historial: EntrenamientoRealizado[];
+    historialRutinas: RutinaUsuario[];
+    extraActivities: ExtraActivity[];
+    catalogExtras: string[];
+};
+
+const normalizeProfileData = (
+    rawData: Record<string, unknown>,
+    rawUserData: Record<string, unknown>,
+    relatedData: NormalizedRelatedData
+): PerfilCompleto => {
+    const nowIso = new Date().toISOString();
+    const partners = normalizePartners(rawData.partners);
+    const rawPartnerIds = Array.isArray(rawData.partnerIds)
+        ? rawData.partnerIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+    const partnerIds = Array.from(new Set([...rawPartnerIds, ...partners.map((partner) => partner.id)]));
+    const catalogFromProfile = Array.isArray(rawData.catalogoExtras)
+        ? rawData.catalogoExtras.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+    const weeklyTracking =
+        rawData.weeklyTracking && typeof rawData.weeklyTracking === 'object' && !Array.isArray(rawData.weeklyTracking)
+            ? rawData.weeklyTracking as Record<string, 'completed' | 'skipped' | boolean>
+            : {};
+    const userDisplayName = typeof rawUserData.displayName === 'string' ? rawUserData.displayName : '';
+    const roleRaw = rawUserData.role;
+    const role: 'admin' | 'user' =
+        roleRaw === 'admin' || userDisplayName === 'bypupila'
+            ? 'admin'
+            : 'user';
+
+    return {
+        usuario: normalizeUsuario(rawData.usuario),
+        pareja: normalizePareja(rawData.pareja),
+        horario: normalizeHorario(rawData.horario),
+        rutina: fromRoutinePayload(rawData.rutina),
+        historial: relatedData.historial,
+        historialRutinas: relatedData.historialRutinas,
+        onboardingCompletado: Boolean(rawData.onboardingCompletado),
+        partnerId: typeof rawData.partnerId === 'string' ? rawData.partnerId : undefined,
+        partners,
+        partnerIds,
+        activePartnerId: typeof rawData.activePartnerId === 'string' ? rawData.activePartnerId : null,
+        routineSync: normalizeRoutineSync(rawData.routineSync, nowIso),
+        linkSetupPendingPartnerId:
+            typeof rawData.linkSetupPendingPartnerId === 'string' ? rawData.linkSetupPendingPartnerId : null,
+        alias: userDisplayName,
+        role,
+        weeklyTracking,
+        actividadesExtras: relatedData.extraActivities,
+        catalogoExtras: relatedData.catalogExtras.length > 0 ? relatedData.catalogExtras : catalogFromProfile,
+        defaultRoutineId: typeof rawData.defaultRoutineId === 'string' ? rawData.defaultRoutineId : undefined,
+        updatedAt: typeof rawData.updatedAt === 'string' ? rawData.updatedAt : nowIso,
+    };
 };
 
 export const firebaseService = {
@@ -175,42 +340,16 @@ export const firebaseService = {
             debugLog('[getProfile] Error fetching related data:', error?.code || error?.message || error);
         }
 
-        return {
-            usuario: data.usuario,
-            pareja: data.pareja,
-            horario: data.horario,
-            rutina: fromRoutinePayload(data.rutina),
-            historial,
-            historialRutinas,
-            onboardingCompletado: data.onboardingCompletado,
-            partnerId: data.partnerId,
-            partners: data.partners || [],
-            partnerIds: data.partnerIds || [],
-            activePartnerId: data.activePartnerId || null,
-            routineSync: data.routineSync
-                ? {
-                    enabled: Boolean(data.routineSync.enabled),
-                    partnerId: data.routineSync.partnerId || null,
-                    mode: data.routineSync.mode === 'auto' ? 'auto' : 'manual',
-                    syncId: data.routineSync.syncId || null,
-                    updatedAt: data.routineSync.updatedAt || new Date().toISOString(),
-                }
-                : {
-                    enabled: false,
-                    partnerId: null,
-                    mode: 'manual',
-                    syncId: null,
-                    updatedAt: new Date().toISOString(),
-                },
-            linkSetupPendingPartnerId: data.linkSetupPendingPartnerId || null,
-            alias: userData.displayName || '',
-            role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
-            weeklyTracking: data.weeklyTracking || {},
-            actividadesExtras: extraActivities,
-            catalogoExtras: catalogExtras,
-            defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
-            updatedAt: data.updatedAt || new Date().toISOString(),
-        };
+        return normalizeProfileData(
+            data as Record<string, unknown>,
+            userData as Record<string, unknown>,
+            {
+                historial,
+                historialRutinas,
+                extraActivities,
+                catalogExtras,
+            }
+        );
     },
 
     // Real-time listener para sync automatico
@@ -303,42 +442,18 @@ export const firebaseService = {
                     getRelatedData()
                 ]);
 
-            callback({
-                usuario: data.usuario,
-                pareja: data.pareja,
-                horario: data.horario,
-                rutina: fromRoutinePayload(data.rutina),
-                historial: relatedData.historial,
-                historialRutinas: relatedData.historialRutinas,
-                onboardingCompletado: data.onboardingCompletado,
-                partnerId: data.partnerId,
-                partners: data.partners || [],
-                partnerIds: data.partnerIds || [],
-                activePartnerId: data.activePartnerId || null,
-                routineSync: data.routineSync
-                    ? {
-                        enabled: Boolean(data.routineSync.enabled),
-                        partnerId: data.routineSync.partnerId || null,
-                        mode: data.routineSync.mode === 'auto' ? 'auto' : 'manual',
-                        syncId: data.routineSync.syncId || null,
-                        updatedAt: data.routineSync.updatedAt || new Date().toISOString(),
+            callback(
+                normalizeProfileData(
+                    data as Record<string, unknown>,
+                    userData as Record<string, unknown>,
+                    {
+                        historial: relatedData.historial,
+                        historialRutinas: relatedData.historialRutinas,
+                        extraActivities: relatedData.extraActivities,
+                        catalogExtras: relatedData.catalogExtras,
                     }
-                    : {
-                        enabled: false,
-                        partnerId: null,
-                        mode: 'manual',
-                        syncId: null,
-                        updatedAt: new Date().toISOString(),
-                    },
-                linkSetupPendingPartnerId: data.linkSetupPendingPartnerId || null,
-                alias: userData.displayName || '',
-                role: userData.role || (userData.displayName === 'bypupila' ? 'admin' : 'user'),
-                weeklyTracking: data.weeklyTracking || {},
-                actividadesExtras: relatedData.extraActivities,
-                catalogoExtras: relatedData.catalogExtras,
-                defaultRoutineId: data.defaultRoutineId || undefined, // Retrieve default routine ID
-                updatedAt: data.updatedAt || new Date().toISOString(),
-            });
+                )
+            );
             } catch (error: any) {
                 // Handle permission errors gracefully (common during partner unlink)
                 if (error?.code === 'permission-denied') {

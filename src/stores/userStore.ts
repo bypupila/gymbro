@@ -422,7 +422,8 @@ export const useUserStore = create<UserStore>()(
             setDatosPersonales: (datos) => set((state) => ({
                 perfil: {
                     ...state.perfil,
-                    usuario: { ...state.perfil.usuario, ...datos }
+                    usuario: { ...state.perfil.usuario, ...datos },
+                    updatedAt: new Date().toISOString(),
                 }
             })),
 
@@ -431,7 +432,11 @@ export const useUserStore = create<UserStore>()(
             })),
 
             setHorario: (horario) => set((state) => ({
-                perfil: { ...state.perfil, horario }
+                perfil: {
+                    ...state.perfil,
+                    horario,
+                    updatedAt: new Date().toISOString(),
+                }
             })),
 
             setRutina: (newRutina) => set((state) => {
@@ -542,7 +547,11 @@ export const useUserStore = create<UserStore>()(
             })),
 
             completarOnboarding: () => set((state) => ({
-                perfil: { ...state.perfil, onboardingCompletado: true }
+                perfil: {
+                    ...state.perfil,
+                    onboardingCompletado: true,
+                    updatedAt: new Date().toISOString(),
+                }
             })),
 
             getEntrenamientoHoy: () => {

@@ -11,7 +11,19 @@ import { ensureScheduleDays } from '@/utils/scheduleDefaults';
 import { Brain, Calendar, Check, ChevronRight, Dumbbell, Users } from 'lucide-react';
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+type OnboardingPersonalDataDraft = {
+    nombre: string;
+    edad: number;
+    peso: number;
+    altura: number;
+    nivel: NivelExperiencia;
+    objetivo: ObjetivoFitness;
+    lesiones: string;
+};
+
+const ONBOARDING_PERSONAL_STORAGE_KEY = 'gymbro:onboarding-personal';
 
 // Welcome Screen
 export const OnboardingWelcome: React.FC = () => {
@@ -59,7 +71,6 @@ export const OnboardingWelcome: React.FC = () => {
 // Personal Data Screen
 export const OnboardingDatos: React.FC = () => {
     const navigate = useNavigate();
-    const setDatosPersonales = useUserStore((state) => state.setDatosPersonales);
 
     const [datos, setDatos] = useState({
         nombre: '',
@@ -86,8 +97,8 @@ export const OnboardingDatos: React.FC = () => {
 
     const isValid = datos.nombre.length > 0 && parseInt(datos.edad) > 0 && parseInt(datos.peso) > 0;
 
-    const handleContinue = () => {
-        setDatosPersonales({
+    const handleContinue = async () => {
+        const personalData: OnboardingPersonalDataDraft = {
             nombre: datos.nombre,
             edad: parseInt(datos.edad),
             peso: parseInt(datos.peso),
@@ -95,8 +106,34 @@ export const OnboardingDatos: React.FC = () => {
             nivel: datos.nivel,
             objetivo: datos.objetivo,
             lesiones: datos.lesiones,
+        };
+        const nowIso = new Date().toISOString();
+        const currentProfile = useUserStore.getState().perfil;
+        const nextProfile = {
+            ...currentProfile,
+            usuario: { ...currentProfile.usuario, ...personalData },
+            updatedAt: nowIso,
+        };
+
+        useUserStore.setState({ perfil: nextProfile });
+
+        if (typeof window !== 'undefined') {
+            sessionStorage.setItem(ONBOARDING_PERSONAL_STORAGE_KEY, JSON.stringify(personalData));
+        }
+
+        const currentUserId = useUserStore.getState().userId;
+        if (currentUserId) {
+            try {
+                await firebaseService.saveProfile(currentUserId, nextProfile);
+            } catch (error) {
+                console.error('[OnboardingDatos] Failed to persist personal data:', error);
+                toast.error('No se pudo guardar tus datos en la nube.');
+            }
+        }
+
+        navigate('/onboarding/horarios', {
+            state: { personalData },
         });
-        navigate('/onboarding/horarios');
     };
 
     return (
@@ -213,10 +250,8 @@ export const OnboardingDatos: React.FC = () => {
 // Schedule Screen
 export const OnboardingHorarios: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const perfil = useUserStore((state) => state.perfil);
-    const userId = useUserStore((state) => state.userId);
-    const setHorario = useUserStore((state) => state.setHorario);
-    const completarOnboarding = useUserStore((state) => state.completarOnboarding);
     const [dias, setDias] = useState(() => ensureScheduleDays(perfil.horario.dias));
 
     const toggleDia = (index: number) => {
@@ -231,18 +266,46 @@ export const OnboardingHorarios: React.FC = () => {
 
     const handleComplete = async () => {
         const normalizedDays = ensureScheduleDays(dias);
-        setHorario({ dias: normalizedDays });
+        const nowIso = new Date().toISOString();
+        const currentProfile = useUserStore.getState().perfil;
+        const routeState = (location.state as { personalData?: OnboardingPersonalDataDraft } | null) || null;
+        let personalDataFromStepOne = routeState?.personalData;
+        if (!personalDataFromStepOne && typeof window !== 'undefined') {
+            const persistedDraft = sessionStorage.getItem(ONBOARDING_PERSONAL_STORAGE_KEY);
+            if (persistedDraft) {
+                try {
+                    personalDataFromStepOne = JSON.parse(persistedDraft) as OnboardingPersonalDataDraft;
+                } catch {
+                    personalDataFromStepOne = undefined;
+                }
+            }
+        }
+        const nextProfile = {
+            ...currentProfile,
+            usuario: personalDataFromStepOne
+                ? { ...currentProfile.usuario, ...personalDataFromStepOne }
+                : currentProfile.usuario,
+            horario: { dias: normalizedDays },
+            onboardingCompletado: true,
+            updatedAt: nowIso,
+        };
 
-        if (userId) {
+        useUserStore.setState({ perfil: nextProfile });
+
+        const currentUserId = useUserStore.getState().userId;
+        if (currentUserId) {
             try {
-                await firebaseService.saveSchedule(userId, normalizedDays);
+                await firebaseService.saveProfile(currentUserId, nextProfile);
             } catch (error) {
-                console.error('[OnboardingHorarios] Failed to save schedule:', error);
-                toast.error('No se pudo guardar el horario.');
+                console.error('[OnboardingHorarios] Failed to persist onboarding profile:', error);
+                toast.error('No se pudo guardar el onboarding en la nube.');
             }
         }
 
-        completarOnboarding();
+        if (typeof window !== 'undefined') {
+            sessionStorage.removeItem(ONBOARDING_PERSONAL_STORAGE_KEY);
+        }
+
         navigate('/onboarding/completado');
     };
 

@@ -11,6 +11,7 @@
     "admin:check": "node scripts/admin/check-admin-setup.mjs",
     "admin:audit:partners": "node scripts/admin/audit-partner-consistency.mjs",
     "admin:fix:partners": "node scripts/admin/fix-partner-consistency.mjs",
+    "admin:delete:users": "node scripts/admin/delete-users.mjs",
     "admin:backup": "node scripts/admin/backup-collection.mjs",
     "admin:create:test-accounts": "node scripts/admin/create-test-accounts.mjs"
   },

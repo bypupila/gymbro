@@ -1,0 +1,7 @@
+{
+  "name": "GymBro Homepage Generator",
+  "id": "gymbro-homepage-gen",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"]
+}

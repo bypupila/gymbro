@@ -157,6 +157,31 @@ Archivo del script:
 
 1. `scripts/admin/create-test-accounts.mjs`
 
+## 6.2 Purga completa de usuarios (Auth + Firestore)
+
+Script oficial:
+
+```bash
+node scripts/admin/delete-users.mjs --email=usuario1@mail.com --email=usuario2@mail.com --apply
+```
+
+Nota en este entorno Windows/npm:
+
+1. `npm run ... -- --arg` no siempre propaga argumentos a scripts admin.
+2. Para operaciones destructivas, usar comando `node ...` directo.
+
+Alcance de la purga:
+
+1. Elimina usuario en Firebase Auth.
+2. Elimina `users/{uid}` completo (incluye `profile` y subcolecciones).
+3. Elimina `userAliases` asociados por `userId`.
+4. Elimina referencias globales en:
+   1. `linkRequests`
+   2. `relationshipActions`
+   3. `routineRequests`
+   4. `trainingInvitations`
+5. Elimina `liveSessions` relacionadas por `participants` o `createdBy`.
+
 ## 7. Suite de validación estándar
 
 1. Lint:
@@ -464,3 +489,79 @@ Validacion:
 2. `npx playwright test tests/live-auth-smoke.spec.ts tests/partner-routine-sync-live.spec.ts --project=chromium`: PASS.
 3. `node scripts/admin/fix-partner-consistency.mjs --apply` ejecutado para reparar datos existentes.
 4. `npm run admin:audit:partners`: findings 0.
+
+### 2026-02-12 - Purga total de 2 cuentas productivas para reinicio limpio
+
+Autor: `Codex`
+
+Objetivo:
+
+1. Eliminar por completo las cuentas reales (usuario + Emi) para recrearlas desde cero sin residuos historicos.
+
+Accion ejecutada:
+
+1. Script nuevo `scripts/admin/delete-users.mjs` (Auth + Firestore + referencias globales).
+2. Ejecucion aplicada:
+   1. `node scripts/admin/delete-users.mjs --email=daguilarfeener@gmail.com --email=m.emilianehele@gmail.com --apply`
+
+Resultado verificado:
+
+1. `TOTAL_AUTH_USERS=2` (solo cuentas QA restantes).
+2. `DELETED:daguilarfeener@gmail.com`.
+3. `DELETED:m.emilianehele@gmail.com`.
+4. `users/{uid}` de ambas cuentas eliminados junto con aliases/referencias.
+
+### 2026-02-12 - Fix onboarding que reiniciaba al completar setup
+
+Autor: `Codex`
+
+Problema observado:
+
+1. Usuario nuevo/completado onboarding caia de vuelta a `/onboarding`.
+2. En algunos casos `usuario.nombre` quedaba vacio luego del flujo.
+3. Se detecto mezcla de causas:
+   1. carrera entre edicion local durante onboarding y snapshots remotos iniciales.
+   2. hidratacion de perfil con campos opcionales/undefined sin normalizar.
+   3. test live no cubria correctamente el paso intermedio `/onboarding/completado`.
+
+Cambios aplicados:
+
+1. `src/components/CloudSyncManager.tsx`
+   1. snapshot stale ahora se ignora con `<=` (no `<`).
+   2. en initial pull se evita aplicar perfil remoto si el local tiene `updatedAt` mas nuevo.
+2. `src/pages/Onboarding.tsx`
+   1. paso datos personales persiste perfil completo en nube (`saveProfile`) y guarda draft en `sessionStorage`.
+   2. paso horarios construye `nextProfile` completo (`onboardingCompletado=true`) y lo persiste con `saveProfile`.
+   3. fallback de datos personales desde `location.state` o `sessionStorage` para evitar perdida por carreras.
+3. `src/services/firebaseService.ts`
+   1. se agrego normalizacion robusta de perfil al leer Firestore (`normalizeProfileData`).
+   2. defaults seguros para `usuario`, `horario`, `partners`, `routineSync`, `weeklyTracking`, `updatedAt`.
+4. `src/components/AuthProvider.tsx`
+   1. se mantiene fallback Spark de `onAcceptedLinkRequestsChange`.
+   2. cleanup stale solo sobre perfil propio (sin writes cross-user).
+5. `tests/onboarding-persistence-live.spec.ts`
+   1. nuevo flujo live robusto para onboarding con reload.
+   2. valida `onboardingCompletado=true` y datos personales persistidos (`nombre`, `edad`).
+
+Validacion ejecutada:
+
+1. `npx eslint src/pages/Onboarding.tsx src/components/CloudSyncManager.tsx src/components/AuthProvider.tsx src/services/firebaseService.ts`: OK (warnings legacy `any` en `firebaseService.ts`).
+2. `npm run build`: OK.
+3. `npx playwright test tests/onboarding-persistence-live.spec.ts --project=chromium --reporter=line` (preview local): PASS.
+4. `npx playwright test tests/live-auth-smoke.spec.ts --project=chromium --reporter=line` (preview local): PASS.
+5. `npx playwright test tests/firebaseService.regression.spec.ts --project=chromium --reporter=line`: 8/8 PASS.
+6. `npx playwright test tests/partner-unlink-symmetry-live.spec.ts --project=chromium --reporter=line` (preview local): PASS.
+
+Despliegue y verificacion en produccion:
+
+1. Deploy frontend: `vercel --prod --yes`.
+2. Alias activo: `https://gym.bypupila.com`.
+3. `npx playwright test tests/onboarding-persistence-live.spec.ts --project=chromium --reporter=line` (prod): PASS.
+4. `npx playwright test tests/live-auth-smoke.spec.ts --project=chromium --reporter=line` (prod): PASS.
+5. `npx playwright test tests/partner-unlink-symmetry-live.spec.ts --project=chromium --reporter=line` (prod): PASS.
+
+Decision de plataforma (evidencia tecnica):
+
+1. El bug principal corregido fue de sincronizacion/estado en cliente y contrato de serializacion, no limitacion estructural de Firebase.
+2. Cambiar a Supabase en este punto no es el camino de menor riesgo para resolver este incidente especifico.
+3. Si se evalua migracion, debe ser por roadmap (costos/SQL/realtime/policies), no como fix reactivo de este bug.
