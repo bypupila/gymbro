@@ -1358,6 +1358,8 @@ export const RoutineDetailPage: React.FC = () => {
     const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
     const [showExerciseSelector, setShowExerciseSelector] = useState(false);
     const [showRecalibrateModal, setShowRecalibrateModal] = useState(false);
+    const [newRoutineName, setNewRoutineName] = useState('');
+    const [newRoutineDuration, setNewRoutineDuration] = useState(8);
 
     const [isReorganizing, setIsReorganizing] = useState(false);
     const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
@@ -1479,6 +1481,27 @@ export const RoutineDetailPage: React.FC = () => {
         };
     }, [rutina]);
 
+    const handleCreateManualRoutine = () => {
+        const routineName = newRoutineName.trim();
+        if (!routineName) {
+            toast.error('Escribe un nombre para la rutina');
+            return;
+        }
+
+        const duration = Math.min(52, Math.max(1, Number(newRoutineDuration) || 8));
+        const nuevaRutina: RutinaUsuario = {
+            id: generateSafeId(),
+            nombre: routineName,
+            duracionSemanas: duration,
+            ejercicios: [],
+            fechaInicio: new Date().toISOString(),
+            analizadaPorIA: false,
+            isDefault: true,
+        };
+
+        void updateRoutine(nuevaRutina);
+    };
+
     if (!rutina) {
         return (
             <div style={styles.container}>
@@ -1489,14 +1512,51 @@ export const RoutineDetailPage: React.FC = () => {
                     <h1 style={styles.headerTitle}>MI RUTINA</h1>
                     <div style={{ width: 40 }} />
                 </div>
-                <div style={styles.emptyState}>
-                    <div style={styles.emptyIcon}><FileText size={28} /></div>
-                    <h2 style={styles.emptyTitle}>Sin rutina activa</h2>
-                    <p style={styles.emptyText}>Crea tu primera rutina para empezar a entrenar</p>
-                    <button style={styles.createButton} onClick={() => navigate('/')}>
-                        <Plus size={20} /> Crear Rutina
+                <Card style={styles.infoCard}>
+                    <div style={styles.emptyState}>
+                        <div style={styles.emptyIcon}><FileText size={28} /></div>
+                        <h2 style={styles.emptyTitle}>Sin rutina activa</h2>
+                        <p style={styles.emptyText}>Crea una rutina manual y luego edita ejercicios en este mismo panel.</p>
+                    </div>
+
+                    <div style={styles.formRow}>
+                        <div style={styles.formGroup}>
+                            <label style={styles.formLabel}>Nombre de la rutina</label>
+                            <input
+                                type="text"
+                                value={newRoutineName}
+                                onChange={(e) => setNewRoutineName(e.target.value)}
+                                style={styles.formInput}
+                                placeholder="Ej: Hipertrofia 8 semanas"
+                            />
+                        </div>
+                        <div style={{ ...styles.formGroup, minWidth: '140px' }}>
+                            <label style={styles.formLabel}>Duracion (semanas)</label>
+                            <input
+                                type="number"
+                                min={1}
+                                max={52}
+                                value={newRoutineDuration}
+                                onChange={(e) => setNewRoutineDuration(Math.max(1, Number(e.target.value) || 1))}
+                                style={styles.formInput}
+                            />
+                        </div>
+                    </div>
+
+                    <button style={styles.addExerciseSubmitBtn} onClick={handleCreateManualRoutine}>
+                        <Plus size={20} /> Comenzar a editar
                     </button>
-                </div>
+                    <button style={{ ...styles.selectFromDbBtn, marginTop: '10px' }} onClick={() => setShowRecalibrateModal(true)}>
+                        <Sparkles size={16} style={{ marginRight: '6px' }} />
+                        Crear con IA
+                    </button>
+                </Card>
+                {showRecalibrateModal && (
+                    <RoutineUpload
+                        onComplete={() => setShowRecalibrateModal(false)}
+                        onCancel={() => setShowRecalibrateModal(false)}
+                    />
+                )}
             </div>
         );
     }
@@ -1730,7 +1790,7 @@ export const RoutineDetailPage: React.FC = () => {
                 ))}
             </div>
 
-            {showWarning && (
+            {showWarning && rutina.ejercicios.length > 0 && (
                 <Card style={styles.warningBox}>
                     <AlertTriangle size={20} color={Colors.warning} />
                     <span style={styles.warningText}>
