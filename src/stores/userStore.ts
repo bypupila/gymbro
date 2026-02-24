@@ -226,6 +226,29 @@ export interface ActiveSession {
     liveSessionId?: string;
 }
 
+export interface PendingWorkoutSyncItem {
+    id: string;
+    ownerUserId: string;
+    targetUserId: string;
+    workout: EntrenamientoRealizado;
+    source: 'self' | 'partner';
+    createdAt: string;
+    attempts: number;
+    lastError?: string;
+}
+
+export interface WorkoutCompletionSummary {
+    workoutId: string;
+    routineName: string;
+    dayName: string;
+    finishedAt: string;
+    totalDurationMin: number;
+    totalExercises: number;
+    completedExercises: number;
+    totalSets: number;
+    completedSets: number;
+}
+
 interface UserStore {
     userId: string | null;
     perfil: PerfilCompleto;
@@ -234,12 +257,17 @@ interface UserStore {
     lastSyncError: string | null;
     linkRequests: LinkRequest[];
     pendingSave: boolean;
+    pendingWorkoutSync: PendingWorkoutSyncItem[];
+    lastCompletedWorkoutSummary: WorkoutCompletionSummary | null;
 
     setUserId: (id: string | null) => void;
     setIsSyncing: (status: boolean) => void;
     setLastSyncError: (error: string | null) => void;
     setLinkRequests: (requests: LinkRequest[]) => void;
     setPendingSave: (pending: boolean) => void;
+    enqueueWorkoutSync: (item: Omit<PendingWorkoutSyncItem, 'createdAt' | 'attempts'>) => void;
+    flushPendingWorkoutSync: () => Promise<void>;
+    clearCompletedWorkoutSummary: () => void;
     setDatosPersonales: (datos: Partial<DatosPersonales>) => void;
     setDatosPareja: (datos: DatosPersonales | null) => void;
     setHorario: (horario: HorarioSemanal) => void;
@@ -312,12 +340,63 @@ export const useUserStore = create<UserStore>()(
             lastSyncError: null,
             linkRequests: [],
             pendingSave: false,
+            pendingWorkoutSync: [],
+            lastCompletedWorkoutSummary: null,
 
             setUserId: (id) => set({ userId: id }),
             setIsSyncing: (status) => set({ isSyncing: status }),
             setLastSyncError: (error) => set({ lastSyncError: error }),
             setLinkRequests: (requests) => set({ linkRequests: requests }),
             setPendingSave: (pending) => set({ pendingSave: pending }),
+            enqueueWorkoutSync: (item) => set((state) => {
+                if (state.pendingWorkoutSync.some((queued) => queued.id === item.id)) {
+                    return state;
+                }
+                return {
+                    pendingWorkoutSync: [
+                        ...state.pendingWorkoutSync,
+                        {
+                            ...item,
+                            createdAt: new Date().toISOString(),
+                            attempts: 0,
+                        }
+                    ]
+                };
+            }),
+            flushPendingWorkoutSync: async () => {
+                const currentUserId = get().userId;
+                if (!currentUserId) return;
+                const initialQueue = [...get().pendingWorkoutSync];
+                if (initialQueue.length === 0) return;
+
+                for (const queued of initialQueue) {
+                    if (queued.ownerUserId !== currentUserId) continue;
+
+                    const stillQueued = get().pendingWorkoutSync.some((item) => item.id === queued.id);
+                    if (!stillQueued) continue;
+
+                    try {
+                        await firebaseService.addWorkout(queued.targetUserId, queued.workout);
+                        set((state) => ({
+                            pendingWorkoutSync: state.pendingWorkoutSync.filter((item) => item.id !== queued.id)
+                        }));
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown sync error';
+                        set((state) => ({
+                            pendingWorkoutSync: state.pendingWorkoutSync.map((item) =>
+                                item.id === queued.id
+                                    ? {
+                                        ...item,
+                                        attempts: item.attempts + 1,
+                                        lastError: errorMessage
+                                    }
+                                    : item
+                            )
+                        }));
+                    }
+                }
+            },
+            clearCompletedWorkoutSummary: () => set({ lastCompletedWorkoutSummary: null }),
             setPartnerId: (id) => set((state) => ({
                 perfil: {
                     ...state.perfil,
@@ -859,11 +938,12 @@ export const useUserStore = create<UserStore>()(
 
                 const { userId, perfil, activeSession } = state;
                 const { isDualSession, partnerExercises } = activeSession;
+                const finishedAt = new Date().toISOString();
 
                 // Helper to create a workout object from tracking data
                 const createWorkoutFromExercises = (trackedExercises: ExerciseTracking[]): EntrenamientoRealizado => ({
                     id: `${new Date().toISOString()}-${Math.random().toString(36).substr(2, 9)}`,
-                    fecha: new Date().toISOString(),
+                    fecha: finishedAt,
                     duracionMinutos: durationMinutos,
                     nombre: `${activeSession.dayName} - ${activeSession.routineName}`,
                     moodPre: activeSession.preWorkoutMood,
@@ -886,30 +966,38 @@ export const useUserStore = create<UserStore>()(
 
                 // Create workout for the main user
                 const userWorkout = createWorkoutFromExercises(activeSession.exercises);
-
-                // Save main user's workout
+                const pendingQueueItems: Omit<PendingWorkoutSyncItem, 'createdAt' | 'attempts'>[] = [];
                 if (userId) {
-                    try {
-                        await firebaseService.addWorkout(userId, userWorkout);
-                        set((s) => ({
-                            perfil: { ...s.perfil, historial: [userWorkout, ...s.perfil.historial] }
-                        }));
-                    } catch (e) {
-                        console.error("Failed to save user workout to cloud", e);
-                    }
+                    pendingQueueItems.push({
+                        id: `self-${userWorkout.id}`,
+                        ownerUserId: userId,
+                        targetUserId: userId,
+                        workout: userWorkout,
+                        source: 'self',
+                    });
                 }
 
                 // If it's a dual session, create and save partner's workout
                 const partnerTargetId = activeSession.selectedPartnerId || perfil.partnerId;
                 if (isDualSession && partnerExercises && partnerTargetId) {
                     const partnerWorkout = createWorkoutFromExercises(partnerExercises);
-                    try {
-                        // Note: We use addWorkoutToPartner, which just calls addWorkout with the partner's ID
-                        await firebaseService.addWorkoutToPartner(partnerTargetId, partnerWorkout);
-                    } catch (e) {
-                        console.error("Failed to save partner workout to cloud", e);
-                    }
+                    pendingQueueItems.push({
+                        id: `partner-${partnerTargetId}-${partnerWorkout.id}`,
+                        ownerUserId: userId || 'anonymous',
+                        targetUserId: partnerTargetId,
+                        workout: partnerWorkout,
+                        source: 'partner',
+                    });
                 }
+
+                const totalSets = activeSession.exercises.reduce((acc, exercise) => acc + exercise.sets.length, 0);
+                const completedSets = activeSession.exercises.reduce((acc, exercise) => {
+                    return acc + exercise.sets.filter((set) => set.completed || set.skipped).length;
+                }, 0);
+                const completedExercises = activeSession.exercises.filter((exercise) => {
+                    if (exercise.isCompleted) return true;
+                    return exercise.sets.every((set) => set.completed || set.skipped);
+                }).length;
 
                 // Final state update
                 set((s) => {
@@ -917,17 +1005,46 @@ export const useUserStore = create<UserStore>()(
                     // Use trackingDate if set (user chose a specific day), otherwise use today
                     const dateKey = activeSession.trackingDate || userWorkout.fecha.split('T')[0];
                     newTracking[dateKey] = 'completed';
+                    const nextPendingQueue = [...s.pendingWorkoutSync];
+                    for (const pendingItem of pendingQueueItems) {
+                        if (nextPendingQueue.some((queued) => queued.id === pendingItem.id)) continue;
+                        nextPendingQueue.push({
+                            ...pendingItem,
+                            createdAt: finishedAt,
+                            attempts: 0,
+                        });
+                    }
 
                     return {
                         perfil: {
                             ...s.perfil,
+                            historial: [userWorkout, ...s.perfil.historial],
                             weeklyTracking: newTracking,
+                        },
+                        pendingWorkoutSync: nextPendingQueue,
+                        lastCompletedWorkoutSummary: {
+                            workoutId: userWorkout.id,
+                            routineName: activeSession.routineName,
+                            dayName: activeSession.dayName,
+                            finishedAt,
+                            totalDurationMin: durationMinutos,
+                            totalExercises: activeSession.exercises.length,
+                            completedExercises,
+                            totalSets,
+                            completedSets,
                         },
                         activeSession: null
                     };
                 });
 
-                // Profile changes are synced by CloudSyncManager debounced auto-save.
+                if (activeSession.sessionMode === 'linked' && activeSession.liveSessionId) {
+                    void liveSessionService.completeSession(activeSession.liveSessionId).catch((error) => {
+                        console.error('Failed to mark live session as complete:', error);
+                    });
+                }
+
+                // Fire-and-forget cloud sync. Local history is already stored safely.
+                void get().flushPendingWorkoutSync();
             },
 
             setDayTracking: (dateStr, status) => {
@@ -972,7 +1089,10 @@ export const useUserStore = create<UserStore>()(
                         updatedAt: new Date().toISOString(),
                     },
                     linkSetupPendingPartnerId: null,
-                }
+                },
+                activeSession: null,
+                pendingWorkoutSync: [],
+                lastCompletedWorkoutSummary: null,
             }),
 
             logout: () => set({
@@ -998,7 +1118,9 @@ export const useUserStore = create<UserStore>()(
                     },
                     linkSetupPendingPartnerId: null,
                 },
-                activeSession: null
+                activeSession: null,
+                pendingWorkoutSync: [],
+                lastCompletedWorkoutSummary: null,
             }),
 
             deleteRoutineFromHistory: (index) => set((state) => {
@@ -1296,7 +1418,9 @@ export const useUserStore = create<UserStore>()(
             name: 'gymbro-user-auth',
             partialize: (state) => ({
                 userId: state.userId,
-                perfil: state.perfil
+                perfil: state.perfil,
+                pendingWorkoutSync: state.pendingWorkoutSync,
+                lastCompletedWorkoutSummary: state.lastCompletedWorkoutSummary,
             }),
         }
     )

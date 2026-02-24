@@ -270,6 +270,39 @@ export const liveSessionService = {
     },
 
     /**
+     * Listen to participant presence/join status.
+     * Used as a handshake fallback when invitation status updates lag.
+     */
+    onParticipantPresenceChange(
+        sessionId: string,
+        participantId: string,
+        callback: (presence: { joined: boolean; isOnline: boolean; participant: LiveSessionParticipant | null }) => void
+    ): () => void {
+        const participantRef = doc(db, 'liveSessions', sessionId, 'participants', participantId);
+        return onSnapshot(participantRef, (snapshot) => {
+            if (!snapshot.exists()) {
+                callback({ joined: false, isOnline: false, participant: null });
+                return;
+            }
+
+            const participant = snapshot.data() as LiveSessionParticipant;
+            callback({
+                joined: true,
+                isOnline: Boolean(participant.isOnline),
+                participant,
+            });
+        }, (error) => {
+            const firestoreError = error as { code?: string; message?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                debugLog('[liveSessionService.onParticipantPresenceChange] permission denied, ignored');
+                callback({ joined: false, isOnline: false, participant: null });
+                return;
+            }
+            console.error('[liveSessionService.onParticipantPresenceChange] listener error:', firestoreError?.message || error);
+        });
+    },
+
+    /**
      * Check if partner has an active session
      */
     async getPartnerActiveSession(_partnerId: string): Promise<string | null> {

@@ -12,6 +12,7 @@ import Loader from './components/Loader';
 import { AuthProvider } from './components/AuthProvider';
 import { TrainingInvitationNotifier } from './components/TrainingInvitationNotifier';
 import { RoutineRequestNotifier } from './components/RoutineRequestNotifier';
+import { WorkoutCompletionSummaryModal } from './components/WorkoutCompletionSummaryModal';
 
 // Lazy load pages
 const BodyStatusPage = lazy(() => import('./pages/BodyStatusPage').then(module => ({ default: module.BodyStatusPage })));
@@ -90,6 +91,7 @@ function App() {
                 <CloudSyncManager />
                 <TrainingInvitationNotifier />
                 <RoutineRequestNotifier />
+                <WorkoutCompletionSummaryModal />
                 <Suspense fallback={<Loader />}>
                     <Routes>
                         {/* Onboarding Routes - Full screen experience */}

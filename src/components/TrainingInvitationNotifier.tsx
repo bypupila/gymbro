@@ -53,7 +53,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
 
             const liveSessionId = invitation.liveSessionId;
             if (!liveSessionId) {
-                toast.error('La sesion aun no esta lista. Intenta de nuevo en unos segundos.');
+                toast.error('La sesion aun no esta lista. Intenta de nuevo en unos segundos.', { id: 'invite-session-not-ready', duration: 3000 });
                 return;
             }
             const routineExercises = (invitation.exercises || []).map((ex: InvitationExercisePayload) => ({
@@ -119,11 +119,11 @@ export const TrainingInvitationNotifier: React.FC = () => {
             );
 
             navigate('/train');
-            toast.success(`Invitacion aceptada! ${invitation.fromName} y tu van a entrenar`);
+            toast.success(`Invitacion aceptada! ${invitation.fromName} y tu van a entrenar`, { id: 'invite-accepted', duration: 3000 });
             setInvitations(prev => prev.filter(i => i.id !== invitation.id));
         } catch (error) {
             console.error('Error accepting invitation:', error);
-            toast.error('No se pudo aceptar. Revisa conexion y vuelve a intentar.');
+            toast.error('No se pudo aceptar. Revisa conexion y vuelve a intentar.', { id: 'invite-accept-error', duration: 3000 });
         }
     };
 
@@ -132,7 +132,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
 
         const liveSessionId = invitation.liveSessionId;
         if (!liveSessionId) {
-            toast.error('La sesion aun no esta disponible para unirse.');
+            toast.error('La sesion aun no esta disponible para unirse.', { id: 'invite-live-not-ready', duration: 3000 });
             return;
         }
         const routineExercises = (invitation.exercises || []).map((ex: InvitationExercisePayload) => ({
@@ -194,7 +194,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
         );
 
         navigate('/train');
-        toast.success(`Invitacion aceptada! ${invitation.fromName} y tu van a entrenar`);
+        toast.success(`Invitacion aceptada! ${invitation.fromName} y tu van a entrenar`, { id: 'invite-accepted', duration: 3000 });
     }, [navigate, startSession, userId]);
 
     useEffect(() => {
@@ -253,7 +253,7 @@ export const TrainingInvitationNotifier: React.FC = () => {
             setInvitations(prev => prev.filter(i => i.id !== invitation.id));
         } catch (error) {
             console.error('Error declining invitation:', error);
-            toast.error('No se pudo rechazar la invitacion.');
+            toast.error('No se pudo rechazar la invitacion.', { id: 'invite-decline-error', duration: 3000 });
         }
     };
 

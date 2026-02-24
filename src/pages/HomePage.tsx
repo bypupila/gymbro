@@ -6,7 +6,7 @@ import { RoutineUpload } from '@/components/RoutineUpload';
 import { useUserStore, EjercicioRutina, PartnerInfo } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import { Play, Plus, FileText, Zap, Battery, BatteryLow, BatteryMedium, BatteryFull, Flame, ChevronLeft, Calendar } from 'lucide-react';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActiveWorkout } from '@/components/ActiveWorkout';
 import { SyncStatus } from '@/components/SyncStatus';
@@ -52,9 +52,11 @@ export const HomePage: React.FC = () => {
     const [tempMood, setTempMood] = useState<number | undefined>(undefined);
     const [selectedPartner, setSelectedPartner] = useState<PartnerInfo | null>(null);
     const [pendingInvitationId, setPendingInvitationId] = useState<string | null>(null);
+    const [pendingLiveSessionId, setPendingLiveSessionId] = useState<string | null>(null);
     const [isWaitingForAccept, setIsWaitingForAccept] = useState(false);
     const userId = useUserStore((state) => state.userId);
     const [authUid, setAuthUid] = useState<string | null>(() => authService.getCurrentUser()?.uid ?? null);
+    const linkedSessionStartedRef = useRef(false);
 
     // Day picker state
     const [showDayPickerModal, setShowDayPickerModal] = useState(false);
@@ -92,24 +94,7 @@ export const HomePage: React.FC = () => {
     const dayNamesShort = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
     const dayNamesFull = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
 
-    const cancelPendingInvitation = useCallback(async () => {
-        if (pendingInvitationId) {
-            try {
-                const pendingInvitation = await trainingInvitationService.getInvitationById(pendingInvitationId);
-                if (pendingInvitation?.liveSessionId) {
-                    await liveSessionService.cancelSession(pendingInvitation.liveSessionId);
-                }
-                await trainingInvitationService.cancelInvitation(pendingInvitationId);
-            } catch {
-                // Ignore cleanup errors
-            }
-        }
-        setIsWaitingForAccept(false);
-        setPendingInvitationId(null);
-    }, [pendingInvitationId, setIsWaitingForAccept, setPendingInvitationId]);
-
-    const resetModeModal = useCallback(() => {
-        void cancelPendingInvitation();
+    const closeModeModal = useCallback(() => {
         setShowModeModal(false);
         setTempSessionData(null);
         setTempMood(undefined);
@@ -117,7 +102,63 @@ export const HomePage: React.FC = () => {
         setSelectedTrackingDate(undefined);
         setModeStep('choose');
         setIsWaitingForAccept(false);
-    }, [cancelPendingInvitation, setShowModeModal, setTempSessionData, setTempMood, setSelectedPartner, setSelectedTrackingDate, setModeStep, setIsWaitingForAccept]);
+        setPendingInvitationId(null);
+        setPendingLiveSessionId(null);
+        linkedSessionStartedRef.current = false;
+    }, [setShowModeModal, setTempSessionData, setTempMood, setSelectedPartner, setSelectedTrackingDate, setModeStep, setIsWaitingForAccept]);
+
+    const cancelPendingInvitation = useCallback(async (options?: { closeModal?: boolean }) => {
+        if (pendingInvitationId) {
+            try {
+                const pendingInvitation = await trainingInvitationService.getInvitationById(pendingInvitationId);
+                const invitationStatus = pendingInvitation?.status;
+                const liveSessionId = pendingInvitation?.liveSessionId || pendingLiveSessionId;
+
+                if (liveSessionId && invitationStatus !== 'accepted') {
+                    await liveSessionService.cancelSession(liveSessionId);
+                }
+
+                if (!invitationStatus || invitationStatus === 'pending') {
+                    await trainingInvitationService.cancelInvitation(pendingInvitationId);
+                }
+            } catch {
+                // Ignore cleanup errors
+            }
+        }
+
+        setIsWaitingForAccept(false);
+        setPendingInvitationId(null);
+        setPendingLiveSessionId(null);
+        linkedSessionStartedRef.current = false;
+
+        if (options?.closeModal) {
+            closeModeModal();
+        }
+    }, [closeModeModal, pendingInvitationId, pendingLiveSessionId]);
+
+    const startLinkedSessionFromHandshake = useCallback((liveSessionId: string) => {
+        if (linkedSessionStartedRef.current) return;
+        if (!tempSessionData || tempMood === undefined || !selectedPartner) return;
+
+        linkedSessionStartedRef.current = true;
+        startSession(
+            tempSessionData.day,
+            tempSessionData.exercises,
+            tempSessionData.name,
+            'linked',
+            tempMood,
+            undefined,
+            undefined,
+            selectedPartner,
+            selectedTrackingDate,
+            liveSessionId
+        );
+        toast.success(`${selectedPartner.nombre} listo! Entrenamiento iniciado`, {
+            id: 'linked-session-started',
+            duration: 3000
+        });
+        closeModeModal();
+    }, [closeModeModal, selectedPartner, selectedTrackingDate, startSession, tempMood, tempSessionData]);
 
     const handleInitiateSession = (day: string, exercises: EjercicioRutina[], name: string) => {
         setTempSessionData({ day, exercises, name });
@@ -151,7 +192,7 @@ export const HomePage: React.FC = () => {
     const handleSoloMode = () => {
         if (tempSessionData && tempMood !== undefined) {
             startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, 'solo', tempMood, undefined, undefined, undefined, selectedTrackingDate);
-            resetModeModal();
+            closeModeModal();
         }
     };
 
@@ -167,7 +208,7 @@ export const HomePage: React.FC = () => {
         if (mode === 'shared') {
             // Shared mode: start immediately, both on same device
             startSession(tempSessionData.day, tempSessionData.exercises, tempSessionData.name, mode, tempMood, undefined, undefined, selectedPartner, selectedTrackingDate);
-            resetModeModal();
+            closeModeModal();
         } else {
             // Linked mode: send invitation and wait for acceptance
             try {
@@ -175,6 +216,7 @@ export const HomePage: React.FC = () => {
                 if (!userId) return;
                 const liveSessionId = `session_${Date.now()}_${userId}`;
                 preparedLiveSessionId = liveSessionId;
+                linkedSessionStartedRef.current = false;
 
                 await liveSessionService.createLiveSession(
                     userId,
@@ -218,14 +260,16 @@ export const HomePage: React.FC = () => {
                     }
                 );
                 setPendingInvitationId(invitationId);
+                setPendingLiveSessionId(liveSessionId);
                 setIsWaitingForAccept(true);
                 setModeStep('selectMode'); // stay on same step but show waiting state
             } catch (error) {
                 console.error('Error sending invitation:', error);
-                toast.error('No se pudo enviar la invitacion');
+                toast.error('No se pudo enviar la invitacion', { id: 'invite-send-error', duration: 3000 });
                 if (preparedLiveSessionId) {
                     void liveSessionService.cancelSession(preparedLiveSessionId).catch(() => undefined);
                 }
+                setPendingLiveSessionId(null);
             }
         }
     };
@@ -241,47 +285,57 @@ export const HomePage: React.FC = () => {
             (invitation) => {
                 if (!invitation) return;
 
-                if (invitation.status === 'accepted') {
-                    // Partner accepted! Start the session
-                    if (tempSessionData && tempMood !== undefined && selectedPartner) {
-                        const { userId } = useUserStore.getState();
-                        const liveSessionId = invitation.liveSessionId || `session_${Date.now()}_${userId}`;
+                if (invitation.liveSessionId) {
+                    setPendingLiveSessionId(invitation.liveSessionId);
+                }
 
-                        startSession(
-                            tempSessionData.day,
-                            tempSessionData.exercises,
-                            tempSessionData.name,
-                            'linked',
-                            tempMood,
-                            undefined,
-                            undefined,
-                            selectedPartner,
-                            selectedTrackingDate,
-                            liveSessionId
-                        );
-                        toast.success(`${selectedPartner.nombre} acepto! Entrenamiento iniciado`);
+                if (invitation.status === 'accepted') {
+                    const fallbackSessionId = pendingLiveSessionId || invitation.liveSessionId;
+                    if (fallbackSessionId) {
+                        startLinkedSessionFromHandshake(fallbackSessionId);
                     }
-                    resetModeModal();
                 } else if (invitation.status === 'declined') {
                     if (invitation.liveSessionId) {
                         void liveSessionService.cancelSession(invitation.liveSessionId).catch(() => undefined);
                     }
-                    toast.error(`${selectedPartner?.nombre || 'Partner'} rechazo la invitacion`);
+                    toast.error(`${selectedPartner?.nombre || 'Partner'} rechazo la invitacion`, {
+                        id: 'invite-declined',
+                        duration: 3000
+                    });
                     setIsWaitingForAccept(false);
                     setPendingInvitationId(null);
+                    setPendingLiveSessionId(null);
                 } else if (invitation.status === 'expired') {
                     if (invitation.liveSessionId) {
                         void liveSessionService.cancelSession(invitation.liveSessionId).catch(() => undefined);
                     }
-                    toast.error('La invitacion expiro');
+                    toast.error('La invitacion expiro', { id: 'invite-expired', duration: 3000 });
                     setIsWaitingForAccept(false);
                     setPendingInvitationId(null);
+                    setPendingLiveSessionId(null);
                 }
             }
         );
 
         return () => unsubscribe();
-    }, [authUid, pendingInvitationId, isWaitingForAccept, resetModeModal, selectedPartner, selectedTrackingDate, startSession, tempMood, tempSessionData, userId]);
+    }, [authUid, isWaitingForAccept, pendingInvitationId, pendingLiveSessionId, selectedPartner, startLinkedSessionFromHandshake, userId]);
+
+    // Fallback handshake: if partner participant doc appears in live session, start immediately
+    useEffect(() => {
+        if (!isWaitingForAccept || !pendingLiveSessionId || !selectedPartner) return;
+        if (!userId || authUid !== userId) return;
+
+        const unsubscribePresence = liveSessionService.onParticipantPresenceChange(
+            pendingLiveSessionId,
+            selectedPartner.id,
+            (presence) => {
+                if (!presence.joined) return;
+                startLinkedSessionFromHandshake(pendingLiveSessionId);
+            }
+        );
+
+        return () => unsubscribePresence();
+    }, [authUid, isWaitingForAccept, pendingLiveSessionId, selectedPartner, startLinkedSessionFromHandshake, userId]);
 
     const nombreUsuario = perfil.usuario.nombre || 'Daniel';
     const fechaHoyRaw = new Date().toLocaleDateString('es-ES', {
@@ -737,7 +791,16 @@ export const HomePage: React.FC = () => {
                             </>
                         )}
 
-                        <button style={styles.cancelLink} onClick={resetModeModal}>
+                        <button
+                            style={styles.cancelLink}
+                            onClick={() => {
+                                if (isWaitingForAccept) {
+                                    void cancelPendingInvitation({ closeModal: true });
+                                    return;
+                                }
+                                closeModeModal();
+                            }}
+                        >
                             Cancelar
                         </button>
                     </div>

@@ -1,4 +1,4 @@
-
+﻿
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
@@ -34,6 +34,8 @@ export const CloudSyncManager: React.FC = () => {
     const setIsSyncing = useUserStore((state) => state.setIsSyncing);
     const setLastSyncError = useUserStore((state) => state.setLastSyncError);
     const setLinkSetupPendingPartnerId = useUserStore((state) => state.setLinkSetupPendingPartnerId);
+    const pendingWorkoutSync = useUserStore((state) => state.pendingWorkoutSync);
+    const flushPendingWorkoutSync = useUserStore((state) => state.flushPendingWorkoutSync);
     const isSyncing = useUserStore((state) => state.isSyncing);
     const lastSyncError = useUserStore((state) => state.lastSyncError);
     const pendingSave = useUserStore((state) => state.pendingSave);
@@ -52,6 +54,7 @@ export const CloudSyncManager: React.FC = () => {
     // State for routine copy modal
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
+    const pendingWorkoutSyncCount = pendingWorkoutSync.filter((item) => item.ownerUserId === userId).length;
 
     useEffect(() => {
         return authService.onAuthChange((user) => {
@@ -344,10 +347,31 @@ export const CloudSyncManager: React.FC = () => {
 
     }, [perfil.activePartnerId, perfil.partnerId, perfil.linkSetupPendingPartnerId]);
 
+    // Background sync for pending workout history writes (local-first queue).
+    useEffect(() => {
+        if (!userId || authUid !== userId) return;
+        if (pendingWorkoutSyncCount === 0) return;
+
+        void flushPendingWorkoutSync();
+
+        const onOnline = () => {
+            void flushPendingWorkoutSync();
+        };
+        const interval = setInterval(() => {
+            void flushPendingWorkoutSync();
+        }, 30000);
+
+        window.addEventListener('online', onOnline);
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('online', onOnline);
+        };
+    }, [authUid, flushPendingWorkoutSync, pendingWorkoutSyncCount, userId]);
+
     return (
         <>
             {/* Save status indicator */}
-            {(isSyncing || pendingSave || lastSyncError) && (
+            {(isSyncing || pendingSave || lastSyncError || pendingWorkoutSyncCount > 0) && (
                 <div style={{
                     position: 'fixed',
                     top: '10px',
@@ -357,17 +381,26 @@ export const CloudSyncManager: React.FC = () => {
                     fontSize: '12px',
                     fontWeight: 600,
                     zIndex: 9999,
-                    background: lastSyncError ? '#ff3b30' : (isSyncing || pendingSave) ? '#ff9500' : '#34c759',
+                    background: lastSyncError
+                        ? '#ff3b30'
+                        : (isSyncing || pendingSave || pendingWorkoutSyncCount > 0)
+                            ? '#ff9500'
+                            : '#34c759',
                     color: '#fff',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
                 }}>
-                    {isSyncing || pendingSave ? '⏳ Guardando...' : lastSyncError ? '❌ Error al guardar' : '✓ Guardado'}
+                    {pendingWorkoutSyncCount > 0
+                        ? `⏳ Sincronizando entrenos (${pendingWorkoutSyncCount})`
+                        : isSyncing || pendingSave
+                            ? '⏳ Guardando...'
+                            : lastSyncError
+                                ? '❌ Error al guardar'
+                                : '✓ Guardado'}
                 </div>
             )}
-
             {showRoutineCopyModal && partnerDetails && (
                 <RoutineCopyModal
                     partnerId={partnerDetails.id}
@@ -395,4 +428,5 @@ export const CloudSyncManager: React.FC = () => {
         </>
     );
 };
+
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useUserStore, ExerciseTracking, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MoodCheckin } from './MoodCheckin';
 import { toast } from 'react-hot-toast';
 import { liveSessionService } from '@/services/liveSessionService';
+import { timerAlertService } from '@/services/timerAlertService';
 import { useRenderMetric } from '@/utils/renderMetrics';
 
 interface ActiveWorkoutProps {
@@ -58,14 +59,17 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedExercises, setExpandedExercises] = useState<string[]>([]);
     const [showPartnerWidget, setShowPartnerWidget] = useState(false); // New: for linked mode
+    const [showPartnerDetailsPanel, setShowPartnerDetailsPanel] = useState(false);
     const [partnerExercises, setPartnerExercises] = useState<ExerciseTracking[] | null>(null); // New: partner's real-time exercises
     const [partnerCurrentExercise, setPartnerCurrentExercise] = useState<string | null>(null); // New: partner's current exercise
     const [guidedMode, setGuidedMode] = useState<{
         active: boolean;
         exerciseId: string | null;
         setIndex: number;
-        phase: 'work' | 'rest';
-    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
+        phase: 'preview' | 'work' | 'rest';
+    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+    const previousTimerRef = useRef<number>(0);
+    const restTransitionLockRef = useRef(false);
 
     // Add Exercise Flow State
     const [selectedExerciseForAdd, setSelectedExerciseForAdd] = useState<EjercicioBase | null>(null);
@@ -142,6 +146,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return () => {
             unsubscribePartner();
             setShowPartnerWidget(false);
+            setShowPartnerDetailsPanel(false);
             void liveSessionService.setParticipantOnlineStatus(activeSession.liveSessionId!, userId, false).catch(() => undefined);
         };
     }, [activeSession]);
@@ -207,78 +212,44 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return false;
     };
 
+    const getGuidedWorkSeconds = (exercise: ExerciseTracking, setIndex: number): number => {
+        const targetSet = exercise.sets[setIndex];
+        if (targetSet && typeof targetSet.duration === 'number' && targetSet.duration > 0) {
+            return targetSet.duration;
+        }
+        return parseTimeSeconds(exercise.targetReps);
+    };
+
     // Handle exercise authorization
-    const handleStartExercise = (exerciseId: string, reps: string) => {
+    const handleStartExercise = (exerciseId: string) => {
         const exercise = activeSession?.exercises.find(e => e.id === exerciseId);
         if (!exercise) return;
 
-        // Priority for initial time: 1. Manual set duration, 2. Global target time
-        let initialSeconds = 0;
-        const firstSet = exercise.sets[0];
-
-        if (firstSet && typeof firstSet.duration === 'number' && firstSet.duration > 0) {
-            initialSeconds = firstSet.duration;
-        } else {
-            initialSeconds = parseTimeSeconds(reps);
-        }
-
-        // Guided Mode for Warmup
-        if (exercise.categoria === 'calentamiento') {
-            setGuidedMode({
-                active: true,
-                exerciseId: exerciseId,
-                setIndex: 0,
-                phase: 'work'
-            });
-
-            setTimerSeconds(initialSeconds);
-            // Only start timer if it's actually time-based
-            setIsTimerRunning(isTimeBased(reps) || initialSeconds > 0);
-            return;
-        }
-
         setActiveExerciseId(exerciseId);
         setCurrentSetIndex(0);
-
-        // For main routine, start a stopwatch (count up from 0) to record time taken
-        setTimerSeconds(0);
+        setGuidedMode({
+            active: true,
+            exerciseId,
+            setIndex: 0,
+            phase: 'preview'
+        });
+        setTimerSeconds(getGuidedWorkSeconds(exercise, 0));
         setIsTimerRunning(false);
-
-        toast.success(`Entrenamiento iniciado`, { duration: 3000 });
+        toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
 
     const handleDiscardClick = (exerciseId: string) => {
-        toast((t) => (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Omitir ejercicio?</span>
-                <span style={{ fontSize: '12px', color: '#aaa', marginTop: '-8px' }}>No contará para el progreso de hoy.</span>
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                    <button
-                        onClick={() => toast.dismiss(t.id)}
-                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={() => {
-                            skipExercise(exerciseId, false);
-                            setIsTimerRunning(false);
-                            setTimerSeconds(0);
-                            toast.dismiss(t.id);
-                            toast.success('Ejercicio omitido', { duration: 3000 });
+        const shouldDiscard = window.confirm('Omitir ejercicio? No contara para el progreso de hoy.');
+        if (!shouldDiscard) return;
 
-                            // If in guided mode and skipping current exercise, advance
-                            if (guidedMode.active && guidedMode.exerciseId === exerciseId) {
-                                handleGuidedNext();
-                            }
-                        }}
-                        style={{ background: Colors.primary, border: 'none', color: '#000', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
-                    >
-                        Omitir
-                    </button>
-                </div>
-            </div>
-        ), { duration: 5000 });
+        skipExercise(exerciseId, false);
+        setIsTimerRunning(false);
+        setTimerSeconds(0);
+        toast.success('Ejercicio omitido', { id: 'exercise-skipped', duration: 3000 });
+
+        if (guidedMode.active && guidedMode.exerciseId === exerciseId) {
+            handleGuidedNext();
+        }
     };
 
     const handleVariantClick = (exerciseId: string) => {
@@ -307,12 +278,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         }
 
         setTimerSeconds(seconds);
-        // Restrict timer to warm-up category only
+        setIsTimerRunning(exercise.categoria === 'calentamiento');
         if (exercise.categoria === 'calentamiento') {
-            setIsTimerRunning(true);
-            toast.success(`Serie ${setIndex + 1} iniciada`, { duration: 3000 });
-        } else {
-            setIsTimerRunning(false);
+            toast.success(`Serie ${setIndex + 1} iniciada`, { id: 'set-started', duration: 3000 });
         }
     };
 
@@ -361,125 +329,106 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const handleGuidedNext = () => {
         if (!guidedMode.active || !guidedMode.exerciseId) return;
 
-        const exercise = activeSession?.exercises.find(e => e.id === guidedMode.exerciseId);
+        const exercise = activeSession?.exercises.find((e) => e.id === guidedMode.exerciseId);
         if (!exercise) return;
 
+        const endGuidedExercise = () => {
+            markExerciseAsCompleted(exercise.id, false);
+            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+            setIsTimerRunning(false);
+            setTimerSeconds(0);
+            setActiveExerciseId(null);
+            restTransitionLockRef.current = false;
+            toast.success('Ejercicio finalizado', { id: 'exercise-finished', duration: 3000 });
+        };
+
+        if (guidedMode.phase === 'preview') {
+            setGuidedMode((prev) => ({ ...prev, phase: 'work' }));
+            setCurrentSetIndex(guidedMode.setIndex);
+            setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
+            setIsTimerRunning(false);
+            return;
+        }
+
         if (guidedMode.phase === 'work') {
-            // Finish Set
             updateSet(guidedMode.exerciseId, guidedMode.setIndex, { completed: true });
 
-            // Go to Rest
-            setGuidedMode(prev => ({ ...prev, phase: 'rest' }));
-            // Default rest 30s or exercise config
-            setTimerSeconds(exercise.sets[0].rest || 30);
-            setIsTimerRunning(true);
-        } else {
-            // Finish Rest -> Next Logic
-
-            // Check if it's Warmup (Circuit Mode)
-            if (exercise.categoria === 'calentamiento') {
-                const warmups = activeSession?.exercises.filter(ex => ex.categoria === 'calentamiento') || [];
-
-
-                // Try to find next warmup exercise with unfinished sets
-                // Circuit: Go to next exercise, then loop back
-
-
-                // Simple Round-Robin for Circuit:
-                // next exercise in list, same set index? OR check if current has more sets?
-                // Requirement: "Hace una serie de un ejercicio y luego salta al otro"
-
-                // Let's implement: Next Exercise, Same Set Number (if exists), otherwise Loop back
-                // Actually simpler: iterate through warmups, find first one that has an uncompleted set?
-                // Or sticky to the "Circuit" definition: Ex 1 Set 1 -> Ex 2 Set 1 -> Ex 1 Set 2...
-
-
-
-
-                // Check if potential next exercise has this set index available and uncompleted
-                // If we are at Set 0 of Ex 1, go to Set 0 of Ex 2.
-                // If Ex 2 only has 1 set and we are looking for Set 1 (2nd set), we might need to skip it?
-
-                // Let's keep it robust: Find the very next uncompleted set in the warmup group,
-                // prioritizing "next exercise" over "next set of same exercise".
-
-                // Strategy: flatten all warmup sets into a list: [{exId, setIdx}, ...] order by Set # then Ex #
-                const allWarmupSets: { exId: string, setIdx: number }[] = [];
-                const maxSets = Math.max(...warmups.map(w => w.sets.length));
-
-                for (let s = 0; s < maxSets; s++) {
-                    for (let w = 0; w < warmups.length; w++) {
-                        if (s < warmups[w].sets.length && !warmups[w].sets[s].completed) {
-                            allWarmupSets.push({ exId: warmups[w].id, setIdx: s });
-                        }
-                    }
-                }
-
-                const nextStep = allWarmupSets.find(step => !(step.exId === exercise.id && step.setIdx === guidedMode.setIndex));
-
-                if (nextStep) {
-                    setGuidedMode({
-                        active: true,
-                        exerciseId: nextStep.exId,
-                        setIndex: nextStep.setIdx,
-                        phase: 'work'
-                    });
-                    const nextExObj = warmups.find(w => w.id === nextStep.exId);
-                    const nextSet = nextExObj?.sets[nextStep.setIdx];
-                    const nextSetReps = nextExObj?.targetReps || '';
-
-                    if (nextSet && typeof nextSet.duration === 'number' && nextSet.duration > 0) {
-                        setTimerSeconds(nextSet.duration);
-                        setIsTimerRunning(true);
-                    } else if (isTimeBased(nextSetReps)) {
-                        setTimerSeconds(parseTimeSeconds(nextSetReps));
-                        setIsTimerRunning(true);
-                    } else {
-                        setTimerSeconds(0);
-                        setIsTimerRunning(false); // Reps -> No stopwatch
-                    }
-                } else {
-                    // All warmups done
-                    setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
-                    setIsTimerRunning(false);
-                    setTimerSeconds(0);
-                    toast.success("¡Calentamiento terminado!", { duration: 3000 });
-                }
-
-            } else {
-                // Normal Routine (Straight Sets)
-                const nextSetIndex = guidedMode.setIndex + 1;
-                if (nextSetIndex >= exercise.sets.length) {
-                    // Exercise Complete
-                    setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
-                    setIsTimerRunning(false);
-                    setTimerSeconds(0);
-                } else {
-                    // Next Set
-                    setGuidedMode(prev => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
-                    const nextSet = exercise.sets[nextSetIndex];
-                    let seconds = 0;
-
-                    if (nextSet && typeof nextSet.duration === 'number' && nextSet.duration > 0) {
-                        seconds = nextSet.duration;
-                        setTimerSeconds(seconds);
-                        setIsTimerRunning(true);
-                    } else {
-                        const nextSetReps = exercise.targetReps;
-                        const isTime = isTimeBased(nextSetReps);
-                        seconds = isTime ? parseTimeSeconds(nextSetReps) : 0;
-
-                        setTimerSeconds(seconds);
-                        setIsTimerRunning(isTime);
-                    }
-
-                    setTimerSeconds(seconds);
-                    setIsTimerRunning(true);
-                }
+            const isLastSet = guidedMode.setIndex >= exercise.sets.length - 1;
+            if (isLastSet) {
+                endGuidedExercise();
+                return;
             }
+
+            const restSeconds = exercise.sets[guidedMode.setIndex]?.rest || 30;
+            setGuidedMode((prev) => ({ ...prev, phase: 'rest' }));
+            setTimerSeconds(restSeconds);
+            setIsTimerRunning(true);
+            toast.success('Descanso iniciado', { id: 'rest-started', duration: 3000 });
+            return;
         }
+
+        const nextSetIndex = guidedMode.setIndex + 1;
+        if (nextSetIndex >= exercise.sets.length) {
+            endGuidedExercise();
+            return;
+        }
+
+        setGuidedMode((prev) => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
+        setCurrentSetIndex(nextSetIndex);
+        setTimerSeconds(getGuidedWorkSeconds(exercise, nextSetIndex));
+        setIsTimerRunning(exercise.categoria !== 'calentamiento' || getGuidedWorkSeconds(exercise, nextSetIndex) > 0);
+        restTransitionLockRef.current = false;
     };
 
+    // Keep the screen awake while a timer is active.
+    useEffect(() => {
+        if (isTimerRunning) {
+            void timerAlertService.acquireWakeLock();
+            return;
+        }
+        timerAlertService.releaseWakeLock();
+    }, [isTimerRunning]);
+
+    useEffect(() => {
+        return () => {
+            timerAlertService.releaseWakeLock();
+        };
+    }, []);
+
+    // Multimodal alert when timer reaches zero.
+    useEffect(() => {
+        const previous = previousTimerRef.current;
+        const crossedZero = isTimerRunning && previous > 0 && timerSeconds <= 0;
+        previousTimerRef.current = timerSeconds;
+
+        if (!crossedZero) return;
+
+        const isRestPhase = guidedMode.active && guidedMode.phase === 'rest';
+        void timerAlertService.triggerTimerFinished({
+            title: isRestPhase ? 'Descanso terminado' : 'Tiempo finalizado',
+            body: isRestPhase
+                ? 'Sigue con la siguiente serie.'
+                : 'Completa la serie cuando estes listo.',
+        });
+
+        if (!isRestPhase) {
+            setIsTimerRunning(false);
+        }
+    }, [guidedMode.active, guidedMode.phase, isTimerRunning, timerSeconds]);
+
+    // Rest phases move forward automatically when timer ends.
+    useEffect(() => {
+        if (!guidedMode.active || guidedMode.phase !== 'rest') {
+            restTransitionLockRef.current = false;
+            return;
+        }
+        if (!isTimerRunning || timerSeconds > 0 || restTransitionLockRef.current) return;
+
+        restTransitionLockRef.current = true;
+        handleGuidedNext();
+        // handleGuidedNext is intentionally not a dependency to avoid effect churn while the rest timer ticks.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [guidedMode.active, guidedMode.phase, isTimerRunning, timerSeconds]);
 
 
     const totalSets = useMemo(() => {
@@ -513,30 +462,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             <div style={styles.header}>
                 <button
                     onClick={() => {
-                        toast((t) => (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Cancelar entrenamiento actual?</span>
-                                <span style={{ fontSize: '12px', color: '#aaa', marginTop: '-8px' }}>No se guardará el progreso.</span>
-                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                    <button
-                                        onClick={() => toast.dismiss(t.id)}
-                                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
-                                    >
-                                        Seguir
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            cancelSession();
-                                            onCancel();
-                                            toast.dismiss(t.id);
-                                        }}
-                                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
-                                    >
-                                        Cancelar
-                                    </button>
-                                </div>
-                            </div>
-                        ), { duration: 5000 });
+                        const shouldCancel = window.confirm('Cancelar entrenamiento actual? No se guardara el progreso.');
+                        if (!shouldCancel) return;
+                        cancelSession();
+                        onCancel();
                     }}
                     style={styles.iconBtn}
                 >
@@ -609,7 +538,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     <span style={styles.sectionEmoji}>RP</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
-                        <p style={styles.sectionSubtitle}>Dale al botón Play para comenzar cada ejercicio</p>
+                        <p style={styles.sectionSubtitle}>Dale al botÃ³n Play para comenzar cada ejercicio</p>
                     </div>
                 </div>
                 {activeSession.exercises
@@ -781,7 +710,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         >
                             <div style={styles.modalHeader}>
                                 <h3 style={styles.modalTitle}>
-                                    {completionType === 'extra' ? 'Actividad Extra' : '¡Entrenamiento Terminado!'}
+                                    {completionType === 'extra' ? 'Actividad Extra' : 'Â¡Entrenamiento Terminado!'}
                                 </h3>
                                 <button
                                     onClick={() => {
@@ -834,7 +763,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         <div>
                                             <label style={styles.inputLabel}>Tipo de Actividad</label>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-                                                {(perfil.catalogoExtras?.length ? perfil.catalogoExtras : ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo']).map((type) => (
+                                                {(perfil.catalogoExtras?.length ? perfil.catalogoExtras : ['Running', 'Ciclismo', 'NataciÃ³n', 'FÃºtbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo']).map((type) => (
                                                     <button
                                                         key={type}
                                                         onClick={() => setExtraActivityType(type)}
@@ -907,7 +836,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         {/* Stats */}
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <div>
-                                                <label style={styles.inputLabel}>Duración (min)</label>
+                                                <label style={styles.inputLabel}>DuraciÃ³n (min)</label>
                                                 <input
                                                     type="number"
                                                     value={extraActivityDuration}
@@ -1007,167 +936,210 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
             {/* Guided Mode Overlay */}
             <AnimatePresence>
-                {guidedMode.active && (
-                    <div style={styles.modalOverlay}>
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            style={styles.guidedContainer}
-                        >
-                            <div style={{ textAlign: 'center', marginBottom: '24px', position: 'relative' }}>
-                                {/* Header Actions for Guided Mode */}
-                                <div style={{
-                                    position: 'absolute',
-                                    right: 0,
-                                    top: -10,
-                                    display: 'flex',
-                                    gap: '8px',
-                                    zIndex: 10
-                                }}>
-                                    <button
-                                        onClick={() => guidedMode.exerciseId && handleVariantClick(guidedMode.exerciseId)}
-                                        style={styles.iconBtn}
-                                    >
-                                        <Shuffle size={20} color={Colors.textSecondary} />
-                                    </button>
-                                    <button
-                                        onClick={() => guidedMode.exerciseId && handleDiscardClick(guidedMode.exerciseId)}
-                                        style={styles.iconBtn}
-                                    >
-                                        <Trash2 size={20} color={Colors.textSecondary} />
-                                    </button>
-                                </div>
+                {guidedMode.active && (() => {
+                    const ex = activeSession.exercises.find((e) => e.id === guidedMode.exerciseId);
+                    if (!ex) return null;
 
-                                {(() => {
-                                    const ex = activeSession.exercises.find(e => e.id === guidedMode.exerciseId);
-                                    return (
-                                        <>
-                                            <h2 style={styles.guidedTitle}>{ex?.nombre}</h2>
-                                            <p style={styles.guidedSubtitle}>
-                                                Serie {guidedMode.setIndex + 1} de {ex?.sets.length}
-                                            </p>
-                                        </>
-                                    );
-                                })()}
-                            </div>
+                    const currentSet = ex.sets[guidedMode.setIndex];
+                    const guidedImage = ex.imagen || getExerciseImage(ex.nombre);
+                    const isPreview = guidedMode.phase === 'preview';
+                    const isRestPhase = guidedMode.phase === 'rest';
+                    const timerExpired = !isPreview && timerSeconds <= 0;
+                    const nextSetNumber = Math.min(guidedMode.setIndex + 2, ex.sets.length);
 
-                            <div style={styles.guidedTimerContainer}>
-                                <div style={{
-                                    ...styles.guidedTimerCircle,
-                                    borderColor: guidedMode.phase === 'work' ? Colors.primary : Colors.success
-                                }}>
-                                    <span style={{
-                                        ...styles.guidedTimerValue,
-                                        color: timerSeconds < 0 ? Colors.error : Colors.text
+                    return (
+                        <div style={styles.modalOverlay}>
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                style={styles.guidedContainer}
+                            >
+                                <div style={{ textAlign: 'center', marginBottom: '24px', position: 'relative', width: '100%' }}>
+                                    <div style={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        top: -10,
+                                        display: 'flex',
+                                        gap: '8px',
+                                        zIndex: 10
                                     }}>
-                                        {timerSeconds < 0 ? `-${formatTime(Math.abs(timerSeconds))}` : formatTime(timerSeconds)}
-                                    </span>
-                                    <span style={styles.guidedTimerLabel}>
-                                        {guidedMode.phase === 'work' ? 'TRABAJO' : 'DESCANSO'}
-                                    </span>
+                                        <button
+                                            onClick={() => guidedMode.exerciseId && handleVariantClick(guidedMode.exerciseId)}
+                                            style={styles.iconBtn}
+                                        >
+                                            <Shuffle size={20} color={Colors.textSecondary} />
+                                        </button>
+                                        <button
+                                            onClick={() => guidedMode.exerciseId && handleDiscardClick(guidedMode.exerciseId)}
+                                            style={styles.iconBtn}
+                                        >
+                                            <Trash2 size={20} color={Colors.textSecondary} />
+                                        </button>
+                                    </div>
+
+                                    <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
+                                    <p style={styles.guidedSubtitle}>
+                                        {isRestPhase
+                                            ? `Siguiente: serie ${nextSetNumber} de ${ex.sets.length}`
+                                            : `Serie ${guidedMode.setIndex + 1} de ${ex.sets.length}`}
+                                    </p>
                                 </div>
-                            </div>
 
-                            {/* Timer Controls */}
-                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '20px' }}>
-                                <button
-                                    onClick={() => setIsTimerRunning(!isTimerRunning)}
-                                    style={styles.controlBtn}
-                                >
-                                    {isTimerRunning ? <Pause size={24} /> : <Play size={24} />}
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        // Reset to initial time
-                                        const exercise = activeSession.exercises.find(e => e.id === guidedMode.exerciseId);
-                                        if (guidedMode.phase === 'work') {
-                                            const reps = exercise?.targetReps || '';
-                                            setTimerSeconds(isTimeBased(reps) ? parseTimeSeconds(reps) : 0);
-                                        } else {
-                                            setTimerSeconds(exercise?.sets[0]?.rest || 30);
-                                        }
-                                        setIsTimerRunning(true);
+                                <img
+                                    src={guidedImage}
+                                    alt={ex.nombre}
+                                    style={styles.guidedPreviewImage}
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = getExerciseImage(ex.nombre);
                                     }}
-                                    style={styles.controlBtn}
-                                >
-                                    <RotateCcw size={24} />
-                                </button>
-                                <button
-                                    onClick={handleGuidedNext}
-                                    style={styles.controlBtn}
-                                >
-                                    <SkipForward size={24} />
-                                </button>
-                            </div>
+                                />
 
-                            <div style={styles.guidedActions}>
-                                <button
-                                    onClick={handleGuidedNext}
-                                    style={{
-                                        ...styles.guidedActionBtn,
-                                        background: guidedMode.phase === 'work' ? Colors.primary : Colors.success
-                                    }}
-                                >
-                                    {guidedMode.phase === 'work' ? (
-                                        <>
-                                            <Check size={24} /> Terminar Serie
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Play size={24} /> Siguiente Serie
-                                        </>
-                                    )}
-                                </button>
+                                {isPreview && (
+                                    <div style={styles.guidedSummaryCard}>
+                                        <div style={styles.guidedSummaryRow}>
+                                            <span style={styles.guidedSummaryLabel}>Series objetivo</span>
+                                            <strong>{ex.targetSeries}</strong>
+                                        </div>
+                                        <div style={styles.guidedSummaryRow}>
+                                            <span style={styles.guidedSummaryLabel}>Reps objetivo</span>
+                                            <strong>{ex.targetReps}</strong>
+                                        </div>
+                                        <div style={styles.guidedSummaryRow}>
+                                            <span style={styles.guidedSummaryLabel}>Descanso</span>
+                                            <strong>{currentSet?.rest || 30}s</strong>
+                                        </div>
+                                    </div>
+                                )}
 
-                                <button
-                                    style={styles.guidedCancelBtn}
-                                    onClick={() => {
-                                        toast((t) => (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Salir del modo guiado?</span>
-                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                                    <button
-                                                        onClick={() => toast.dismiss(t.id)}
-                                                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
-                                                    >
-                                                        Seguir
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work' });
-                                                            setIsTimerRunning(false);
-                                                            toast.dismiss(t.id);
-                                                        }}
-                                                        style={{ background: Colors.error, border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
-                                                    >
-                                                        Salir
-                                                    </button>
+                                {!isPreview && (
+                                    <>
+                                        <div style={styles.guidedTimerContainer}>
+                                            <div style={{
+                                                ...styles.guidedTimerCircle,
+                                                borderColor: timerExpired ? Colors.error : (guidedMode.phase === 'work' ? Colors.primary : Colors.success)
+                                            }}>
+                                                <span style={{
+                                                    ...styles.guidedTimerValue,
+                                                    color: timerSeconds <= 0 ? Colors.error : Colors.text
+                                                }}>
+                                                    {timerSeconds < 0 ? `-${formatTime(Math.abs(timerSeconds))}` : formatTime(timerSeconds)}
+                                                </span>
+                                                <span style={styles.guidedTimerLabel}>
+                                                    {guidedMode.phase === 'work' ? 'TRABAJO' : 'DESCANSO'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {guidedMode.phase === 'work' && currentSet && (
+                                            <div style={styles.guidedSetInputGrid}>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Peso (kg)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.weight || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { weight: parseFloat(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Reps hechas</label>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.reps || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { reps: parseInt(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={styles.searchInput}
+                                                    />
                                                 </div>
                                             </div>
-                                        ), { duration: 5000 });
-                                    }}
-                                >
-                                    Salir
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+                                        )}
 
+                                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '20px' }}>
+                                            <button
+                                                onClick={() => setIsTimerRunning(!isTimerRunning)}
+                                                style={styles.controlBtn}
+                                            >
+                                                {isTimerRunning ? <Pause size={24} /> : <Play size={24} />}
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (guidedMode.phase === 'work') {
+                                                        setTimerSeconds(getGuidedWorkSeconds(ex, guidedMode.setIndex));
+                                                        setIsTimerRunning(false);
+                                                    } else {
+                                                        setTimerSeconds(currentSet?.rest || 30);
+                                                        setIsTimerRunning(true);
+                                                    }
+                                                }}
+                                                style={styles.controlBtn}
+                                            >
+                                                <RotateCcw size={24} />
+                                            </button>
+                                            <button
+                                                onClick={handleGuidedNext}
+                                                style={styles.controlBtn}
+                                            >
+                                                <SkipForward size={24} />
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                <div style={styles.guidedActions}>
+                                    <button
+                                        onClick={handleGuidedNext}
+                                        style={{
+                                            ...styles.guidedActionBtn,
+                                            background: isPreview ? Colors.primary : guidedMode.phase === 'work' ? Colors.primary : Colors.success
+                                        }}
+                                    >
+                                        {isPreview ? (
+                                            <>
+                                                <Play size={24} /> Comenzar ejercicio
+                                            </>
+                                        ) : guidedMode.phase === 'work' ? (
+                                            <>
+                                                <Check size={24} /> Completar serie
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Play size={24} /> Saltar descanso
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <button
+                                        style={styles.guidedCancelBtn}
+                                        onClick={() => {
+                                            const shouldExit = window.confirm('Salir del modo guiado?');
+                                            if (!shouldExit) return;
+                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+                                            setIsTimerRunning(false);
+                                            setActiveExerciseId(null);
+                                        }}
+                                    >
+                                        Salir
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    );
+                })()}
+            </AnimatePresence>
             {/* Partner Widget for Linked Session */}
             {showPartnerWidget && activeSession.sessionMode === 'linked' && (
                 <div style={styles.partnerWidget}>
                     <div style={styles.partnerWidgetHeader}>
                         <span style={styles.partnerWidgetTitle}>{activeSession.selectedPartnerName || perfil.pareja?.nombre.split(' ')[0] || 'Partner'}</span>
-                        <span style={styles.partnerOnlineIndicator}>●</span>
+                        <span style={styles.partnerOnlineIndicator}>â—</span>
                     </div>
                     <div style={styles.partnerWidgetContent}>
                         {partnerCurrentExercise ? (
                             <>
                                 <span style={styles.partnerCurrentExercise}>
-                                    {partnerCurrentExercise}
+                                    {partnerExercises?.find((item) => item.id === partnerCurrentExercise)?.nombre || partnerCurrentExercise}
                                 </span>
                                 <div style={styles.partnerProgress}>
                                     {partnerExercises ? (
@@ -1186,11 +1158,30 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     <button
                         style={styles.partnerWidgetExpand}
                         onClick={() => {
-                            toast('Vista detallada del partner - próximamente', { icon: '🚧' });
+                            setShowPartnerDetailsPanel((prev) => !prev);
                         }}
                     >
-                        Ver detalle →
+                        {showPartnerDetailsPanel ? 'Ocultar detalle' : 'Ver detalle'}
                     </button>
+                    {showPartnerDetailsPanel && partnerExercises && (
+                        <div style={styles.partnerDetailsList}>
+                            {partnerExercises.map((partnerEx, index) => {
+                                const completedSets = partnerEx.sets.filter((set) => set.completed || set.skipped).length;
+                                const statusLabel = partnerEx.isCompleted
+                                    ? 'Completado'
+                                    : partnerEx.isSkipped
+                                        ? 'Omitido'
+                                        : `${completedSets}/${partnerEx.sets.length} series`;
+
+                                return (
+                                    <div key={partnerEx.id} style={styles.partnerDetailsRow}>
+                                        <span style={styles.partnerDetailsName}>{index + 1}. {partnerEx.nombre}</span>
+                                        <span style={styles.partnerDetailsStatus}>{statusLabel}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1462,7 +1453,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     <div style={styles.startButtonContainer}>
                                         <button
                                             style={styles.startExerciseBtn}
-                                            onClick={() => handleStartExercise(ex.id, ex.targetReps)}
+                                            onClick={() => handleStartExercise(ex.id)}
                                         >
                                             <Play size={24} color={Colors.background} />
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
@@ -1682,32 +1673,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         <button
                                             style={styles.completeExerciseBtn}
                                             onClick={() => {
-                                                toast((t) => (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>¿Finalizar ejercicio?</span>
-                                                        <span style={{ fontSize: '12px', color: '#aaa', marginTop: '-8px' }}>Desaparecerá de la lista activa.</span>
-                                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                                            <button
-                                                                onClick={() => toast.dismiss(t.id)}
-                                                                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px' }}
-                                                            >
-                                                                Cancelar
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    markExerciseAsCompleted(ex.id, isPartner);
-                                                                    setIsTimerRunning(false);
-                                                                    setTimerSeconds(0);
-                                                                    toast.dismiss(t.id);
-                                                                    toast.success('Ejercicio finalizado');
-                                                                }}
-                                                                style={{ background: Colors.primary, border: 'none', color: '#000', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}
-                                                            >
-                                                                Finalizar
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ), { duration: 5000 });
+                                                const shouldFinish = window.confirm('Finalizar ejercicio? Desaparecera de la lista activa.');
+                                                if (!shouldFinish) return;
+                                                markExerciseAsCompleted(ex.id, isPartner);
+                                                setIsTimerRunning(false);
+                                                setTimerSeconds(0);
+                                                toast.success('Ejercicio finalizado', { id: 'exercise-manual-finished', duration: 3000 });
                                             }}
                                         >
                                             <Check size={20} />
@@ -2554,6 +2525,40 @@ const styles: Record<string, React.CSSProperties> = {
         border: `1px solid ${Colors.border}`,
         marginBottom: '40px'
     },
+    guidedPreviewImage: {
+        width: '100%',
+        maxHeight: '180px',
+        objectFit: 'cover' as const,
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}`,
+    },
+    guidedSummaryCard: {
+        width: '100%',
+        background: Colors.surface,
+        border: `1px solid ${Colors.border}`,
+        borderRadius: '14px',
+        padding: '12px',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '8px',
+    },
+    guidedSummaryRow: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: Colors.text,
+        fontSize: '14px',
+    },
+    guidedSummaryLabel: {
+        color: Colors.textSecondary,
+        fontWeight: 600,
+    },
+    guidedSetInputGrid: {
+        width: '100%',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '12px',
+    },
     guidedHeader: {
         textAlign: 'center' as const,
     },
@@ -2719,7 +2724,39 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '12px',
         fontWeight: 700,
         cursor: 'pointer',
-    }
+    },
+    partnerDetailsList: {
+        marginTop: '12px',
+        borderTop: `1px solid ${Colors.border}`,
+        paddingTop: '8px',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '6px',
+        maxHeight: '180px',
+        overflowY: 'auto',
+    },
+    partnerDetailsRow: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '11px',
+    },
+    partnerDetailsName: {
+        color: Colors.text,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap' as const,
+        flex: 1,
+    },
+    partnerDetailsStatus: {
+        color: Colors.textSecondary,
+        fontWeight: 700,
+        fontSize: '10px',
+    },
 };
+
+
+
 
 
