@@ -70,8 +70,8 @@ Date: 2026-02-24
    - `npm run admin:rotate:test-passwords`
 2. Archive Playwright HTML report from the release run.
 3. Track remaining hardening backlog:
-   - remove CSP `unsafe-inline` where feasible
-   - add API rate limiting for `/api/gemini`
+   - remove remaining CSP `style-src 'unsafe-inline'` where feasible
+   - tune and monitor API rate limiting for `/api/gemini`
 
 ## 9. CI/CD Gate Secrets
 
