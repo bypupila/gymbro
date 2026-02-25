@@ -83,3 +83,13 @@ Date: 2026-02-24
    - `GYMBRO_EMAIL_2`, `GYMBRO_PASSWORD_2`
    - `GYMBRO_BASE_URL`
 3. Mark `Security and Build Gate` as required status check in branch protection.
+4. Mark all gate jobs as required status checks in branch protection:
+   - `Security and Build Gate`
+   - `Partner Data Consistency`
+   - `Live Partner Flows`
+5. Enforce PR-only changes on `main`:
+   - require at least 1 approving review
+   - enable stale review dismissal
+   - require last push approval
+   - enforce rules for admins
+   - require conversation resolution before merge
