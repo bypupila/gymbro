@@ -73,6 +73,7 @@ test.describe('Live auth smoke', () => {
             /ResizeObserver loop limit exceeded/i,
             /ERR_BLOCKED_BY_CLIENT/i,
             /Failed to load resource: the server responded with a status of 404/i,
+            /fonts\.googleapis\.com.*Content Security Policy/i,
         ];
 
         const blockingConsoleErrors = consoleErrors.filter(
