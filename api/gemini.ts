@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 type ApiRequest = {
     method?: string;
@@ -31,6 +31,14 @@ type RateLimitGlobalState = typeof globalThis & {
     __gymbroGeminiRateLimitCleanupAt?: number;
 };
 
+type SecurityEventName =
+    | 'gemini_rate_limited_ip'
+    | 'gemini_rate_limited_user'
+    | 'gemini_auth_missing_token'
+    | 'gemini_auth_invalid_token'
+    | 'gemini_payload_too_large'
+    | 'gemini_security_log_salt_ephemeral';
+
 const getPositiveInt = (raw: string | undefined, fallback: number): number => {
     const value = Number.parseInt(raw ?? '', 10);
     return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -41,6 +49,8 @@ const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || process.env.VITE_FIREBA
 const RATE_LIMIT_WINDOW_MS = getPositiveInt(process.env.GEMINI_RATE_LIMIT_WINDOW_MS, 60_000);
 const RATE_LIMIT_MAX_PER_IP = getPositiveInt(process.env.GEMINI_RATE_LIMIT_MAX_PER_IP, 60);
 const RATE_LIMIT_MAX_PER_USER = getPositiveInt(process.env.GEMINI_RATE_LIMIT_MAX_PER_USER, 30);
+const HAS_CONFIGURED_SECURITY_LOG_SALT = Boolean(process.env.SECURITY_LOG_SALT);
+const SECURITY_LOG_SALT = process.env.SECURITY_LOG_SALT || randomBytes(32).toString('hex');
 
 const getRateLimitStore = (): Map<string, RateLimitBucket> => {
     const state = globalThis as RateLimitGlobalState;
@@ -151,6 +161,28 @@ const getTokenFingerprint = (token: string): string => {
     return createHash('sha256').update(token).digest('hex').slice(0, 24);
 };
 
+const hashForSecurityLog = (value: string): string => {
+    return createHash('sha256').update(`${SECURITY_LOG_SALT}:${value}`).digest('hex').slice(0, 16);
+};
+
+const emitSecurityEvent = (event: SecurityEventName, details: Record<string, unknown>) => {
+    const payload = {
+        channel: 'security',
+        service: 'api/gemini',
+        event,
+        ts: new Date().toISOString(),
+        ...details,
+    };
+    // Structured JSON logs are easier to aggregate into dashboards and alerts.
+    console.warn(JSON.stringify(payload));
+};
+
+if (!HAS_CONFIGURED_SECURITY_LOG_SALT) {
+    emitSecurityEvent('gemini_security_log_salt_ephemeral', {
+        note: 'SECURITY_LOG_SALT is missing; using an ephemeral runtime salt for hash anonymization.',
+    });
+}
+
 const getModel = () => {
     if (!GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY is not configured');
@@ -219,29 +251,54 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const ipRateLimitResult = applyRateLimit(`gemini:ip:${clientIp}`, RATE_LIMIT_MAX_PER_IP);
     setRateLimitHeaders(res, ipRateLimitResult);
     if (!ipRateLimitResult.allowed) {
+        emitSecurityEvent('gemini_rate_limited_ip', {
+            ipHash: hashForSecurityLog(clientIp),
+            limit: ipRateLimitResult.limit,
+            retryAfterSec: ipRateLimitResult.retryAfterSec,
+            windowSec: Math.floor(RATE_LIMIT_WINDOW_MS / 1000),
+        });
         return res.status(429).json({ error: 'Too many requests. Please try again later.' });
     }
 
     const token = getBearerToken(req);
     if (!token) {
+        emitSecurityEvent('gemini_auth_missing_token', {
+            ipHash: hashForSecurityLog(clientIp),
+        });
         return res.status(401).json({ error: 'Missing authentication token' });
     }
 
+    const tokenFingerprint = getTokenFingerprint(token);
     try {
         const isValidToken = await verifyFirebaseIdToken(token);
         if (!isValidToken) {
+            emitSecurityEvent('gemini_auth_invalid_token', {
+                ipHash: hashForSecurityLog(clientIp),
+                userHash: hashForSecurityLog(tokenFingerprint),
+            });
             return res.status(401).json({ error: 'Invalid authentication token' });
         }
     } catch {
+        emitSecurityEvent('gemini_auth_invalid_token', {
+            ipHash: hashForSecurityLog(clientIp),
+            userHash: hashForSecurityLog(tokenFingerprint),
+        });
         return res.status(401).json({ error: 'Token verification failed' });
     }
 
     const userRateLimitResult = applyRateLimit(
-        `gemini:user:${getTokenFingerprint(token)}`,
+        `gemini:user:${tokenFingerprint}`,
         RATE_LIMIT_MAX_PER_USER
     );
     setRateLimitHeaders(res, userRateLimitResult);
     if (!userRateLimitResult.allowed) {
+        emitSecurityEvent('gemini_rate_limited_user', {
+            userHash: hashForSecurityLog(tokenFingerprint),
+            ipHash: hashForSecurityLog(clientIp),
+            limit: userRateLimitResult.limit,
+            retryAfterSec: userRateLimitResult.retryAfterSec,
+            windowSec: Math.floor(RATE_LIMIT_WINDOW_MS / 1000),
+        });
         return res.status(429).json({ error: 'Too many requests. Please try again later.' });
     }
 
@@ -257,6 +314,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const bodySize = JSON.stringify(payload).length;
     if (bodySize > 1_500_000) {
+        emitSecurityEvent('gemini_payload_too_large', {
+            userHash: hashForSecurityLog(tokenFingerprint),
+            ipHash: hashForSecurityLog(clientIp),
+            bodySize,
+        });
         return res.status(413).json({ error: 'Request payload too large' });
     }
 

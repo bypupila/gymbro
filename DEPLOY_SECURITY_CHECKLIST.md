@@ -7,6 +7,7 @@ Date: 2026-02-24
 1. Ensure these variables are configured in production:
    - `GEMINI_API_KEY`
    - `FIREBASE_API_KEY`
+   - `SECURITY_LOG_SALT` (secreto para anonimizar hashes de seguridad en logs)
    - Firebase web config vars (`VITE_FIREBASE_*`)
 2. Keep dev bypass disabled:
    - `VITE_ENABLE_DEV_AUTH_BYPASS=0`
@@ -72,6 +73,8 @@ Date: 2026-02-24
 3. Track remaining hardening backlog:
    - remove remaining CSP `style-src 'unsafe-inline'` where feasible
    - tune and monitor API rate limiting for `/api/gemini`
+4. Run security log monitoring report (see `docs/SECURITY_MONITORING_RUNBOOK.md`):
+   - `npm run admin:security:report -- --in=logs/vercel-gemini-security.jsonl`
 
 ## 9. CI/CD Gate Secrets
 
