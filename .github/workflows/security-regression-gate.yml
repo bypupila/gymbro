@@ -61,21 +61,39 @@ jobs:
     name: Partner Data Consistency
     runs-on: ubuntu-latest
     needs: security-regression
-    if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' || (secrets.FIREBASE_PROJECT_ID != '' && secrets.FIREBASE_CLIENT_EMAIL != '' && secrets.FIREBASE_PRIVATE_KEY != '') }}
+    env:
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check required secrets
+        id: gate
+        shell: bash
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ] || { [ -n "$FIREBASE_PROJECT_ID" ] && [ -n "$FIREBASE_CLIENT_EMAIL" ] && [ -n "$FIREBASE_PRIVATE_KEY" ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping partner consistency: missing Firebase admin secrets."
+          fi
+
       - name: Setup Node
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npm ci
 
       - name: Prepare Firebase admin credentials
+        if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         run: |
           if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" ]; then
@@ -94,6 +112,7 @@ jobs:
           fi
 
       - name: Partner consistency audit
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npm run admin:audit:partners
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -103,21 +122,54 @@ jobs:
     name: Live Partner Flows
     runs-on: ubuntu-latest
     needs: security-regression
-    if: ${{ secrets.GYMBRO_EMAIL != '' && secrets.GYMBRO_PASSWORD != '' && secrets.GYMBRO_EMAIL_2 != '' && secrets.GYMBRO_PASSWORD_2 != '' && secrets.GYMBRO_BASE_URL != '' && (secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' || (secrets.FIREBASE_PROJECT_ID != '' && secrets.FIREBASE_CLIENT_EMAIL != '' && secrets.FIREBASE_PRIVATE_KEY != '')) }}
+    env:
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+      GYMBRO_EMAIL: ${{ secrets.GYMBRO_EMAIL }}
+      GYMBRO_PASSWORD: ${{ secrets.GYMBRO_PASSWORD }}
+      GYMBRO_EMAIL_2: ${{ secrets.GYMBRO_EMAIL_2 }}
+      GYMBRO_PASSWORD_2: ${{ secrets.GYMBRO_PASSWORD_2 }}
+      GYMBRO_BASE_URL: ${{ secrets.GYMBRO_BASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check required secrets
+        id: gate
+        shell: bash
+        run: |
+          has_live="false"
+          if [ -n "$GYMBRO_EMAIL" ] && [ -n "$GYMBRO_PASSWORD" ] && [ -n "$GYMBRO_EMAIL_2" ] && [ -n "$GYMBRO_PASSWORD_2" ] && [ -n "$GYMBRO_BASE_URL" ]; then
+            has_live="true"
+          fi
+
+          has_admin="false"
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ] || { [ -n "$FIREBASE_PROJECT_ID" ] && [ -n "$FIREBASE_CLIENT_EMAIL" ] && [ -n "$FIREBASE_PRIVATE_KEY" ]; }; then
+            has_admin="true"
+          fi
+
+          if [ "$has_live" = "true" ] && [ "$has_admin" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping live validation: missing live test or Firebase admin secrets."
+          fi
+
       - name: Setup Node
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npm ci
 
       - name: Prepare Firebase admin credentials
+        if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         run: |
           if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" ]; then
@@ -136,9 +188,11 @@ jobs:
           fi
 
       - name: Install Playwright browser
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npx playwright install --with-deps chromium
 
       - name: Live auth smoke
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npx playwright test tests/live-auth-smoke.spec.ts --project=chromium --workers=1
         env:
           GYMBRO_EMAIL: ${{ secrets.GYMBRO_EMAIL }}
@@ -146,6 +200,7 @@ jobs:
           GYMBRO_BASE_URL: ${{ secrets.GYMBRO_BASE_URL }}
 
       - name: Live partner unlink symmetry
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npx playwright test tests/partner-unlink-symmetry-live.spec.ts --project=chromium --workers=1
         env:
           GYMBRO_EMAIL: ${{ secrets.GYMBRO_EMAIL }}
@@ -157,6 +212,7 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ env.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
       - name: Live partner routine sync
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: npx playwright test tests/partner-routine-sync-live.spec.ts --project=chromium --workers=1
         env:
           GYMBRO_EMAIL: ${{ secrets.GYMBRO_EMAIL }}
