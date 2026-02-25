@@ -237,7 +237,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const userRateLimitResult = applyRateLimit(
-        `gemini:user:${clientIp}:${getTokenFingerprint(token)}`,
+        `gemini:user:${getTokenFingerprint(token)}`,
         RATE_LIMIT_MAX_PER_USER
     );
     setRateLimitHeaders(res, userRateLimitResult);
