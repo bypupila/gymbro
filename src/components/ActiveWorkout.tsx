@@ -69,6 +69,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setIndex: number;
         phase: 'preview' | 'work' | 'rest';
     }>({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+    const [guidedWorkTimerStarted, setGuidedWorkTimerStarted] = useState(false);
     const previousTimerRef = useRef<number>(0);
     const restTransitionLockRef = useRef(false);
 
@@ -197,6 +198,31 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return 0;
     };
 
+    // Parse only explicit time formats (MM:SS, min, seg/s).
+    // It intentionally ignores naked numbers like "12" to avoid treating reps as time.
+    const parseExplicitTimeSeconds = (reps: string): number => {
+        if (!reps) return 0;
+        const normalized = reps.trim().toLowerCase();
+
+        const hmsMatch = normalized.match(/(\d+):(\d+)(?::(\d+))?/);
+        if (hmsMatch) {
+            if (hmsMatch[3]) {
+                return parseInt(hmsMatch[1]) * 3600 + parseInt(hmsMatch[2]) * 60 + parseInt(hmsMatch[3]);
+            }
+            return parseInt(hmsMatch[1]) * 60 + parseInt(hmsMatch[2]);
+        }
+
+        const minMatch = normalized.match(/(\d+)\s*(minutos?|min|m\b)/i);
+        if (minMatch) return parseInt(minMatch[1]) * 60;
+
+        const secMatch = normalized.match(/(\d+)\s*(segundos?|seg|s|'|")/i);
+        if (secMatch) return parseInt(secMatch[1]);
+
+        return 0;
+    };
+
+    const hasExplicitTimeFormat = (value: string): boolean => parseExplicitTimeSeconds(value) > 0;
+
     // Helper to check if exercise is time-based
     const isTimeBased = (reps: string): boolean => {
         if (!reps) return false;
@@ -213,12 +239,28 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return false;
     };
 
+    const hasGuidedWorkTimer = (exercise: ExerciseTracking, setIndex: number): boolean => {
+        const targetSet = exercise.sets[setIndex];
+        if (targetSet && typeof targetSet.duration === 'number' && targetSet.duration > 0) {
+            return true;
+        }
+
+        // Warmup allows numeric defaults (e.g. "30"), main routine requires explicit time format.
+        if (exercise.categoria === 'calentamiento') {
+            return parseTimeSeconds(exercise.targetReps) > 0;
+        }
+        return hasExplicitTimeFormat(exercise.targetReps);
+    };
+
     const getGuidedWorkSeconds = (exercise: ExerciseTracking, setIndex: number): number => {
         const targetSet = exercise.sets[setIndex];
         if (targetSet && typeof targetSet.duration === 'number' && targetSet.duration > 0) {
             return targetSet.duration;
         }
-        return parseTimeSeconds(exercise.targetReps);
+        if (exercise.categoria === 'calentamiento') {
+            return parseTimeSeconds(exercise.targetReps);
+        }
+        return parseExplicitTimeSeconds(exercise.targetReps);
     };
 
     // Handle exercise authorization
@@ -236,6 +278,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         });
         setTimerSeconds(getGuidedWorkSeconds(exercise, 0));
         setIsTimerRunning(false);
+        setGuidedWorkTimerStarted(false);
         toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
 
@@ -306,20 +349,32 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     }
 
                     const exercise = activeSession?.exercises.find(e => e.id === activeExerciseId || e.id === guidedMode.exerciseId);
+                    if (!exercise) return prev;
 
-                    if (exercise && exercise.categoria !== 'calentamiento') {
-                        return prev + deltaSeconds;
+                    const setIndex = guidedMode.active ? guidedMode.setIndex : currentSetIndex;
+                    const targetSet = exercise.sets[setIndex];
+                    const targetRepsNormalized = (exercise.targetReps || '').trim().toLowerCase();
+                    const hasHmsFormat = /(\d+):(\d+)(?::(\d+))?/.test(targetRepsNormalized);
+                    const hasMinutesFormat = /(\d+)\s*(minutos?|min|m\b)/i.test(targetRepsNormalized);
+                    const hasSecondsFormat = /(\d+)\s*(segundos?|seg|s|'|")/i.test(targetRepsNormalized);
+                    const hasExplicitTime = hasHmsFormat || hasMinutesFormat || hasSecondsFormat;
+                    const hasRepIndicator = targetRepsNormalized.includes('rep') || targetRepsNormalized.includes('ser') || targetRepsNormalized.includes('vez') || targetRepsNormalized.includes('x');
+                    const hasRawNumericTime = /^\d+$/.test(targetRepsNormalized) && !hasRepIndicator;
+                    const isTimedWork = Boolean(
+                        (targetSet && typeof targetSet.duration === 'number' && targetSet.duration > 0) ||
+                        (exercise.categoria === 'calentamiento' ? (hasExplicitTime || hasRawNumericTime) : hasExplicitTime)
+                    );
+
+                    // Non-timed guided work should not run any timer.
+                    if (guidedMode.active && guidedMode.phase === 'work' && !isTimedWork) {
+                        return prev;
                     }
-
-                    const currentSet = exercise?.sets[guidedMode.active ? guidedMode.setIndex : currentSetIndex];
-                    const isTimedWork = (currentSet && typeof currentSet.duration === 'number' && currentSet.duration > 0) ||
-                        (exercise && isTimeBased(exercise.targetReps));
 
                     if (isTimedWork) {
                         return prev - deltaSeconds;
-                    } else {
-                        return prev + deltaSeconds;
                     }
+
+                    return prev + deltaSeconds;
                 });
             }
         }, 100);
@@ -339,6 +394,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             setIsTimerRunning(false);
             setTimerSeconds(0);
             setActiveExerciseId(null);
+            setGuidedWorkTimerStarted(false);
             restTransitionLockRef.current = false;
             toast.success('Ejercicio finalizado', { id: 'exercise-finished', duration: 3000 });
         };
@@ -348,6 +404,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             setCurrentSetIndex(guidedMode.setIndex);
             setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
             setIsTimerRunning(false);
+            setGuidedWorkTimerStarted(false);
             return;
         }
 
@@ -364,6 +421,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             setGuidedMode((prev) => ({ ...prev, phase: 'rest' }));
             setTimerSeconds(restSeconds);
             setIsTimerRunning(true);
+            setGuidedWorkTimerStarted(false);
             toast.success('Descanso iniciado', { id: 'rest-started', duration: 3000 });
             return;
         }
@@ -377,8 +435,33 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setGuidedMode((prev) => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
         setCurrentSetIndex(nextSetIndex);
         setTimerSeconds(getGuidedWorkSeconds(exercise, nextSetIndex));
-        setIsTimerRunning(exercise.categoria !== 'calentamiento' || getGuidedWorkSeconds(exercise, nextSetIndex) > 0);
+        setIsTimerRunning(false);
+        setGuidedWorkTimerStarted(false);
         restTransitionLockRef.current = false;
+    };
+
+    const handleGuidedOpenVideo = (exercise: ExerciseTracking) => {
+        const videoUrl = toTrustedExternalVideoUrl(getExerciseVideo(exercise.nombre));
+        if (!videoUrl) return;
+
+        setIsTimerRunning(false);
+        window.open(videoUrl, '_blank', 'noopener,noreferrer');
+    };
+
+    const handleGuidedWorkPlay = (exercise: ExerciseTracking) => {
+        if (!hasGuidedWorkTimer(exercise, guidedMode.setIndex)) return;
+
+        if (!guidedWorkTimerStarted || timerSeconds <= 0) {
+            setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
+        }
+        setGuidedWorkTimerStarted(true);
+        setIsTimerRunning(true);
+    };
+
+    const handleGuidedWorkReset = (exercise: ExerciseTracking) => {
+        setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
+        setGuidedWorkTimerStarted(false);
+        setIsTimerRunning(false);
     };
 
     // Keep the screen awake while a timer is active.
@@ -943,10 +1026,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                     const currentSet = ex.sets[guidedMode.setIndex];
                     const guidedImage = ex.imagen || getExerciseImage(ex.nombre);
+                    const guidedVideoUrl = toTrustedExternalVideoUrl(getExerciseVideo(ex.nombre));
                     const isPreview = guidedMode.phase === 'preview';
                     const isRestPhase = guidedMode.phase === 'rest';
+                    const isWorkPhase = guidedMode.phase === 'work';
+                    const workHasTimer = isWorkPhase && hasGuidedWorkTimer(ex, guidedMode.setIndex);
                     const timerExpired = !isPreview && timerSeconds <= 0;
                     const nextSetNumber = Math.min(guidedMode.setIndex + 2, ex.sets.length);
+                    const showWorkStart = workHasTimer && !guidedWorkTimerStarted && !isTimerRunning;
+                    const showWorkPaused = workHasTimer && guidedWorkTimerStarted && !isTimerRunning;
+                    const showCircularTimer = isRestPhase || (isWorkPhase && workHasTimer && (isTimerRunning || showWorkPaused));
 
                     return (
                         <div style={styles.modalOverlay}>
@@ -956,15 +1045,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 style={styles.guidedContainer}
                             >
-                                <div style={{ textAlign: 'center', marginBottom: '24px', position: 'relative', width: '100%' }}>
-                                    <div style={{
-                                        position: 'absolute',
-                                        right: 0,
-                                        top: -10,
-                                        display: 'flex',
-                                        gap: '8px',
-                                        zIndex: 10
-                                    }}>
+                                <div style={styles.guidedHeaderRow}>
+                                    <div style={styles.guidedHeaderText}>
+                                        <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
+                                        <p style={styles.guidedSubtitle}>
+                                            {isRestPhase
+                                                ? `Siguiente: serie ${nextSetNumber} de ${ex.sets.length}`
+                                                : `Serie ${guidedMode.setIndex + 1} de ${ex.sets.length}`}
+                                        </p>
+                                    </div>
+                                    <div style={styles.guidedHeaderActions}>
                                         <button
                                             onClick={() => guidedMode.exerciseId && handleVariantClick(guidedMode.exerciseId)}
                                             style={styles.iconBtn}
@@ -978,44 +1068,66 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             <Trash2 size={20} color={Colors.textSecondary} />
                                         </button>
                                     </div>
-
-                                    <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
-                                    <p style={styles.guidedSubtitle}>
-                                        {isRestPhase
-                                            ? `Siguiente: serie ${nextSetNumber} de ${ex.sets.length}`
-                                            : `Serie ${guidedMode.setIndex + 1} de ${ex.sets.length}`}
-                                    </p>
                                 </div>
 
-                                <img
-                                    src={guidedImage}
-                                    alt={ex.nombre}
-                                    style={styles.guidedPreviewImage}
-                                    onError={(e) => {
-                                        (e.target as HTMLImageElement).src = getExerciseImage(ex.nombre);
+                                <button
+                                    style={{
+                                        ...styles.guidedMediaButton,
+                                        cursor: guidedVideoUrl ? 'pointer' : 'default'
                                     }}
-                                />
+                                    onClick={() => handleGuidedOpenVideo(ex)}
+                                    disabled={!guidedVideoUrl}
+                                >
+                                    <img
+                                        src={guidedImage}
+                                        alt={ex.nombre}
+                                        style={styles.guidedPreviewImage}
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = getExerciseImage(ex.nombre);
+                                        }}
+                                    />
+                                    {guidedVideoUrl && (
+                                        <span style={styles.guidedPlayBadge}>
+                                            <Play size={14} /> Ver video
+                                        </span>
+                                    )}
+                                </button>
 
-                                {isPreview && (
-                                    <div style={styles.guidedSummaryCard}>
-                                        <div style={styles.guidedSummaryRow}>
-                                            <span style={styles.guidedSummaryLabel}>Series objetivo</span>
-                                            <strong>{ex.targetSeries}</strong>
-                                        </div>
-                                        <div style={styles.guidedSummaryRow}>
-                                            <span style={styles.guidedSummaryLabel}>Reps objetivo</span>
-                                            <strong>{ex.targetReps}</strong>
-                                        </div>
-                                        <div style={styles.guidedSummaryRow}>
-                                            <span style={styles.guidedSummaryLabel}>Descanso</span>
-                                            <strong>{currentSet?.rest || 30}s</strong>
-                                        </div>
+                                <div style={styles.guidedSummaryCard}>
+                                    <div style={styles.guidedSummaryRow}>
+                                        <span style={styles.guidedSummaryLabel}>Series objetivo</span>
+                                        <strong>{ex.targetSeries}</strong>
                                     </div>
+                                    <div style={styles.guidedSummaryRow}>
+                                        <span style={styles.guidedSummaryLabel}>Reps objetivo</span>
+                                        <strong>{ex.targetReps}</strong>
+                                    </div>
+                                    <div style={styles.guidedSummaryRow}>
+                                        <span style={styles.guidedSummaryLabel}>Descanso</span>
+                                        <strong>{currentSet?.rest || 30}s</strong>
+                                    </div>
+                                </div>
+
+                                {showWorkStart && (
+                                    <button
+                                        onClick={() => handleGuidedWorkPlay(ex)}
+                                        style={styles.guidedTimerStartBtn}
+                                    >
+                                        <Play size={26} /> Play
+                                    </button>
                                 )}
 
-                                {!isPreview && (
+                                {showCircularTimer && (
                                     <>
-                                        <div style={styles.guidedTimerContainer}>
+                                        <button
+                                            style={styles.guidedTimerContainer}
+                                            onClick={() => {
+                                                if (isWorkPhase && workHasTimer && isTimerRunning) {
+                                                    setIsTimerRunning(false);
+                                                }
+                                            }}
+                                            disabled={!(isWorkPhase && workHasTimer && isTimerRunning)}
+                                        >
                                             <div style={{
                                                 ...styles.guidedTimerCircle,
                                                 borderColor: timerExpired ? Colors.error : (guidedMode.phase === 'work' ? Colors.primary : Colors.success)
@@ -1027,65 +1139,53 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     {timerSeconds < 0 ? `-${formatTime(Math.abs(timerSeconds))}` : formatTime(timerSeconds)}
                                                 </span>
                                                 <span style={styles.guidedTimerLabel}>
-                                                    {guidedMode.phase === 'work' ? 'TRABAJO' : 'DESCANSO'}
+                                                    {isRestPhase ? 'DESCANSO' : showWorkPaused ? 'PAUSADO' : 'TRABAJO'}
                                                 </span>
                                             </div>
-                                        </div>
+                                        </button>
 
-                                        {guidedMode.phase === 'work' && currentSet && (
-                                            <div style={styles.guidedSetInputGrid}>
-                                                <div>
-                                                    <label style={styles.inputLabel}>Peso (kg)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={currentSet.weight || ''}
-                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { weight: parseFloat(e.target.value) || 0 })}
-                                                        placeholder="0"
-                                                        style={styles.searchInput}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label style={styles.inputLabel}>Reps hechas</label>
-                                                    <input
-                                                        type="number"
-                                                        value={currentSet.reps || ''}
-                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { reps: parseInt(e.target.value) || 0 })}
-                                                        placeholder="0"
-                                                        style={styles.searchInput}
-                                                    />
-                                                </div>
+                                        {showWorkPaused && (
+                                            <div style={styles.guidedPausedActions}>
+                                                <button
+                                                    onClick={() => setIsTimerRunning(true)}
+                                                    style={styles.guidedSecondaryBtn}
+                                                >
+                                                    <Play size={16} /> Reanudar
+                                                </button>
+                                                <button
+                                                    onClick={() => handleGuidedWorkReset(ex)}
+                                                    style={styles.guidedSecondaryBtn}
+                                                >
+                                                    <RotateCcw size={16} /> Reiniciar
+                                                </button>
                                             </div>
                                         )}
-
-                                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '20px' }}>
-                                            <button
-                                                onClick={() => setIsTimerRunning(!isTimerRunning)}
-                                                style={styles.controlBtn}
-                                            >
-                                                {isTimerRunning ? <Pause size={24} /> : <Play size={24} />}
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (guidedMode.phase === 'work') {
-                                                        setTimerSeconds(getGuidedWorkSeconds(ex, guidedMode.setIndex));
-                                                        setIsTimerRunning(false);
-                                                    } else {
-                                                        setTimerSeconds(currentSet?.rest || 30);
-                                                        setIsTimerRunning(true);
-                                                    }
-                                                }}
-                                                style={styles.controlBtn}
-                                            >
-                                                <RotateCcw size={24} />
-                                            </button>
-                                            <button
-                                                onClick={handleGuidedNext}
-                                                style={styles.controlBtn}
-                                            >
-                                                <SkipForward size={24} />
-                                            </button>
-                                        </div>
                                     </>
+                                )}
+
+                                {guidedMode.phase === 'work' && currentSet && (
+                                    <div style={styles.guidedSetInputGrid}>
+                                        <div>
+                                            <label style={styles.inputLabel}>Peso (kg)</label>
+                                            <input
+                                                type="number"
+                                                value={currentSet.weight || ''}
+                                                onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { weight: parseFloat(e.target.value) || 0 })}
+                                                placeholder="0"
+                                                style={styles.searchInput}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={styles.inputLabel}>Reps hechas</label>
+                                            <input
+                                                type="number"
+                                                value={currentSet.reps || ''}
+                                                onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { reps: parseInt(e.target.value) || 0 })}
+                                                placeholder="0"
+                                                style={styles.searchInput}
+                                            />
+                                        </div>
+                                    </div>
                                 )}
 
                                 <div style={styles.guidedActions}>
@@ -1118,6 +1218,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             if (!shouldExit) return;
                                             setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
                                             setIsTimerRunning(false);
+                                            setGuidedWorkTimerStarted(false);
                                             setActiveExerciseId(null);
                                         }}
                                     >
@@ -2513,42 +2614,81 @@ const styles: Record<string, React.CSSProperties> = {
         fontFamily: 'inherit',
     },
     guidedContainer: {
-        width: '90%',
-        maxWidth: '400px',
+        width: '92%',
+        maxWidth: '420px',
         background: Colors.background,
-        borderRadius: '32px',
-        padding: '32px',
+        borderRadius: '28px',
+        padding: '20px',
         display: 'flex',
         flexDirection: 'column' as const,
-        alignItems: 'center',
-        gap: '24px',
+        alignItems: 'stretch',
+        gap: '12px',
         boxShadow: `0 20px 40px rgba(0,0,0,0.5)`,
         border: `1px solid ${Colors.border}`,
-        marginBottom: '40px'
+        marginBottom: '40px',
+        maxHeight: '86vh',
+        overflowY: 'auto' as const,
+    },
+    guidedHeaderRow: {
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: '8px',
+    },
+    guidedHeaderText: {
+        minWidth: 0,
+        flex: 1,
+    },
+    guidedHeaderActions: {
+        display: 'flex',
+        gap: '4px',
+        flexShrink: 0,
+    },
+    guidedMediaButton: {
+        width: '100%',
+        border: 'none',
+        padding: 0,
+        position: 'relative' as const,
+        borderRadius: '14px',
+        overflow: 'hidden',
+        background: Colors.surface,
+        textAlign: 'left' as const,
+    },
+    guidedPlayBadge: {
+        position: 'absolute' as const,
+        right: '10px',
+        bottom: '10px',
+        background: 'rgba(0,0,0,0.72)',
+        color: '#fff',
+        borderRadius: '999px',
+        padding: '6px 10px',
+        fontSize: '12px',
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
     },
     guidedPreviewImage: {
         width: '100%',
-        maxHeight: '180px',
+        height: '148px',
         objectFit: 'cover' as const,
-        borderRadius: '16px',
-        border: `1px solid ${Colors.border}`,
     },
     guidedSummaryCard: {
         width: '100%',
         background: Colors.surface,
         border: `1px solid ${Colors.border}`,
-        borderRadius: '14px',
-        padding: '12px',
+        borderRadius: '12px',
+        padding: '10px 12px',
         display: 'flex',
         flexDirection: 'column' as const,
-        gap: '8px',
+        gap: '6px',
     },
     guidedSummaryRow: {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         color: Colors.text,
-        fontSize: '14px',
+        fontSize: '13px',
     },
     guidedSummaryLabel: {
         color: Colors.textSecondary,
@@ -2558,96 +2698,121 @@ const styles: Record<string, React.CSSProperties> = {
         width: '100%',
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
-        gap: '12px',
+        gap: '10px',
     },
     guidedHeader: {
         textAlign: 'center' as const,
     },
     guidedTitle: {
-        fontSize: '24px',
+        fontSize: '22px',
         fontWeight: 900,
         color: Colors.text,
-        marginBottom: '8px',
+        marginBottom: '4px',
         textAlign: 'center' as const,
+        lineHeight: 1.2,
     },
     guidedSubtitle: {
-        fontSize: '16px',
+        fontSize: '13px',
         color: Colors.textSecondary,
+        textAlign: 'center' as const,
     },
     guidedTimerContainer: {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: '20px',
+        padding: 0,
+        background: 'transparent',
+        border: 'none',
+        width: '100%',
     },
     guidedTimerCircle: {
-        width: '200px',
-        height: '200px',
+        width: '180px',
+        height: '180px',
         borderRadius: '50%',
-        border: `8px solid`,
+        border: `6px solid`,
         display: 'flex',
         flexDirection: 'column' as const,
         alignItems: 'center',
         justifyContent: 'center',
         background: Colors.surface,
-        boxShadow: `0 0 30px rgba(0,0,0,0.2)`,
+        boxShadow: `0 0 24px rgba(0,0,0,0.25)`,
     },
     guidedTimerValue: {
-        fontSize: '64px',
+        fontSize: '50px',
         fontWeight: 900,
         color: Colors.text,
         fontFamily: 'monospace',
         lineHeight: 1,
     },
     guidedTimerLabel: {
-        fontSize: '14px',
+        fontSize: '12px',
         fontWeight: 800,
-        letterSpacing: '2px',
+        letterSpacing: '1px',
         color: Colors.textSecondary,
-        marginTop: '8px',
+        marginTop: '6px',
+    },
+    guidedTimerStartBtn: {
+        width: '100%',
+        border: `1px solid ${Colors.primary}60`,
+        background: `${Colors.primary}1a`,
+        color: Colors.primary,
+        borderRadius: '12px',
+        padding: '14px',
+        fontWeight: 800,
+        fontSize: '18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+    },
+    guidedPausedActions: {
+        width: '100%',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '8px',
+    },
+    guidedSecondaryBtn: {
+        border: `1px solid ${Colors.border}`,
+        background: Colors.surface,
+        color: Colors.text,
+        borderRadius: '10px',
+        padding: '10px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+        fontSize: '13px',
+        fontWeight: 700,
     },
     guidedActions: {
         width: '100%',
         display: 'flex',
         flexDirection: 'column' as const,
-        gap: '12px',
+        gap: '8px',
     },
     guidedActionBtn: {
         background: Colors.primary,
         color: '#000',
         border: 'none',
-        padding: '16px 32px',
-        borderRadius: '50px',
-        fontSize: '18px',
+        padding: '14px 20px',
+        borderRadius: '14px',
+        fontSize: '16px',
         fontWeight: 800,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
-        gap: '12px',
+        gap: '8px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
         width: '100%',
         justifyContent: 'center'
     },
-    controlBtn: {
-        background: Colors.surface,
-        border: `1px solid ${Colors.border}`,
-        borderRadius: '50%',
-        width: '50px',
-        height: '50px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        color: Colors.text,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-    },
     guidedCancelBtn: {
         width: '100%',
-        padding: '16px',
+        padding: '10px',
         background: 'transparent',
         border: 'none',
         color: Colors.textSecondary,
-        fontSize: '14px',
+        fontSize: '13px',
         cursor: 'pointer',
     },
     variantSearchContainer: {

@@ -88,11 +88,21 @@ button {
 
 /* Input reset */
 input,
+select,
 textarea {
     font-family: inherit;
     border: none;
     outline: none;
     background: none;
+}
+
+/* Prevent iOS Safari zoom-on-focus for form controls. */
+@media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']),
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
 }
 
 /* Safe area for iOS */
