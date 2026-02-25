@@ -259,44 +259,60 @@ export const TrainingInvitationNotifier: React.FC = () => {
 
     return (
         <AnimatePresence>
-            {invitations.map((inv) => (
+            {invitations.map((inv, index) => (
                 <motion.div
                     key={inv.id}
-                    initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                    initial={isMobile ? { opacity: 0, y: 32, scale: 0.98 } : { opacity: 0, y: -20, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    style={styles.overlay(isMobile)}
+                    exit={isMobile ? { opacity: 0, y: 32, scale: 0.98 } : { opacity: 0, y: -20, scale: 0.95 }}
+                    style={styles.overlay(isMobile, index)}
                 >
                     <div style={styles.card(isMobile)}>
-                        <div style={styles.iconContainer}>
-                            <Dumbbell size={28} color={Colors.primary} />
-                        </div>
-
-                        <div style={styles.content}>
-                            <h3 style={styles.title}>Invitacion a Entrenar</h3>
-                            <p style={styles.message}>
-                                <span style={{ fontWeight: 700, color: Colors.primary }}>{inv.fromName}</span>{' '}
-                                te invita a entrenar juntos
-                            </p>
-                            <div style={styles.details}>
-                                <span style={styles.badge}>
-                                    {inv.sessionMode === 'shared' ? 'Mismo cel' : 'Cada quien'}
-                                </span>
-                                <span style={styles.routineName}>{inv.routineName}</span>
+                        <div style={styles.topRow(isMobile)}>
+                            <div style={styles.iconContainer}>
+                                <Dumbbell size={isMobile ? 24 : 28} color={Colors.primary} />
                             </div>
 
-                            <div style={styles.timer}>
-                                <Clock size={12} color={Colors.textTertiary} />
-                                <ExpiryTimer expiresAt={inv.expiresAt} />
+                            <div style={styles.content}>
+                                <h3 style={styles.title}>Invitacion a Entrenar</h3>
+                                <p style={styles.message}>
+                                    <span style={{ fontWeight: 700, color: Colors.primary }}>{inv.fromName}</span>{' '}
+                                    te invita a entrenar juntos
+                                </p>
+                                <div style={styles.details(isMobile)}>
+                                    <span style={styles.badge}>
+                                        {inv.sessionMode === 'shared' ? 'Mismo cel' : 'Cada quien'}
+                                    </span>
+                                    <span style={styles.routineName}>{inv.routineName}</span>
+                                </div>
+
+                                <div style={styles.timer}>
+                                    <Clock size={12} color={Colors.textTertiary} />
+                                    <ExpiryTimer expiresAt={inv.expiresAt} />
+                                </div>
                             </div>
                         </div>
 
                         <div style={styles.actions(isMobile)}>
-                            <button style={styles.declineBtn} onClick={() => handleDecline(inv)}>
+                            <button
+                                style={{
+                                    ...styles.declineBtn,
+                                    ...(isMobile ? styles.mobileActionBtn : {}),
+                                }}
+                                onClick={() => handleDecline(inv)}
+                            >
                                 <X size={20} />
+                                {isMobile && <span>Rechazar</span>}
                             </button>
-                            <button style={styles.acceptBtn} onClick={() => handleAccept(inv)}>
+                            <button
+                                style={{
+                                    ...styles.acceptBtn,
+                                    ...(isMobile ? styles.mobileActionBtn : {}),
+                                }}
+                                onClick={() => handleAccept(inv)}
+                            >
                                 <Check size={20} />
+                                {isMobile && <span>Aceptar</span>}
                             </button>
                         </div>
                     </div>
@@ -331,24 +347,32 @@ const ExpiryTimer: React.FC<{ expiresAt: string }> = ({ expiresAt }) => {
 };
 
 const styles = {
-    overlay: (isMobile: boolean): React.CSSProperties => ({
+    overlay: (isMobile: boolean, index: number): React.CSSProperties => ({
         position: 'fixed',
-        top: `calc(env(safe-area-inset-top, 0px) + ${isMobile ? '8px' : '20px'})`,
-        left: '50%',
-        transform: 'translateX(-50%)',
+        top: isMobile ? undefined : 'calc(env(safe-area-inset-top, 0px) + 20px)',
+        left: isMobile ? 'calc(env(safe-area-inset-left, 0px) + 8px)' : '50%',
+        right: isMobile ? 'calc(env(safe-area-inset-right, 0px) + 8px)' : undefined,
+        bottom: isMobile ? `calc(env(safe-area-inset-bottom, 0px) + ${84 + index * 8}px)` : undefined,
+        transform: isMobile ? undefined : 'translateX(-50%)',
         zIndex: 9999,
-        width: isMobile ? '96%' : '90%',
+        width: isMobile ? 'auto' : '90%',
         maxWidth: '400px',
     }),
     card: (isMobile: boolean): React.CSSProperties => ({
         display: 'flex',
-        alignItems: 'flex-start',
-        gap: '12px',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'flex-start',
+        gap: isMobile ? '10px' : '12px',
         padding: isMobile ? '12px' : '16px',
         background: Colors.surface,
         border: `2px solid ${Colors.primary}`,
-        borderRadius: '16px',
+        borderRadius: isMobile ? '14px' : '16px',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+    }),
+    topRow: (isMobile: boolean): React.CSSProperties => ({
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: isMobile ? '10px' : '12px',
     }),
     iconContainer: {
         width: '48px',
@@ -362,6 +386,7 @@ const styles = {
     },
     content: {
         flex: 1,
+        minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
@@ -378,12 +403,13 @@ const styles = {
         margin: 0,
         lineHeight: 1.4,
     },
-    details: {
+    details: (isMobile: boolean): React.CSSProperties => ({
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
         marginTop: '4px',
-    },
+        flexWrap: isMobile ? 'wrap' : 'nowrap',
+    }),
     badge: {
         fontSize: '10px',
         fontWeight: 700,
@@ -396,6 +422,10 @@ const styles = {
         fontSize: '11px',
         color: Colors.textTertiary,
         fontStyle: 'italic',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap' as const,
+        maxWidth: '170px',
     },
     timer: {
         display: 'flex',
@@ -408,6 +438,7 @@ const styles = {
         flexDirection: isMobile ? 'row' : 'column',
         gap: '8px',
         flexShrink: 0,
+        width: isMobile ? '100%' : undefined,
     }),
     acceptBtn: {
         width: '40px',
@@ -420,6 +451,7 @@ const styles = {
         alignItems: 'center',
         justifyContent: 'center',
         cursor: 'pointer',
+        gap: '6px',
     },
     declineBtn: {
         width: '40px',
@@ -433,4 +465,16 @@ const styles = {
         justifyContent: 'center',
         cursor: 'pointer',
     },
+    mobileActionBtn: {
+        flex: 1,
+        width: '100%',
+        minHeight: '46px',
+        borderRadius: '10px',
+        fontSize: '13px',
+        fontWeight: 800,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+    } as React.CSSProperties,
 };
