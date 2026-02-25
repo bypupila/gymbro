@@ -21,9 +21,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare Firebase admin credentials
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" ]; then
+            {
+              echo "FIREBASE_SERVICE_ACCOUNT_JSON<<EOF"
+              echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+          elif [ -n "${{ secrets.FIREBASE_PROJECT_ID }}" ] && [ -n "${{ secrets.FIREBASE_CLIENT_EMAIL }}" ] && [ -n "${{ secrets.FIREBASE_PRIVATE_KEY }}" ]; then
+            json="$(jq -cn \
+              --arg project_id "${{ secrets.FIREBASE_PROJECT_ID }}" \
+              --arg client_email "${{ secrets.FIREBASE_CLIENT_EMAIL }}" \
+              --arg private_key "${{ secrets.FIREBASE_PRIVATE_KEY }}" \
+              '{type:"service_account", project_id:$project_id, client_email:$client_email, private_key:$private_key, token_uri:"https://oauth2.googleapis.com/token"}')"
+            echo "FIREBASE_SERVICE_ACCOUNT_JSON=$json" >> "$GITHUB_ENV"
+          else
+            echo "Missing Firebase admin secrets" >&2
+            exit 1
+          fi
+
       - name: Run partner consistency audit
         run: npm run admin:audit:partners
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
-          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ env.FIREBASE_SERVICE_ACCOUNT_JSON }}
