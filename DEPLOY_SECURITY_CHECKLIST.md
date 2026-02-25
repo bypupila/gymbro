@@ -71,7 +71,7 @@ Date: 2026-02-24
    - `npm run admin:rotate:test-passwords`
 2. Archive Playwright HTML report from the release run.
 3. Track remaining hardening backlog:
-   - remove remaining CSP `style-src 'unsafe-inline'` where feasible
+   - migrate inline `style={{...}}` to CSS classes to allow `style-src-attr 'none'`
    - tune and monitor API rate limiting for `/api/gemini`
 4. Run security log monitoring report (see `docs/SECURITY_MONITORING_RUNBOOK.md`):
    - `npm run admin:security:report -- --in=logs/vercel-gemini-security.jsonl`
