@@ -184,6 +184,41 @@ Requiere autenticacion previa en GitHub CLI:
 gh auth login
 ```
 
+## 11) Monitoreo de seguridad (rate limit y abuso en Gemini)
+
+La API `/api/gemini` emite eventos de seguridad estructurados en logs (`channel=security`), incluyendo:
+
+1. `gemini_rate_limited_ip`
+2. `gemini_rate_limited_user`
+3. `gemini_auth_missing_token`
+4. `gemini_auth_invalid_token`
+5. `gemini_payload_too_large`
+
+Captura logs de Vercel en JSON y genera reporte:
+
+```bash
+# 1) Stream de logs (5 min max por ejecucion de vercel logs)
+vercel logs https://gym.bypupila.com --format=json > logs/vercel-gemini-security.jsonl
+
+# 2) Resumen legible
+npm run admin:security:report -- --in=logs/vercel-gemini-security.jsonl
+
+# 3) Salida JSON (si quieres automatizar)
+npm run admin:security:report -- --in=logs/vercel-gemini-security.jsonl --json
+```
+
+Opciones de alerta:
+
+```bash
+npm run admin:security:report -- \
+  --in=logs/vercel-gemini-security.jsonl \
+  --alertRateLimit=80 \
+  --alertAuthFailures=120 \
+  --failOnAlert
+```
+
+El script retorna exit code `2` cuando supera umbrales y `--failOnAlert` esta habilitado.
+
 ## Seguridad
 
 - Nunca subas el JSON de service account al repositorio.
