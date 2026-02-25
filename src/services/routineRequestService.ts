@@ -69,7 +69,6 @@ export const routineRequestService = {
                 updateDoc(doc(db, 'routineRequests', docSnap.id), {
                     status: 'cancelled',
                     resolvedAt: now.toISOString(),
-                    cancelledReason: 'superseded_by_new_request',
                 })
             )
         );

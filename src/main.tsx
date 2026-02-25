@@ -10,8 +10,6 @@ import './styles/global.css';
 import { useUserStore } from './stores/userStore';
 
 if (import.meta.env.DEV) {
-    import('react-grab');
-
     (window as Window & { __gymbroStore?: typeof useUserStore }).__gymbroStore = useUserStore;
 }
 

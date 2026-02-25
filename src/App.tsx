@@ -35,6 +35,7 @@ const CatalogPage = lazy(() => import('./pages/CatalogPage').then(module => ({ d
 
 const isDevAuthBypassEnabled = () =>
     import.meta.env.DEV &&
+    import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS === '1' &&
     typeof window !== 'undefined' &&
     window.localStorage.getItem('__dev_bypass_auth') === '1';
 

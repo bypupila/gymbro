@@ -143,6 +143,47 @@ Que elimina:
 4. Referencias globales en `linkRequests`, `relationshipActions`, `routineRequests`, `trainingInvitations`.
 5. Sesiones en `liveSessions` relacionadas (por `participants` o `createdBy`).
 
+## 8) Gestionar custom claim admin
+
+El catalogo ahora usa custom claim `admin=true` para permisos de escritura.
+
+```bash
+# Dar permisos admin por alias
+npm run admin:set-admin-claim -- --alias=bypupila --admin=true
+
+# Quitar permisos admin por email
+npm run admin:set-admin-claim -- --email=usuario@mail.com --admin=false
+```
+
+## 9) Rotar credenciales QA para pruebas live
+
+Rota solo las contrasenas de las cuentas QA existentes en `.env` (`GYMBRO_EMAIL` y `GYMBRO_EMAIL_2`) y actualiza `GYMBRO_PASSWORD` / `GYMBRO_PASSWORD_2`.
+
+```bash
+npm run admin:rotate:test-passwords
+```
+
+## 10) Subir secrets rotados a GitHub Actions
+
+Sube los secretos requeridos para el gate CI/CD desde `.env` y/o `FIREBASE_SERVICE_ACCOUNT_KEY_PATH` al repo remoto de `origin`.
+
+```bash
+# Preview (sin subir)
+npm run admin:push:github-secrets -- --dry-run
+
+# Subir al repo origin detectado automaticamente
+npm run admin:push:github-secrets
+
+# O repo explicito
+npm run admin:push:github-secrets -- --repo=bypupila/gymbro
+```
+
+Requiere autenticacion previa en GitHub CLI:
+
+```bash
+gh auth login
+```
+
 ## Seguridad
 
 - Nunca subas el JSON de service account al repositorio.

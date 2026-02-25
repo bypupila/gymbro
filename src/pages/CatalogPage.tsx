@@ -1,17 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import Colors from '@/styles/colors';
 import { Search, Play, Pencil, Database, Save, X, Loader2 } from 'lucide-react';
-import { useUserStore } from '@/stores/userStore';
 import { firebaseService } from '@/services/firebaseService';
+import { authService } from '@/services/authService';
 import { toast } from 'react-hot-toast';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, GrupoMuscularEjercicio, EjercicioBase } from '@/data/exerciseDatabase';
 import { getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
+import { toTrustedExternalVideoUrl } from '@/utils/urlSafety';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const CatalogPage: React.FC = () => {
-
-    const perfil = useUserStore((state) => state.perfil);
-    const isAdmin = perfil.alias === 'bypupila' || perfil.role === 'admin';
+    const [isAdmin, setIsAdmin] = useState(false);
 
     const [exercises, setExercises] = useState(EJERCICIOS_DATABASE);
     const [searchQuery, setSearchQuery] = useState('');
@@ -21,6 +20,18 @@ export const CatalogPage: React.FC = () => {
     const [editingExercise, setEditingExercise] = useState<EjercicioBase | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [useFirebaseData, setUseFirebaseData] = useState(false);
+
+    React.useEffect(() => {
+        let isMounted = true;
+        void authService.isCurrentUserAdmin().then((value) => {
+            if (isMounted) {
+                setIsAdmin(value);
+            }
+        });
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     // Load exercises from Firebase and MERGE with local
     React.useEffect(() => {
@@ -199,8 +210,8 @@ export const CatalogPage: React.FC = () => {
                         // Use stored image or fallback
                         const img = ej.imagen || getExerciseImage(ej.nombre, ej.grupoMuscular);
                         // Use stored video or lookup
-                        const videoUrl = ej.videoUrl || getExerciseVideo(ej.nombre);
-                        const hasVideo = !!videoUrl;
+                        const videoUrl = toTrustedExternalVideoUrl(ej.videoUrl || getExerciseVideo(ej.nombre) || '');
+                        const hasVideo = Boolean(videoUrl);
 
                         return (
                             <motion.div
@@ -212,7 +223,9 @@ export const CatalogPage: React.FC = () => {
                                 key={ej.id || ej.nombre}
                                 style={styles.card}
                                 onClick={() => {
-                                    if (videoUrl) window.open(videoUrl, '_blank');
+                                    if (videoUrl) {
+                                        window.open(videoUrl, '_blank', 'noopener,noreferrer');
+                                    }
                                 }}
                             >
                                 <div style={styles.imageContainer}>

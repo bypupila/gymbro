@@ -217,7 +217,7 @@ const normalizeProfileData = (
     const userDisplayName = typeof rawUserData.displayName === 'string' ? rawUserData.displayName : '';
     const roleRaw = rawUserData.role;
     const role: 'admin' | 'user' =
-        roleRaw === 'admin' || userDisplayName === 'bypupila'
+        roleRaw === 'admin'
             ? 'admin'
             : 'user';
 
@@ -312,16 +312,19 @@ export const firebaseService = {
     async getProfile(userId: string): Promise<PerfilCompleto | null> {
         const profileRef = doc(db, 'users', userId, 'profile', 'main');
         const userRef = doc(db, 'users', userId);
-
-        const [profileSnap, userSnap] = await Promise.all([
-            getDoc(profileRef),
-            getDoc(userRef)
-        ]);
+        const profileSnap = await getDoc(profileRef);
 
         if (!profileSnap.exists()) return null;
 
         const data = profileSnap.data();
-        const userData = userSnap.exists() ? userSnap.data() : {};
+        let userData: Record<string, unknown> = {};
+        try {
+            const userSnap = await getDoc(userRef);
+            userData = userSnap.exists() ? userSnap.data() : {};
+        } catch (error: any) {
+            // With stricter privacy rules, partner profile reads may not include /users/{uid} metadata.
+            debugLog('[getProfile] user metadata read skipped:', error?.code || error?.message || error);
+        }
 
         // Cargar historial y rutinas en paralelo
         let historial: EntrenamientoRealizado[] = [];
@@ -342,7 +345,7 @@ export const firebaseService = {
 
         return normalizeProfileData(
             data as Record<string, unknown>,
-            userData as Record<string, unknown>,
+            userData,
             {
                 historial,
                 historialRutinas,
@@ -719,65 +722,7 @@ export const firebaseService = {
 
         const requestsRef = collection(db, 'linkRequests');
 
-        // PASO 1: Obtener perfiles
-        let requesterProfileSnap, recipientProfileSnap;
-        try {
-            [requesterProfileSnap, recipientProfileSnap] = await Promise.all([
-                getDoc(doc(db, 'users', requesterId, 'profile', 'main')),
-                getDoc(doc(db, 'users', recipientId, 'profile', 'main')),
-            ]);
-            debugLog('[sendLinkRequest] Perfiles obtenidos', {
-                requesterExists: requesterProfileSnap.exists(),
-                recipientExists: recipientProfileSnap.exists()
-            });
-        } catch (error) {
-            console.error('[sendLinkRequest] Error obteniendo perfiles:', error);
-            throw error;
-        }
-
-        if (!requesterProfileSnap.exists() || !recipientProfileSnap.exists()) {
-            console.error('[sendLinkRequest] Perfil no encontrado', {
-                requesterExists: requesterProfileSnap.exists(),
-                recipientExists: recipientProfileSnap.exists()
-            });
-            throw new Error('PROFILE_NOT_FOUND');
-        }
-        const requesterProfile = requesterProfileSnap.data();
-        const recipientProfile = recipientProfileSnap.data();
-
-        // PASO 2: Validar estado de vinculacion
-        const requesterLinkedId =
-            requesterProfile.activePartnerId ||
-            requesterProfile.partnerId ||
-            requesterProfile.partnerIds?.[0] ||
-            requesterProfile.partners?.[0]?.id ||
-            null;
-        const recipientLinkedId =
-            recipientProfile.activePartnerId ||
-            recipientProfile.partnerId ||
-            recipientProfile.partnerIds?.[0] ||
-            recipientProfile.partners?.[0]?.id ||
-            null;
-
-        debugLog('[sendLinkRequest] Estado de vinculacion', {
-            requesterLinkedId,
-            recipientLinkedId
-        });
-
-        if (requesterLinkedId && requesterLinkedId !== recipientId) {
-            console.error('[sendLinkRequest] Requester ya tiene partner:', requesterLinkedId);
-            throw new Error('ALREADY_HAS_PARTNER');
-        }
-        if (recipientLinkedId && recipientLinkedId !== requesterId) {
-            console.error('[sendLinkRequest] Recipient ya tiene partner:', recipientLinkedId);
-            throw new Error('RECIPIENT_ALREADY_HAS_PARTNER');
-        }
-        if (requesterLinkedId === recipientId && recipientLinkedId === requesterId) {
-            console.error('[sendLinkRequest] Ya estan vinculados');
-            throw new Error('ALREADY_LINKED');
-        }
-
-        // PASO 3: Verificar requests existentes
+        // PASO 1: Verificar requests existentes (anti-duplicados)
         let directPending, reciprocalPending, acceptedDirect, acceptedReciprocal;
         try {
             debugLog('[sendLinkRequest] Verificando requests existentes...');
@@ -828,7 +773,7 @@ export const firebaseService = {
             return;
         }
 
-        // PASO 4: Auto-aceptar si hay request reciproca
+        // PASO 2: Auto-aceptar si hay request reciproca
         if (!reciprocalPending.empty) {
             debugLog('[sendLinkRequest] Request reciproca encontrada, auto-aceptando...');
             const reciprocalDoc = reciprocalPending.docs[0];
@@ -849,7 +794,7 @@ export const firebaseService = {
             return;
         }
 
-        // PASO 5: Crear nueva request
+        // PASO 3: Crear nueva request
         try {
             const linkRequestData = {
                 requesterId,
@@ -862,8 +807,12 @@ export const firebaseService = {
             debugLog('[sendLinkRequest] Creando documento de request:', linkRequestData);
             await addDoc(requestsRef, linkRequestData);
             debugLog('[sendLinkRequest] [ok] Solicitud creada exitosamente');
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('[sendLinkRequest] Error al crear documento:', error);
+            const firestoreError = error as { code?: string };
+            if (firestoreError?.code === 'permission-denied') {
+                throw new Error('LINK_REQUEST_NOT_ALLOWED');
+            }
             throw error;
         }
     },
@@ -1017,21 +966,7 @@ export const firebaseService = {
     async acceptLinkRequest(request: LinkRequest): Promise<void> {
         debugLog('[acceptLinkRequest] Iniciando aceptacion', request);
 
-        // Obtener alias del recipient si no esta presente
-        let recipientAlias = request.recipientAlias;
-        if (!recipientAlias) {
-            debugLog('[acceptLinkRequest] recipientAlias no presente, obteniendo desde perfil...');
-            try {
-                const recipientUserDoc = await getDoc(doc(db, 'users', request.recipientId));
-                if (recipientUserDoc.exists()) {
-                    recipientAlias = recipientUserDoc.data()?.displayName || request.recipientId;
-                    debugLog('[acceptLinkRequest] recipientAlias obtenido:', recipientAlias);
-                }
-            } catch (error) {
-                console.error('[acceptLinkRequest] Error obteniendo recipientAlias:', error);
-                recipientAlias = request.recipientId;
-            }
-        }
+        const recipientAlias = request.recipientAlias || request.recipientId;
 
         const requestRef = doc(db, 'linkRequests', request.id);
         await updateDoc(requestRef, {
@@ -1089,7 +1024,6 @@ export const firebaseService = {
         }
 
         // PASO 1: Crear action principal (best-effort)
-        let actionDocId: string | null = null;
         try {
             const actionDoc = await addDoc(collection(db, 'relationshipActions'), {
                 actionType: 'UNLINK',
@@ -1099,7 +1033,6 @@ export const firebaseService = {
                 status: 'pending',
                 createdAt: new Date().toISOString(),
             });
-            actionDocId = actionDoc.id;
             debugLog('[unlinkPartner] Action creada:', actionDoc.id);
         } catch (error) {
             console.error('[unlinkPartner] No se pudo crear action principal (continuando con cleanup):', error);
@@ -1108,26 +1041,6 @@ export const firebaseService = {
         // PASO 2: Actualizar mi perfil
         await this.removePartnerFromOwnProfile(userId, partnerToRemove.id);
         debugLog('[unlinkPartner] Perfil propio actualizado');
-
-        // PASO 3: Crear mirror action para partner (best-effort, requiere mirrorOf)
-        if (actionDocId) {
-            try {
-                await addDoc(collection(db, 'relationshipActions'), {
-                    actionType: 'UNLINK',
-                    initiatedBy: userId,
-                    sourceUserId: partnerToRemove.id, // INVERTIDO
-                    targetUserId: userId,               // INVERTIDO
-                    status: 'pending',
-                    createdAt: new Date().toISOString(),
-                    mirrorOf: actionDocId,
-                });
-                debugLog('[unlinkPartner] Mirror action creada para partner');
-            } catch (error) {
-                console.error('[unlinkPartner] No se pudo crear mirror action:', error);
-            }
-        }
-
-        // El listener del partner detectara la mirror action y se auto-desvinculara
     },
 
     async removePartnerFromOwnProfile(userId: string, partnerIdToRemove: string): Promise<void> {
@@ -1268,13 +1181,9 @@ export const firebaseService = {
         const data = aliasSnap.data();
         if (!data?.userId) return null;
 
-        const userSnap = await getDoc(doc(db, 'users', data.userId));
-        if (!userSnap.exists()) return null;
-        const userData = userSnap.data() || {};
-
         return {
             id: data.userId,
-            name: data.displayName || userData.displayName || cleanAlias,
+            name: data.displayName || cleanAlias,
             alias: cleanAlias,
         };
     },

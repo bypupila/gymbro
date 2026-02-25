@@ -23,6 +23,7 @@ import {
 import { Card } from './Card';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '@/data/exerciseDatabase';
 import { getExerciseVideo, getExerciseImage } from '@/data/exerciseMedia';
+import { toTrustedExternalVideoUrl } from '@/utils/urlSafety';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MoodCheckin } from './MoodCheckin';
 import { toast } from 'react-hot-toast';
@@ -1427,7 +1428,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         >
                             <div style={styles.setsContainer}>
                                 {(() => {
-                                    const videoUrl = getExerciseVideo(ex.nombre);
+                                    const videoUrl = toTrustedExternalVideoUrl(getExerciseVideo(ex.nombre));
                                     const imageSrc = ex.imagen || getExerciseImage(ex.nombre);
                                     return (
                                         <div style={styles.previewContainer}>

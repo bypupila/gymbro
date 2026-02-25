@@ -175,6 +175,7 @@ export const trainingInvitationService = {
         const invitationRef = doc(db, 'trainingInvitations', invitationId);
         await updateDoc(invitationRef, {
             status: 'accepted',
+            resolvedAt: new Date().toISOString(),
         });
     },
 
@@ -185,6 +186,7 @@ export const trainingInvitationService = {
         const invitationRef = doc(db, 'trainingInvitations', invitationId);
         await updateDoc(invitationRef, {
             status: 'declined',
+            resolvedAt: new Date().toISOString(),
         });
     },
 
@@ -213,7 +215,7 @@ export const trainingInvitationService = {
         for (const docSnap of sentSnap.docs) {
             const data = docSnap.data();
             if (data.expiresAt && data.expiresAt < now) {
-                await updateDoc(docSnap.ref, { status: 'expired' });
+                await deleteDoc(docSnap.ref);
             }
         }
 
@@ -227,7 +229,7 @@ export const trainingInvitationService = {
         for (const docSnap of recvSnap.docs) {
             const data = docSnap.data();
             if (data.expiresAt && data.expiresAt < now) {
-                await updateDoc(docSnap.ref, { status: 'expired' });
+                await deleteDoc(docSnap.ref);
             }
         }
     },

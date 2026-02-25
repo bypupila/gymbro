@@ -148,6 +148,8 @@ export const ProfilePage: React.FC = () => {
                 toast.error('Ese usuario ya tiene un partner activo.');
             } else if (errorMessage === 'ALREADY_LINKED') {
                 toast.error('Ya estan vinculados.');
+            } else if (errorMessage === 'LINK_REQUEST_NOT_ALLOWED') {
+                toast.error('No se puede crear la solicitud. Verifica que ambos perfiles esten listos o no tengan partner activo.');
             } else if (errorMessage === 'PROFILE_NOT_FOUND') {
                 toast.error('No se pudo encontrar el perfil del usuario.');
             } else if (errorCode === 'permission-denied') {

@@ -10,40 +10,76 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isPartnerOf(userId) {
-      let profileDoc = get(/databases/$(database)/documents/users/$(userId)/profile/main);
-      let profile = profileDoc.data;
-      return isAuthenticated() &&
-        profile != null &&
-        (
-        profile.partnerId == request.auth.uid ||
-        (profile.partnerIds != null && request.auth.uid in profile.partnerIds)
+    function getProfile(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)/profile/main).data;
+    }
+
+    function hasProfile(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)/profile/main);
+    }
+
+    function profileHasPartner(profile, partnerId) {
+      return profile != null && partnerId is string && (
+        (profile.partnerId is string && profile.partnerId == partnerId) ||
+        (profile.activePartnerId is string && profile.activePartnerId == partnerId) ||
+        (profile.partnerIds is list && partnerId in profile.partnerIds)
       );
+    }
+
+    function linkedPartnerId(userId) {
+      let profile = getProfile(userId);
+      return profile == null
+        ? null
+        : (
+          profile.activePartnerId is string && profile.activePartnerId.size() > 0
+            ? profile.activePartnerId
+            : (
+              profile.partnerId is string && profile.partnerId.size() > 0
+                ? profile.partnerId
+                : (
+                  profile.partnerIds is list && profile.partnerIds.size() > 0
+                    ? profile.partnerIds[0]
+                    : null
+                )
+            )
+        );
+    }
+
+    function isPartnerOf(userId) {
+      let profile = getProfile(userId);
+      return isAuthenticated() && profileHasPartner(profile, request.auth.uid);
     }
 
     function callerHasLinkedTarget(targetUserId) {
-      let callerDoc = get(/databases/$(database)/documents/users/$(request.auth.uid)/profile/main);
-      let callerProfile = callerDoc.data;
-      return callerProfile != null && (
-        callerProfile.partnerId == targetUserId ||
-        (callerProfile.partnerIds != null && targetUserId in callerProfile.partnerIds)
-      );
+      let callerProfile = getProfile(request.auth.uid);
+      return callerProfile != null && profileHasPartner(callerProfile, targetUserId);
     }
 
     function targetHasLinkedCaller(targetUserId) {
-      let targetDoc = get(/databases/$(database)/documents/users/$(targetUserId)/profile/main);
-      let targetProfile = targetDoc.data;
-      return targetProfile != null && (
-        targetProfile.partnerId == request.auth.uid ||
-        targetProfile.activePartnerId == request.auth.uid ||
-        (targetProfile.partnerIds != null && request.auth.uid in targetProfile.partnerIds)
-      );
+      let targetProfile = getProfile(targetUserId);
+      return targetProfile != null && profileHasPartner(targetProfile, request.auth.uid);
     }
 
-    // Profile: owner write/read, partners read.
+    function allowedUserMetadataFields() {
+      return [
+        'email',
+        'displayName',
+        'createdAt',
+        'updatedAt',
+        'lastSyncedAt',
+        'lastAliasUpdate'
+      ];
+    }
+
+    function allowedAliasFields() {
+      return ['userId', 'displayName', 'createdAt', 'updatedAt'];
+    }
+
+    // Profile documents are private by default.
+    // Only owner and currently linked partner can read.
     match /users/{userId}/profile/{document=**} {
-      // Permitir lectura a usuarios autenticados para permitir vinculacion
-      allow read: if isAuthenticated();
+      allow get: if isOwner(userId) || isPartnerOf(userId);
+      allow list: if false;
       allow write: if isOwner(userId);
     }
 
@@ -67,17 +103,30 @@ service cloud.firestore {
       allow write: if isOwner(userId);
     }
 
-    // Alias lookup
+    // Alias lookup: allow direct document lookup, disallow enumeration.
     match /userAliases/{alias} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow get: if isAuthenticated();
+      allow list: if false;
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasOnly(allowedAliasFields());
+      allow update: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.keys().hasOnly(allowedAliasFields());
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
-    // User metadata
+    // User metadata: owner-only read/write with field allowlist.
+    // Prevents client-side privilege escalation via mutable role-like fields.
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) &&
+        request.resource.data.keys().hasOnly(allowedUserMetadataFields());
+      allow update: if isOwner(userId) &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(allowedUserMetadataFields());
+      allow delete: if false;
     }
 
     // FCM tokens
@@ -85,13 +134,10 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // Exercise catalog
+    // Exercise catalog - admin only via Firebase custom claims.
     match /exercises/{exerciseId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName == 'bypupila'
-      );
+      allow write: if isAuthenticated() && request.auth.token.admin == true;
     }
 
     // Link requests
@@ -100,39 +146,97 @@ service cloud.firestore {
         resource.data.requesterId == request.auth.uid ||
         resource.data.recipientId == request.auth.uid
       );
+
       allow create: if isAuthenticated() &&
         request.resource.data.requesterId == request.auth.uid &&
-        // Validar campos mínimos requeridos
         request.resource.data.requesterId is string &&
         request.resource.data.recipientId is string &&
         request.resource.data.requesterAlias is string &&
+        request.resource.data.recipientAlias is string &&
+        request.resource.data.createdAt is string &&
         request.resource.data.status == 'pending' &&
-        // Evitar auto-vinculación
-        request.resource.data.requesterId != request.resource.data.recipientId;
+        request.resource.data.requesterId != request.resource.data.recipientId &&
+        request.resource.data.keys().hasOnly([
+          'requesterId',
+          'requesterAlias',
+          'recipientId',
+          'recipientAlias',
+          'status',
+          'createdAt'
+        ]) &&
+        hasProfile(request.resource.data.requesterId) &&
+        hasProfile(request.resource.data.recipientId) &&
+        (
+          linkedPartnerId(request.auth.uid) == null ||
+          linkedPartnerId(request.auth.uid) == request.resource.data.recipientId
+        ) &&
+        (
+          linkedPartnerId(request.resource.data.recipientId) == null ||
+          linkedPartnerId(request.resource.data.recipientId) == request.auth.uid
+        );
+
       allow update: if isAuthenticated() && (
         (
-          // Recipient puede aceptar/rechazar y agregar su alias
+          // Recipient can accept/decline pending request.
           resource.data.recipientId == request.auth.uid &&
+          resource.data.status == 'pending' &&
           request.resource.data.status in ['accepted', 'declined'] &&
-          // Solo puede modificar status, resolvedAt y recipientAlias
           request.resource.data.requesterId == resource.data.requesterId &&
           request.resource.data.recipientId == resource.data.recipientId &&
-          request.resource.data.requesterAlias == resource.data.requesterAlias
+          request.resource.data.requesterAlias == resource.data.requesterAlias &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.keys().hasOnly([
+            'requesterId',
+            'requesterAlias',
+            'recipientId',
+            'recipientAlias',
+            'status',
+            'createdAt',
+            'resolvedAt',
+            'updatedAt'
+          ])
         ) ||
         (
-          // Requester puede cancelar
+          // Requester can cancel pending request.
           resource.data.requesterId == request.auth.uid &&
-          request.resource.data.status == 'cancelled'
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'cancelled' &&
+          request.resource.data.requesterId == resource.data.requesterId &&
+          request.resource.data.recipientId == resource.data.recipientId &&
+          request.resource.data.requesterAlias == resource.data.requesterAlias &&
+          request.resource.data.recipientAlias == resource.data.recipientAlias &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.keys().hasOnly([
+            'requesterId',
+            'requesterAlias',
+            'recipientId',
+            'recipientAlias',
+            'status',
+            'createdAt',
+            'resolvedAt',
+            'updatedAt'
+          ])
         ) ||
         (
-          // Ambos pueden marcar como unlinked si estaba accepted
+          // Either side can mark an accepted relationship as unlinked.
           (resource.data.requesterId == request.auth.uid || resource.data.recipientId == request.auth.uid) &&
           resource.data.status == 'accepted' &&
           request.resource.data.status == 'unlinked' &&
-          // No puede cambiar otros campos
           request.resource.data.requesterId == resource.data.requesterId &&
           request.resource.data.recipientId == resource.data.recipientId &&
-          request.resource.data.requesterAlias == resource.data.requesterAlias
+          request.resource.data.requesterAlias == resource.data.requesterAlias &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.keys().hasOnly([
+            'requesterId',
+            'requesterAlias',
+            'recipientId',
+            'recipientAlias',
+            'status',
+            'createdAt',
+            'resolvedAt',
+            'unlinkedAt',
+            'updatedAt'
+          ])
         )
       );
       allow delete: if false;
@@ -144,13 +248,23 @@ service cloud.firestore {
         resource.data.sourceUserId == request.auth.uid ||
         resource.data.targetUserId == request.auth.uid
       );
+
       allow create: if isAuthenticated() &&
         request.resource.data.initiatedBy == request.auth.uid &&
+        request.resource.data.sourceUserId == request.auth.uid &&
+        request.resource.data.targetUserId is string &&
+        request.resource.data.actionType in ['UNLINK', 'BREAK_SYNC', 'SYNC_NOW'] &&
+        request.resource.data.keys().hasOnly([
+          'actionType',
+          'initiatedBy',
+          'sourceUserId',
+          'targetUserId',
+          'status',
+          'createdAt'
+        ]) &&
         (
-          // Acción normal (usuario como source)
           (
             request.resource.data.actionType == 'UNLINK' &&
-            request.resource.data.sourceUserId == request.auth.uid &&
             (
               callerHasLinkedTarget(request.resource.data.targetUserId) ||
               targetHasLinkedCaller(request.resource.data.targetUserId)
@@ -158,14 +272,10 @@ service cloud.firestore {
           ) ||
           (
             request.resource.data.actionType in ['BREAK_SYNC', 'SYNC_NOW'] &&
-            request.resource.data.sourceUserId == request.auth.uid &&
             callerHasLinkedTarget(request.resource.data.targetUserId)
-          ) ||
-          // Mirror action (usuario como target, para desvinculación bidireccional)
-          (request.resource.data.targetUserId == request.auth.uid &&
-           request.resource.data.mirrorOf is string)
-        ) &&
-        request.resource.data.actionType in ['UNLINK', 'BREAK_SYNC', 'SYNC_NOW'];
+          )
+        );
+
       allow update, delete: if false;
     }
 
@@ -176,42 +286,123 @@ service cloud.firestore {
         resource.data.toUserId == request.auth.uid ||
         resource.data.targetUserId == request.auth.uid
       );
+
       allow create: if isAuthenticated() &&
         request.resource.data.fromUserId == request.auth.uid &&
-        request.resource.data.toUserId != request.auth.uid;
+        request.resource.data.toUserId is string &&
+        request.resource.data.toUserId != request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.applyStatus == 'pending' &&
+        request.resource.data.keys().hasOnly([
+          'fromUserId',
+          'fromName',
+          'toUserId',
+          'toName',
+          'sourceUserId',
+          'targetUserId',
+          'type',
+          'status',
+          'syncAfterAccept',
+          'createdAt',
+          'expiresAt',
+          'applyStatus'
+        ]);
+
       allow update: if isAuthenticated() && (
         (
+          // Recipient accepts/declines
           resource.data.toUserId == request.auth.uid &&
-          request.resource.data.status in ['accepted', 'declined']
+          resource.data.status == 'pending' &&
+          request.resource.data.status in ['accepted', 'declined'] &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'status',
+            'resolvedAt',
+            'applyStatus',
+            'updatedAt'
+          ]) &&
+          request.resource.data.fromUserId == resource.data.fromUserId &&
+          request.resource.data.toUserId == resource.data.toUserId &&
+          request.resource.data.sourceUserId == resource.data.sourceUserId &&
+          request.resource.data.targetUserId == resource.data.targetUserId &&
+          request.resource.data.type == resource.data.type
         ) ||
         (
+          // Sender cancels pending request
           resource.data.fromUserId == request.auth.uid &&
-          request.resource.data.status == 'cancelled'
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'cancelled' &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'status',
+            'resolvedAt',
+            'updatedAt'
+          ]) &&
+          request.resource.data.fromUserId == resource.data.fromUserId &&
+          request.resource.data.toUserId == resource.data.toUserId &&
+          request.resource.data.sourceUserId == resource.data.sourceUserId &&
+          request.resource.data.targetUserId == resource.data.targetUserId &&
+          request.resource.data.type == resource.data.type
         ) ||
         (
-          // Target user can mark the routine copy as applied
+          // Target marks copy as applied
           resource.data.targetUserId == request.auth.uid &&
           resource.data.status == 'accepted' &&
-          request.resource.data.applyStatus == 'applied'
+          request.resource.data.applyStatus == 'applied' &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'applyStatus',
+            'appliedAt',
+            'appliedBy',
+            'updatedAt'
+          ]) &&
+          request.resource.data.fromUserId == resource.data.fromUserId &&
+          request.resource.data.toUserId == resource.data.toUserId &&
+          request.resource.data.sourceUserId == resource.data.sourceUserId &&
+          request.resource.data.targetUserId == resource.data.targetUserId &&
+          request.resource.data.type == resource.data.type
         )
       );
+
       allow delete: if false;
     }
 
     // Live sessions
     match /liveSessions/{sessionId} {
-      allow read: if isAuthenticated() && (
-        request.auth.uid in resource.data.participants
-      );
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
+
       allow create: if isAuthenticated() &&
-        request.resource.data.createdBy == request.auth.uid;
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.participants is list &&
+        request.auth.uid in request.resource.data.participants &&
+        request.resource.data.participants.size() >= 2 &&
+        request.resource.data.keys().hasOnly([
+          'sessionId',
+          'startTime',
+          'routineName',
+          'dayName',
+          'status',
+          'createdBy',
+          'participants',
+          'createdAt',
+          'updatedAt'
+        ]);
+
       allow update: if isAuthenticated() &&
-        request.auth.uid in resource.data.participants;
+        request.auth.uid in resource.data.participants &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'updatedAt',
+          'completedAt',
+          'cancelledAt'
+        ]) &&
+        request.resource.data.status in ['active', 'completed', 'cancelled'] &&
+        (
+          request.resource.data.status == resource.data.status ||
+          (resource.data.status == 'active' && request.resource.data.status in ['completed', 'cancelled'])
+        );
 
       match /participants/{userId} {
-        allow read: if isAuthenticated() && (
-          request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants
-        );
+        allow read: if isAuthenticated() &&
+          request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants;
         allow write: if isAuthenticated() &&
           request.auth.uid == userId &&
           request.auth.uid in get(/databases/$(database)/documents/liveSessions/$(sessionId)).data.participants;
@@ -224,10 +415,65 @@ service cloud.firestore {
         resource.data.fromUserId == request.auth.uid ||
         resource.data.toUserId == request.auth.uid
       );
+
       allow create: if isAuthenticated() &&
-        request.resource.data.fromUserId == request.auth.uid;
+        request.resource.data.fromUserId == request.auth.uid &&
+        request.resource.data.toUserId is string &&
+        request.resource.data.toUserId != request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.sessionMode in ['shared', 'linked'] &&
+        request.resource.data.createdAt is string &&
+        request.resource.data.expiresAt is string &&
+        request.resource.data.keys().hasOnly([
+          'fromUserId',
+          'fromName',
+          'toUserId',
+          'toName',
+          'status',
+          'sessionMode',
+          'routineName',
+          'dayName',
+          'exercises',
+          'trackingDate',
+          'liveSessionId',
+          'createdAt',
+          'expiresAt'
+        ]);
+
       allow update: if isAuthenticated() &&
-        resource.data.toUserId == request.auth.uid;
+        resource.data.toUserId == request.auth.uid &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['accepted', 'declined'] &&
+        request.resource.data.fromUserId == resource.data.fromUserId &&
+        request.resource.data.toUserId == resource.data.toUserId &&
+        request.resource.data.fromName == resource.data.fromName &&
+        request.resource.data.toName == resource.data.toName &&
+        request.resource.data.sessionMode == resource.data.sessionMode &&
+        request.resource.data.routineName == resource.data.routineName &&
+        request.resource.data.dayName == resource.data.dayName &&
+        request.resource.data.exercises == resource.data.exercises &&
+        request.resource.data.trackingDate == resource.data.trackingDate &&
+        request.resource.data.liveSessionId == resource.data.liveSessionId &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.expiresAt == resource.data.expiresAt &&
+        request.resource.data.keys().hasOnly([
+          'fromUserId',
+          'fromName',
+          'toUserId',
+          'toName',
+          'status',
+          'sessionMode',
+          'routineName',
+          'dayName',
+          'exercises',
+          'trackingDate',
+          'liveSessionId',
+          'createdAt',
+          'expiresAt',
+          'resolvedAt',
+          'updatedAt'
+        ]);
+
       allow delete: if isAuthenticated() && (
         resource.data.fromUserId == request.auth.uid ||
         resource.data.toUserId == request.auth.uid

@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type {
     AnalysisResult,
     Clarification,
@@ -7,6 +6,7 @@ import type {
     EjercicioRutina,
     HorarioSemanal,
 } from "../stores/userStore";
+import { auth } from "../config/firebase";
 
 interface GeminiExerciseRaw {
     id?: string;
@@ -32,24 +32,48 @@ interface GeminiClarificationRaw {
     field?: keyof EjercicioRutina;
 }
 
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-const IS_DEV = import.meta.env.DEV;
-
-if (IS_DEV) {
-    console.debug("Gemini: API key loaded:", API_KEY.length >= 10 ? "yes" : "no");
-    if (API_KEY.length < 10) {
-        console.warn("Gemini: missing or invalid VITE_GEMINI_API_KEY.");
+const callGeminiProxy = async (
+    action: "generate-content" | "chat",
+    payload: Record<string, unknown>
+): Promise<string> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+        throw new Error("AUTH_REQUIRED");
     }
-}
 
-const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json",
-    },
-});
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch("/api/gemini", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+            action,
+            payload,
+        }),
+    });
+
+    if (!response.ok) {
+        let message = `Gemini proxy error (${response.status})`;
+        try {
+            const errorBody = await response.json();
+            if (typeof errorBody?.error === "string" && errorBody.error) {
+                message = errorBody.error;
+            }
+        } catch {
+            // Keep fallback error message.
+        }
+        throw new Error(message);
+    }
+
+    const data = await response.json();
+    if (typeof data?.text !== "string") {
+        throw new Error("INVALID_PROXY_RESPONSE");
+    }
+
+    return data.text;
+};
 
 const parseSeries = (rawSeries: number | string | undefined, fallback = 3): number => {
     const parsed = Number(rawSeries);
@@ -158,9 +182,11 @@ Devuelve JSON con esta forma:
             });
         }
 
-        const result = await model.generateContent([prompt, ...imageParts]);
-        const response = await result.response;
-        const parsed = parseJsonWithFallback(response.text()) as {
+        const text = await callGeminiProxy("generate-content", {
+            input: [prompt, ...imageParts],
+        });
+
+        const parsed = parseJsonWithFallback(text) as {
             routine_name?: string;
             confidence_level?: string;
             exercises?: GeminiExerciseRaw[];
@@ -250,9 +276,8 @@ Responde JSON:
   ]
 }`;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const parsed = parseJsonWithFallback(response.text()) as {
+        const text = await callGeminiProxy("generate-content", { input: prompt });
+        const parsed = parseJsonWithFallback(text) as {
             routine_name?: string;
             nombre?: string;
             exercises?: GeminiExerciseRaw[];
@@ -312,9 +337,8 @@ Devuelve JSON:
   ]
 }`;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const parsed = parseJsonWithFallback(response.text()) as {
+        const text = await callGeminiProxy("generate-content", { input: prompt });
+        const parsed = parseJsonWithFallback(text) as {
             routine_name?: string;
             exercises?: GeminiExerciseRaw[];
         };
@@ -346,27 +370,28 @@ export const coachChat = async (
             parts: h.parts.map((p) => ({ text: p.text })),
         }));
 
-        const chat = model.startChat({
-            history: [
-                {
-                    role: "user",
-                    parts: [{
-                        text: `Eres el coach de GymBro. Perfil: ${userProfile.nombre}, nivel ${userProfile.nivel}, objetivo ${userProfile.objetivo}, peso ${userProfile.peso}kg, lesiones: ${userProfile.lesiones || "Ninguna"}. Responde tecnico y claro.`,
-                    }],
-                },
-                {
-                    role: "model",
-                    parts: [{
-                        text: `Entendido. Soy el coach de ${userProfile.nombre}. Listo para ayudarte con recomendaciones tecnicas de entrenamiento.`,
-                    }],
-                },
-                ...validHistory,
-            ],
+        const initialHistory = [
+            {
+                role: "user",
+                parts: [{
+                    text: `Eres el coach de GymBro. Perfil: ${userProfile.nombre}, nivel ${userProfile.nivel}, objetivo ${userProfile.objetivo}, peso ${userProfile.peso}kg, lesiones: ${userProfile.lesiones || "Ninguna"}. Responde tecnico y claro.`,
+                }],
+            },
+            {
+                role: "model",
+                parts: [{
+                    text: `Entendido. Soy el coach de ${userProfile.nombre}. Listo para ayudarte con recomendaciones tecnicas de entrenamiento.`,
+                }],
+            },
+            ...validHistory,
+        ];
+
+        const text = await callGeminiProxy("chat", {
+            history: initialHistory,
+            message,
         });
 
-        const result = await chat.sendMessage(message);
-        const response = await result.response;
-        return response.text();
+        return text;
     } catch (error: unknown) {
         console.error("Gemini chat error:", error);
         return "Lo siento, tuve un problema al procesar tu consulta. Intentalo de nuevo.";

@@ -5,7 +5,8 @@ import {
     signOut as firebaseSignOut,
     onAuthStateChanged,
     User,
-    updateEmail
+    updateEmail,
+    getIdTokenResult
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 
@@ -45,5 +46,15 @@ export const authService = {
         if (!auth.currentUser) throw new Error('NO_USER');
         
         await updateEmail(auth.currentUser, newEmail);
+    },
+
+    async isCurrentUserAdmin(): Promise<boolean> {
+        if (!auth.currentUser) return false;
+        try {
+            const tokenResult = await getIdTokenResult(auth.currentUser, true);
+            return tokenResult.claims.admin === true;
+        } catch {
+            return false;
+        }
     }
 };

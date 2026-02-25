@@ -151,7 +151,9 @@ test.describe('Partner routine sync live flow', () => {
         await pageA.getByRole('button', { name: /Vincular Pareja/i }).click();
         await pageA.getByPlaceholder('ej: titan23').fill(aliasB);
         await pageA.getByRole('button', { name: 'Buscar' }).click();
-        await pageA.getByRole('button', { name: /Enviar Solicitud/i }).click();
+        const sendRequestButton = pageA.getByRole('button', { name: /Enviar Solicitud/i }).first();
+        await expect(sendRequestButton).toBeVisible({ timeout: 15000 });
+        await sendRequestButton.click({ force: true });
 
         await pageB.goto(`${baseUrl}/profile`, { waitUntil: 'domcontentloaded' });
         await expect(pageB.getByText('quiere vincularse contigo')).toBeVisible({ timeout: 30000 });

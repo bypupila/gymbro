@@ -40,6 +40,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { routineRequestService } from '@/services/routineRequestService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { ensureScheduleDays } from '@/utils/scheduleDefaults';
+import { toTrustedExternalVideoUrl } from '@/utils/urlSafety';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 
@@ -1162,7 +1163,7 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
             ) : (
                 <div style={styles.exerciseContentWrapper}>
                     {(() => {
-                        const videoUrl = getExerciseVideo(ejercicio.nombre);
+                        const videoUrl = toTrustedExternalVideoUrl(getExerciseVideo(ejercicio.nombre));
                         const imageContent = (
                             <>
                                 <img
