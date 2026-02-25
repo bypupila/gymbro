@@ -17,7 +17,10 @@ Configura en runtime (Vercel project env):
 1. `GEMINI_RATE_LIMIT_WINDOW_MS` (default `60000`)
 2. `GEMINI_RATE_LIMIT_MAX_PER_IP` (default `60`)
 3. `GEMINI_RATE_LIMIT_MAX_PER_USER` (default `30`)
-4. `SECURITY_LOG_SALT` (recomendado, para hash estable y no reversible en logs)
+4. `SECURITY_LOG_SALT` (requerido en produccion para hash estable y no reversible en logs)
+
+Si no se define `SECURITY_LOG_SALT`, el backend usa un salt efimero por proceso.
+Eso protege privacidad, pero rompe correlacion historica entre reinicios/cold starts.
 
 ## Flujo operativo rapido
 

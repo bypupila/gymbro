@@ -194,6 +194,11 @@ La API `/api/gemini` emite eventos de seguridad estructurados en logs (`channel=
 4. `gemini_auth_invalid_token`
 5. `gemini_payload_too_large`
 
+Importante:
+
+1. Configura `SECURITY_LOG_SALT` en runtime para mantener hashes anonimos y estables entre ejecuciones.
+2. Si no existe esa variable, el backend usa salt efimero por proceso (mas privado, pero dificulta correlacion historica).
+
 Captura logs de Vercel en JSON y genera reporte:
 
 ```bash

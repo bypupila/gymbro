@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 type ApiRequest = {
     method?: string;
@@ -36,7 +36,8 @@ type SecurityEventName =
     | 'gemini_rate_limited_user'
     | 'gemini_auth_missing_token'
     | 'gemini_auth_invalid_token'
-    | 'gemini_payload_too_large';
+    | 'gemini_payload_too_large'
+    | 'gemini_security_log_salt_ephemeral';
 
 const getPositiveInt = (raw: string | undefined, fallback: number): number => {
     const value = Number.parseInt(raw ?? '', 10);
@@ -48,7 +49,8 @@ const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || process.env.VITE_FIREBA
 const RATE_LIMIT_WINDOW_MS = getPositiveInt(process.env.GEMINI_RATE_LIMIT_WINDOW_MS, 60_000);
 const RATE_LIMIT_MAX_PER_IP = getPositiveInt(process.env.GEMINI_RATE_LIMIT_MAX_PER_IP, 60);
 const RATE_LIMIT_MAX_PER_USER = getPositiveInt(process.env.GEMINI_RATE_LIMIT_MAX_PER_USER, 30);
-const SECURITY_LOG_SALT = process.env.SECURITY_LOG_SALT || process.env.FIREBASE_PROJECT_ID || 'gymbro';
+const HAS_CONFIGURED_SECURITY_LOG_SALT = Boolean(process.env.SECURITY_LOG_SALT);
+const SECURITY_LOG_SALT = process.env.SECURITY_LOG_SALT || randomBytes(32).toString('hex');
 
 const getRateLimitStore = (): Map<string, RateLimitBucket> => {
     const state = globalThis as RateLimitGlobalState;
@@ -174,6 +176,12 @@ const emitSecurityEvent = (event: SecurityEventName, details: Record<string, unk
     // Structured JSON logs are easier to aggregate into dashboards and alerts.
     console.warn(JSON.stringify(payload));
 };
+
+if (!HAS_CONFIGURED_SECURITY_LOG_SALT) {
+    emitSecurityEvent('gemini_security_log_salt_ephemeral', {
+        note: 'SECURITY_LOG_SALT is missing; using an ephemeral runtime salt for hash anonymization.',
+    });
+}
 
 const getModel = () => {
     if (!GEMINI_API_KEY) {

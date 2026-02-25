@@ -7,6 +7,7 @@ Date: 2026-02-24
 1. Ensure these variables are configured in production:
    - `GEMINI_API_KEY`
    - `FIREBASE_API_KEY`
+   - `SECURITY_LOG_SALT` (secreto para anonimizar hashes de seguridad en logs)
    - Firebase web config vars (`VITE_FIREBASE_*`)
 2. Keep dev bypass disabled:
    - `VITE_ENABLE_DEV_AUTH_BYPASS=0`
