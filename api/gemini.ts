@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createHash } from 'node:crypto';
 
 type ApiRequest = {
     method?: string;
@@ -12,8 +13,143 @@ type ApiResponse = {
     json: (payload: unknown) => ApiResponse;
 };
 
+type RateLimitBucket = {
+    count: number;
+    resetAt: number;
+};
+
+type RateLimitResult = {
+    allowed: boolean;
+    limit: number;
+    remaining: number;
+    resetAt: number;
+    retryAfterSec: number;
+};
+
+type RateLimitGlobalState = typeof globalThis & {
+    __gymbroGeminiRateLimitStore?: Map<string, RateLimitBucket>;
+    __gymbroGeminiRateLimitCleanupAt?: number;
+};
+
+const getPositiveInt = (raw: string | undefined, fallback: number): number => {
+    const value = Number.parseInt(raw ?? '', 10);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || '';
+const RATE_LIMIT_WINDOW_MS = getPositiveInt(process.env.GEMINI_RATE_LIMIT_WINDOW_MS, 60_000);
+const RATE_LIMIT_MAX_PER_IP = getPositiveInt(process.env.GEMINI_RATE_LIMIT_MAX_PER_IP, 60);
+const RATE_LIMIT_MAX_PER_USER = getPositiveInt(process.env.GEMINI_RATE_LIMIT_MAX_PER_USER, 30);
+
+const getRateLimitStore = (): Map<string, RateLimitBucket> => {
+    const state = globalThis as RateLimitGlobalState;
+    if (!state.__gymbroGeminiRateLimitStore) {
+        state.__gymbroGeminiRateLimitStore = new Map();
+    }
+    return state.__gymbroGeminiRateLimitStore;
+};
+
+const pruneExpiredRateLimitBuckets = (now: number) => {
+    const state = globalThis as RateLimitGlobalState;
+    const nextCleanupAt = state.__gymbroGeminiRateLimitCleanupAt ?? 0;
+    if (now < nextCleanupAt) {
+        return;
+    }
+
+    const store = getRateLimitStore();
+    for (const [key, bucket] of store.entries()) {
+        if (bucket.resetAt <= now) {
+            store.delete(key);
+        }
+    }
+
+    state.__gymbroGeminiRateLimitCleanupAt = now + RATE_LIMIT_WINDOW_MS;
+};
+
+const applyRateLimit = (key: string, limit: number): RateLimitResult => {
+    const now = Date.now();
+    pruneExpiredRateLimitBuckets(now);
+
+    const store = getRateLimitStore();
+    const existing = store.get(key);
+
+    if (!existing || existing.resetAt <= now) {
+        const resetAt = now + RATE_LIMIT_WINDOW_MS;
+        store.set(key, { count: 1, resetAt });
+        return {
+            allowed: true,
+            limit,
+            remaining: Math.max(0, limit - 1),
+            resetAt,
+            retryAfterSec: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000),
+        };
+    }
+
+    if (existing.count >= limit) {
+        return {
+            allowed: false,
+            limit,
+            remaining: 0,
+            resetAt: existing.resetAt,
+            retryAfterSec: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+        };
+    }
+
+    existing.count += 1;
+    store.set(key, existing);
+
+    return {
+        allowed: true,
+        limit,
+        remaining: Math.max(0, limit - existing.count),
+        resetAt: existing.resetAt,
+        retryAfterSec: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+    };
+};
+
+const setRateLimitHeaders = (res: ApiResponse, result: RateLimitResult) => {
+    res.setHeader('X-RateLimit-Limit', String(result.limit));
+    res.setHeader('X-RateLimit-Remaining', String(result.remaining));
+    res.setHeader('X-RateLimit-Reset', String(Math.floor(result.resetAt / 1000)));
+    if (!result.allowed) {
+        res.setHeader('Retry-After', String(result.retryAfterSec));
+    }
+};
+
+const getHeader = (req: ApiRequest, name: string): string | null => {
+    const value = req.headers[name.toLowerCase()];
+    if (Array.isArray(value)) {
+        return value[0] ?? null;
+    }
+    return typeof value === 'string' ? value : null;
+};
+
+const getClientIp = (req: ApiRequest): string => {
+    const forwardedFor = getHeader(req, 'x-forwarded-for');
+    if (forwardedFor) {
+        const firstForwardedIp = forwardedFor.split(',')[0]?.trim();
+        if (firstForwardedIp) {
+            return firstForwardedIp;
+        }
+    }
+
+    const realIp = getHeader(req, 'x-real-ip');
+    if (realIp) {
+        return realIp.trim();
+    }
+
+    const cfConnectingIp = getHeader(req, 'cf-connecting-ip');
+    if (cfConnectingIp) {
+        return cfConnectingIp.trim();
+    }
+
+    return 'unknown';
+};
+
+const getTokenFingerprint = (token: string): string => {
+    return createHash('sha256').update(token).digest('hex').slice(0, 24);
+};
 
 const getModel = () => {
     if (!GEMINI_API_KEY) {
@@ -79,6 +215,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
+    const clientIp = getClientIp(req);
+    const ipRateLimitResult = applyRateLimit(`gemini:ip:${clientIp}`, RATE_LIMIT_MAX_PER_IP);
+    setRateLimitHeaders(res, ipRateLimitResult);
+    if (!ipRateLimitResult.allowed) {
+        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+
     const token = getBearerToken(req);
     if (!token) {
         return res.status(401).json({ error: 'Missing authentication token' });
@@ -91,6 +234,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         }
     } catch {
         return res.status(401).json({ error: 'Token verification failed' });
+    }
+
+    const userRateLimitResult = applyRateLimit(
+        `gemini:user:${clientIp}:${getTokenFingerprint(token)}`,
+        RATE_LIMIT_MAX_PER_USER
+    );
+    setRateLimitHeaders(res, userRateLimitResult);
+    if (!userRateLimitResult.allowed) {
+        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
     }
 
     if (!GEMINI_API_KEY) {
