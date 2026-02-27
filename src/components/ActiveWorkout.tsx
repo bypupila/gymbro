@@ -17,7 +17,9 @@ import {
     ChevronRight,
     RotateCcw,
     Shuffle,
-    Search
+    Search,
+    Info,
+    Activity
 } from 'lucide-react';
 import { Card } from './Card';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '@/data/exerciseDatabase';
@@ -62,17 +64,19 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [showPartnerDetailsPanel, setShowPartnerDetailsPanel] = useState(false);
     const [partnerExercises, setPartnerExercises] = useState<ExerciseTracking[] | null>(null); // New: partner's real-time exercises
     const [partnerCurrentExercise, setPartnerCurrentExercise] = useState<string | null>(null); // New: partner's current exercise
+    const [isNarrowMobile, setIsNarrowMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 420);
     type GuidedStep = { exerciseId: string; setIndex: number };
     const [guidedMode, setGuidedMode] = useState<{
         active: boolean;
         exerciseId: string | null;
         setIndex: number;
-        phase: 'preview' | 'work' | 'rest';
+        phase: 'work' | 'rest';
         sequence: GuidedStep[];
         stepIndex: number;
-    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'preview', sequence: [], stepIndex: 0 });
+    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'work', sequence: [], stepIndex: 0 });
     const [guidedWorkTimerStarted, setGuidedWorkTimerStarted] = useState(false);
     const [guidedExerciseStartAt, setGuidedExerciseStartAt] = useState<number | null>(null);
+    const [guidedSetStartedAt, setGuidedSetStartedAt] = useState<number | null>(null);
     const previousTimerRef = useRef<number>(0);
     const restTransitionLockRef = useRef(false);
 
@@ -96,6 +100,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [extraActivityDuration, setExtraActivityDuration] = useState<string>('');
     const [extraActivityDistance, setExtraActivityDistance] = useState<string>('');
     const [extraActivityIntensity, setExtraActivityIntensity] = useState<'baja' | 'media' | 'alta'>('media');
+    const [extraActivitySource, setExtraActivitySource] = useState<'outside_gym' | 'catalog_gym' | ''>('');
+    const [extraCatalogSearch, setExtraCatalogSearch] = useState('');
+    const [selectedCatalogExercise, setSelectedCatalogExercise] = useState<EjercicioBase | null>(null);
 
     const [isAddingCustom, setIsAddingCustom] = useState(false);
     const [customActivityName, setCustomActivityName] = useState('');
@@ -121,6 +128,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     useEffect(() => {
         const timer = setInterval(() => setClockNow(Date.now()), 1000);
         return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        const onResize = () => {
+            if (typeof window === 'undefined') return;
+            setIsNarrowMobile(window.innerWidth <= 420);
+        };
+        onResize();
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
     }, []);
 
     // Linked Session: Real-time sync with partner
@@ -175,6 +192,19 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         if (!guidedExerciseStartAt) return 0;
         return Math.max(0, Math.floor((clockNow - guidedExerciseStartAt) / 1000));
     }, [clockNow, guidedExerciseStartAt]);
+
+    const filteredExtraCatalogExercises = useMemo(() => {
+        const query = extraCatalogSearch.trim().toLowerCase();
+        return EJERCICIOS_DATABASE
+            .filter((exercise) => {
+                if (!query) return true;
+                return (
+                    exercise.nombre.toLowerCase().includes(query) ||
+                    exercise.grupoMuscular.toLowerCase().includes(query)
+                );
+            })
+            .slice(0, 50);
+    }, [extraCatalogSearch]);
 
     const toggleExpand = (id: string) => {
         setExpandedExercises(prev =>
@@ -323,7 +353,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             active: true,
             exerciseId: firstStep.exerciseId,
             setIndex: firstStep.setIndex,
-            phase: 'preview',
+            phase: 'work',
             sequence,
             stepIndex: 0,
         });
@@ -331,6 +361,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setIsTimerRunning(false);
         setGuidedWorkTimerStarted(false);
         setGuidedExerciseStartAt(Date.now());
+        setGuidedSetStartedAt(hasGuidedWorkTimer(exercise, firstStep.setIndex) ? null : Date.now());
         toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
 
@@ -430,12 +461,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         if (!exercise) return;
 
         const endGuidedFlow = () => {
-            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview', sequence: [], stepIndex: 0 });
+            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work', sequence: [], stepIndex: 0 });
             setIsTimerRunning(false);
             setTimerSeconds(0);
             setActiveExerciseId(null);
             setGuidedWorkTimerStarted(false);
             setGuidedExerciseStartAt(null);
+            setGuidedSetStartedAt(null);
             restTransitionLockRef.current = false;
             toast.success('Ejercicio finalizado', { id: 'exercise-finished', duration: 3000 });
         };
@@ -450,23 +482,22 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             }
         };
 
-        if (guidedMode.phase === 'preview') {
-            setGuidedMode((prev) => ({ ...prev, phase: 'work' }));
-            setCurrentSetIndex(currentStep.setIndex);
-            setTimerSeconds(getGuidedWorkSeconds(exercise, currentStep.setIndex));
-            setIsTimerRunning(false);
-            setGuidedWorkTimerStarted(false);
-            setGuidedExerciseStartAt(Date.now());
-            return;
-        }
-
         if (guidedMode.phase === 'work') {
-            updateSet(currentStep.exerciseId, currentStep.setIndex, { completed: true, skipped: false });
+            const finishedAt = Date.now();
+            const startedAt = guidedSetStartedAt || finishedAt;
+            const elapsedSeconds = Math.max(0, Math.floor((finishedAt - startedAt) / 1000));
+
+            updateSet(currentStep.exerciseId, currentStep.setIndex, {
+                completed: true,
+                skipped: false,
+                duration: elapsedSeconds
+            });
             const restSeconds = exercise.sets[currentStep.setIndex]?.rest || 30;
             setGuidedMode((prev) => ({ ...prev, phase: 'rest' }));
             setTimerSeconds(restSeconds);
             setIsTimerRunning(true);
             setGuidedWorkTimerStarted(false);
+            setGuidedSetStartedAt(null);
             toast.success('Descanso iniciado', { id: 'rest-started', duration: 3000 });
             return;
         }
@@ -502,6 +533,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         if (nextStep.exerciseId !== currentStep.exerciseId) {
             setGuidedExerciseStartAt(Date.now());
         }
+        setGuidedSetStartedAt(hasGuidedWorkTimer(nextExercise, nextStep.setIndex) ? null : Date.now());
         restTransitionLockRef.current = false;
     };
 
@@ -519,6 +551,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         if (!guidedWorkTimerStarted || timerSeconds <= 0) {
             setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
         }
+        if (!guidedSetStartedAt) {
+            setGuidedSetStartedAt(Date.now());
+        }
         setGuidedWorkTimerStarted(true);
         setIsTimerRunning(true);
     };
@@ -527,6 +562,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
         setGuidedWorkTimerStarted(false);
         setIsTimerRunning(false);
+        setGuidedSetStartedAt(null);
     };
 
     const applyPendingReplacement = (scope: 'session' | 'routine') => {
@@ -572,7 +608,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             }
         }
 
-        toast.success(scope === 'routine' ? 'Ejercicio reemplazado para siempre' : 'Ejercicio reemplazado por esta sesion');
+        toast.success(scope === 'routine' ? 'Ejercicio reemplazado para siempre' : 'Ejercicio reemplazado por esta sesión');
         setPendingReplacement(null);
         setVariantModalOpen(false);
         setVariantSearchQuery('');
@@ -719,7 +755,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 {activeSession.exercises.filter(ex => ex.categoria === 'calentamiento').length > 0 && (
                     <>
                         <div style={styles.sectionHeader}>
-                            <span style={styles.sectionEmoji}>WU</span>
+                            <span style={styles.sectionEmoji}>??</span>
                             <div style={styles.sectionTextContainer}>
                                 <h3 style={styles.sectionTitle}>CALENTAMIENTO</h3>
                                 <p style={styles.sectionSubtitle}>Prepara tu cuerpo antes de empezar</p>
@@ -733,10 +769,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                 {/* Main Routine Section */}
                 <div style={styles.sectionHeader}>
-                    <span style={styles.sectionEmoji}>RP</span>
+                    <span style={styles.sectionEmoji}>??</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
-                        <p style={styles.sectionSubtitle}>Dale al botÃ³n Play para comenzar cada ejercicio</p>
+                        <p style={styles.sectionSubtitle}>Pulsa Play para empezar cada ejercicio</p>
                     </div>
                 </div>
                 {activeSession.exercises
@@ -908,7 +944,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                         >
                             <div style={styles.modalHeader}>
                                 <h3 style={styles.modalTitle}>
-                                    {completionType === 'extra' ? 'Actividad Extra' : 'Â¡Entrenamiento Terminado!'}
+                                    {completionType === 'extra' ? 'Actividad extra' : '¡Entrenamiento terminado!'}
                                 </h3>
                                 <button
                                     onClick={() => {
@@ -945,7 +981,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                                         <button
                                             style={styles.optionBtn}
-                                            onClick={() => setCompletionType('extra')}
+                                            onClick={() => {
+                                                setCompletionType('extra');
+                                                setExtraActivitySource('');
+                                                setSelectedCatalogExercise(null);
+                                                setExtraCatalogSearch('');
+                                                setExtraActivityType('');
+                                                setExtraActivityDuration('');
+                                                setExtraActivityDistance('');
+                                                setExtraActivityIntensity('media');
+                                            }}
                                         >
                                             <div style={styles.optionIcon}><Plus size={18} /></div>
                                             <div style={styles.optionText}>
@@ -957,11 +1002,156 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                        {/* Activity Type */}
+                                        {!extraActivitySource ? (
+                                            <>
+                                                <label style={styles.inputLabel}>¿Cómo quieres registrar la actividad extra?</label>
+                                                <button style={styles.optionBtn} onClick={() => setExtraActivitySource('outside_gym')}>
+                                                    <div style={styles.optionIcon}><Activity size={18} /></div>
+                                                    <div style={styles.optionText}>
+                                                        <h4>Fuera del gimnasio</h4>
+                                                        <p>Running, bici, deporte u otra actividad</p>
+                                                    </div>
+                                                    <ChevronLeft size={20} style={{ transform: 'rotate(180deg)' }} />
+                                                </button>
+                                                <button style={styles.optionBtn} onClick={() => setExtraActivitySource('catalog_gym')}>
+                                                    <div style={styles.optionIcon}><Dumbbell size={18} /></div>
+                                                    <div style={styles.optionText}>
+                                                        <h4>Desde catálogo de gimnasio</h4>
+                                                        <p>Selecciona un ejercicio del catálogo</p>
+                                                    </div>
+                                                    <ChevronLeft size={20} style={{ transform: 'rotate(180deg)' }} />
+                                                </button>
+                                            </>
+                                        ) : extraActivitySource === 'catalog_gym' ? (
+                                            <>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Buscar ejercicio del catálogo</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Buscar ejercicio..."
+                                                        value={extraCatalogSearch}
+                                                        onChange={(e) => setExtraCatalogSearch(e.target.value)}
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                                <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
+                                                    {filteredExtraCatalogExercises.map((exercise) => (
+                                                        <button
+                                                            key={exercise.id}
+                                                            onClick={() => {
+                                                                setSelectedCatalogExercise(exercise);
+                                                                setExtraActivityType(exercise.nombre);
+                                                            }}
+                                                            style={{
+                                                                ...styles.exerciseListItem,
+                                                                marginBottom: 0,
+                                                                border: `1px solid ${selectedCatalogExercise?.id === exercise.id ? Colors.primary : Colors.border}`,
+                                                                background: selectedCatalogExercise?.id === exercise.id ? `${Colors.primary}12` : Colors.surface,
+                                                            }}
+                                                        >
+                                                            <div style={styles.exerciseInfo}>
+                                                                <div style={styles.exerciseLabel}>{exercise.nombre}</div>
+                                                                <div style={styles.exerciseGroup}>{GRUPOS_MUSCULARES[exercise.grupoMuscular]?.nombre || 'General'}</div>
+                                                            </div>
+                                                            <ChevronRight size={18} color={Colors.textTertiary} />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Duración (min)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={extraActivityDuration}
+                                                        onChange={(e) => setExtraActivityDuration(e.target.value)}
+                                                        placeholder="30"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Esfuerzo</label>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                                                        {(['baja', 'media', 'alta'] as const).map((level) => (
+                                                            <button
+                                                                key={level}
+                                                                onClick={() => setExtraActivityIntensity(level)}
+                                                                style={{
+                                                                    padding: '10px',
+                                                                    borderRadius: '10px',
+                                                                    border: '1px solid',
+                                                                    background: extraActivityIntensity === level
+                                                                        ? (level === 'alta' ? Colors.error : level === 'media' ? Colors.warning : Colors.success)
+                                                                        : Colors.surface,
+                                                                    color: extraActivityIntensity === level ? '#FFF' : Colors.textSecondary,
+                                                                    borderColor: extraActivityIntensity === level ? 'transparent' : Colors.border,
+                                                                    fontSize: '12px',
+                                                                    fontWeight: 700,
+                                                                    cursor: 'pointer',
+                                                                    textTransform: 'uppercase'
+                                                                }}
+                                                            >
+                                                                {level}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    style={{
+                                                        ...styles.startExerciseBtn,
+                                                        opacity: (selectedCatalogExercise && extraActivityDuration) ? 1 : 0.5,
+                                                        width: '100%',
+                                                        marginTop: '8px'
+                                                    }}
+                                                    disabled={!selectedCatalogExercise || !extraActivityDuration}
+                                                    onClick={() => {
+                                                        if (!selectedCatalogExercise) return;
+                                                        const mets = extraActivityIntensity === 'baja' ? 4 : extraActivityIntensity === 'media' ? 8 : 12;
+                                                        const weight = perfil.usuario.peso || 70;
+                                                        const durationHrs = parseInt(extraActivityDuration, 10) / 60;
+                                                        const estimatedCalories = Math.round(mets * weight * durationHrs);
+                                                        const extraData: ExtraActivity = {
+                                                            id: `extra_${Date.now()}`,
+                                                            fecha: new Date().toISOString(),
+                                                            descripcion: selectedCatalogExercise.nombre,
+                                                            source: 'catalog_gym',
+                                                            catalogExerciseId: selectedCatalogExercise.id,
+                                                            catalogExerciseName: selectedCatalogExercise.nombre,
+                                                            analisisIA: {
+                                                                tipoDeporte: selectedCatalogExercise.nombre,
+                                                                duracionMinutos: parseInt(extraActivityDuration, 10),
+                                                                intensidad: extraActivityIntensity,
+                                                                calorias: estimatedCalories,
+                                                                notas: 'Registro manual desde catálogo'
+                                                            }
+                                                        };
+                                                        setPendingCompletion({
+                                                            type: 'extra',
+                                                            duration: Math.floor(sessionElapsedSeconds / 60),
+                                                            extraData
+                                                        });
+                                                        setShowCompletionModal(false);
+                                                        setShowMoodCheckin(true);
+                                                    }}
+                                                >
+                                                    <Save size={20} /> Guardar y finalizar
+                                                </button>
+                                                <button
+                                                    style={styles.guidedCancelBtn}
+                                                    onClick={() => {
+                                                        setExtraActivitySource('');
+                                                        setSelectedCatalogExercise(null);
+                                                        setExtraCatalogSearch('');
+                                                    }}
+                                                >
+                                                    Volver
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {/* Activity Type */}
                                         <div>
                                             <label style={styles.inputLabel}>Tipo de Actividad</label>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-                                                {(perfil.catalogoExtras?.length ? perfil.catalogoExtras : ['Running', 'Ciclismo', 'NataciÃ³n', 'FÃºtbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo']).map((type) => (
+                                                {(perfil.catalogoExtras?.length ? perfil.catalogoExtras : ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo']).map((type) => (
                                                     <button
                                                         key={type}
                                                         onClick={() => setExtraActivityType(type)}
@@ -1034,7 +1224,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         {/* Stats */}
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <div>
-                                                <label style={styles.inputLabel}>DuraciÃ³n (min)</label>
+                                                <label style={styles.inputLabel}>Duración (min)</label>
                                                 <input
                                                     type="number"
                                                     value={extraActivityDuration}
@@ -1093,19 +1283,20 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 marginTop: '8px'
                                             }}
                                             disabled={!extraActivityType || !extraActivityDuration}
-                                            onClick={async () => {
+                                            onClick={() => {
                                                 const mets = extraActivityIntensity === 'baja' ? 4 : extraActivityIntensity === 'media' ? 8 : 12;
                                                 const weight = perfil.usuario.peso || 70;
-                                                const durationHrs = parseInt(extraActivityDuration) / 60;
+                                                const durationHrs = parseInt(extraActivityDuration, 10) / 60;
                                                 const estimatedCalories = Math.round(mets * weight * durationHrs);
 
                                                 const extraData: ExtraActivity = {
                                                     id: `extra_${Date.now()}`,
                                                     fecha: new Date().toISOString(),
                                                     descripcion: extraActivityType,
+                                                    source: 'outside_gym',
                                                     analisisIA: {
                                                         tipoDeporte: extraActivityType,
-                                                        duracionMinutos: parseInt(extraActivityDuration),
+                                                        duracionMinutos: parseInt(extraActivityDuration, 10),
                                                         distanciaKm: extraActivityDistance ? parseFloat(extraActivityDistance) : undefined,
                                                         intensidad: extraActivityIntensity,
                                                         calorias: estimatedCalories,
@@ -1122,8 +1313,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 setShowMoodCheckin(true);
                                             }}
                                         >
-                                            <Save size={20} /> Guardar y Finalizar
+                                            <Save size={20} /> Guardar y finalizar
                                         </button>
+                                        <button
+                                            style={styles.guidedCancelBtn}
+                                            onClick={() => setExtraActivitySource('')}
+                                        >
+                                            Volver
+                                        </button>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1141,11 +1340,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     const currentSet = ex.sets[guidedMode.setIndex];
                     const guidedImage = ex.imagen || getExerciseImage(ex.nombre);
                     const guidedVideoUrl = toTrustedExternalVideoUrl(getExerciseVideo(ex.nombre));
-                    const isPreview = guidedMode.phase === 'preview';
                     const isRestPhase = guidedMode.phase === 'rest';
                     const isWorkPhase = guidedMode.phase === 'work';
                     const workHasTimer = isWorkPhase && hasGuidedWorkTimer(ex, guidedMode.setIndex);
-                    const timerExpired = !isPreview && timerSeconds <= 0;
+                    const timerExpired = timerSeconds <= 0;
                     const nextStep = guidedMode.sequence[guidedMode.stepIndex + 1];
                     const nextExercise = nextStep ? activeSession.exercises.find((exercise) => exercise.id === nextStep.exerciseId) : null;
                     const nextSetNumber = nextStep ? nextStep.setIndex + 1 : ex.sets.length;
@@ -1153,6 +1351,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     const showWorkPaused = workHasTimer && guidedWorkTimerStarted && !isTimerRunning;
                     const showCircularTimer = isRestPhase || (isWorkPhase && workHasTimer && (isTimerRunning || showWorkPaused));
                     const shouldShowGuidedSummary = ex.categoria === 'calentamiento' || hasGuidedWorkTimer(ex, guidedMode.setIndex);
+                    const seriesIndicator = `${guidedMode.setIndex + 1}/${ex.sets.length}`;
 
                     return (
                         <div style={styles.modalOverlay}>
@@ -1162,6 +1361,20 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 style={styles.guidedContainer}
                             >
+                                <div style={styles.guidedStatsRow}>
+                                    <div style={styles.guidedStatChip}>
+                                        <span style={styles.guidedStatLabel}>Tiempo total</span>
+                                        <strong style={styles.guidedStatValue}>{formatTime(sessionElapsedSeconds)}</strong>
+                                    </div>
+                                    <div style={styles.guidedStatChip}>
+                                        <span style={styles.guidedStatLabel}>Tiempo ejercicio</span>
+                                        <strong style={styles.guidedStatValue}>{formatTime(exerciseElapsedSeconds)}</strong>
+                                    </div>
+                                    <div style={styles.guidedStatChip}>
+                                        <span style={styles.guidedStatLabel}>Serie</span>
+                                        <strong style={styles.guidedStatValue}>{seriesIndicator}</strong>
+                                    </div>
+                                </div>
                                 <div style={styles.guidedHeaderRow}>
                                     <div style={styles.guidedHeaderText}>
                                         <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
@@ -1169,9 +1382,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             {isRestPhase
                                                 ? `Siguiente: ${nextExercise?.nombre || ex.nombre} - serie ${nextSetNumber}`
                                                 : `Serie ${guidedMode.setIndex + 1} de ${ex.sets.length}`}
-                                        </p>
-                                        <p style={styles.guidedClocks}>
-                                            Total {formatTime(sessionElapsedSeconds)} | Ejercicio {formatTime(exerciseElapsedSeconds)}
                                         </p>
                                     </div>
                                     <div style={styles.guidedHeaderActions}>
@@ -1309,14 +1519,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         onClick={handleGuidedNext}
                                         style={{
                                             ...styles.guidedActionBtn,
-                                            background: isPreview ? Colors.primary : guidedMode.phase === 'work' ? Colors.primary : Colors.success
+                                            background: guidedMode.phase === 'work' ? Colors.primary : Colors.success
                                         }}
                                     >
-                                        {isPreview ? (
-                                            <>
-                                                <Play size={24} /> Comenzar ejercicio
-                                            </>
-                                        ) : guidedMode.phase === 'work' ? (
+                                        {guidedMode.phase === 'work' ? (
                                             <>
                                                 <Check size={24} /> Completar serie
                                             </>
@@ -1332,11 +1538,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         onClick={() => {
                                             const shouldExit = window.confirm('Salir del modo guiado?');
                                             if (!shouldExit) return;
-                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview', sequence: [], stepIndex: 0 });
+                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'work', sequence: [], stepIndex: 0 });
                                             setIsTimerRunning(false);
                                             setGuidedWorkTimerStarted(false);
                                             setActiveExerciseId(null);
                                             setGuidedExerciseStartAt(null);
+                                            setGuidedSetStartedAt(null);
+                                            setTimerSeconds(0);
                                         }}
                                     >
                                         Salir
@@ -1447,7 +1655,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 Elige el alcance del reemplazo:
                             </p>
                             <button style={styles.startExerciseBtn} onClick={() => applyPendingReplacement('session')}>
-                                <Shuffle size={18} /> Solo esta sesion
+                                <Shuffle size={18} /> Solo esta sesión
                             </button>
                             <button
                                 style={{ ...styles.startExerciseBtn, background: Colors.warning, color: '#111' }}
@@ -1605,6 +1813,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const partnerExercises = activeSession?.partnerExercises;
         const partnerEx = isDualSession && partnerExercises ? partnerExercises.find((pEx: ExerciseTracking) => pEx.id === ex.id) : null;
         const isResting = guidedMode.active && guidedMode.exerciseId === ex.id && guidedMode.phase === 'rest';
+        const imageSrc = ex.imagen || getExerciseImage(ex.nombre);
+        const singleSetGridTemplate = isNarrowMobile
+            ? '1.2fr 1.2fr 1.4fr 1.2fr 1fr'
+            : '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr';
 
         return (
             <Card key={ex.id} style={{
@@ -1616,6 +1828,14 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     style={styles.exerciseHeader}
                     onClick={() => toggleExpand(ex.id)}
                 >
+                    <img
+                        src={imageSrc}
+                        alt={ex.nombre}
+                        style={styles.exerciseThumb}
+                        onError={(e) => {
+                            (e.target as HTMLImageElement).src = getExerciseImage(ex.nombre);
+                        }}
+                    />
                     <div style={{ flex: 1 }}>
                         <h3 style={{
                             ...styles.exerciseName,
@@ -1663,27 +1883,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             style={{ overflow: 'hidden' }}
                         >
                             <div style={styles.setsContainer}>
-                                {(() => {
-                                    const videoUrl = toTrustedExternalVideoUrl(getExerciseVideo(ex.nombre));
-                                    const imageSrc = ex.imagen || getExerciseImage(ex.nombre);
-                                    return (
-                                        <div style={styles.previewContainer}>
-                                            <img
-                                                src={imageSrc}
-                                                style={styles.previewImage}
-                                                alt={ex.nombre}
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
-                                                }}
-                                            />
-                                            {videoUrl && (
-                                                <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={styles.playOverlay}>
-                                                    <Play size={18} color="#fff" fill="#fff" />
-                                                </a>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
+                                <div style={styles.previewContainer}>
+                                    <img
+                                        src={imageSrc}
+                                        style={styles.previewImage}
+                                        alt={ex.nombre}
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = getExerciseImage(ex.nombre);
+                                        }}
+                                    />
+                                </div>
 
                                 {/* Start Exercise Button or Timer Display */}
                                 {activeExerciseId !== ex.id ? (
@@ -1697,6 +1906,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 <span style={{ fontSize: '16px', fontWeight: 800 }}>Comenzar Ejercicio</span>
                                             </div>
                                         </button>
+                                        <div style={styles.quickModeHint}>
+                                            <Info size={14} />
+                                            <span>Modo rápido no cronometra automáticamente el tiempo por ejercicio; modo guiado sí.</span>
+                                        </div>
                                     </div>
                                 ) : isTimeBased(ex.targetReps) && isTimerRunning && activeExerciseId === ex.id ? (
                                     <div style={styles.timerDisplay}>
@@ -1748,13 +1961,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     <>
                                         <div style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
-                                            gap: '8px',
+                                            gridTemplateColumns: singleSetGridTemplate,
+                                            gap: isNarrowMobile ? '6px' : '8px',
                                             marginBottom: '12px',
                                             marginTop: '8px',
-                                            padding: '0 4px'
+                                            padding: isNarrowMobile ? '0 2px' : '0 4px'
                                         }}>
-                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>#</span>
+                                            {!isNarrowMobile && (
+                                                <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>#</span>
+                                            )}
                                             <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>PESO (kg)</span>
                                             <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>REPS</span>
                                             <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>TIEMPO (s)</span>
@@ -1767,17 +1982,19 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     key={sIdx}
                                                     style={{
                                                         display: 'grid',
-                                                        gridTemplateColumns: '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr',
-                                                        gap: '8px',
+                                                        gridTemplateColumns: singleSetGridTemplate,
+                                                        gap: isNarrowMobile ? '6px' : '8px',
                                                         alignItems: 'center',
                                                         background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : Colors.surface,
-                                                        padding: '8px 4px',
+                                                        padding: isNarrowMobile ? '6px 2px' : '8px 4px',
                                                         borderRadius: '12px',
                                                         border: `1px solid ${set.completed ? `${Colors.success}30` : Colors.border}`,
                                                         opacity: (set.completed || set.skipped) ? 0.7 : 1
                                                     }}
                                                 >
-                                                    <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
+                                                    {!isNarrowMobile && (
+                                                        <span style={{ ...styles.setNumber, background: 'transparent' }}>{sIdx + 1}</span>
+                                                    )}
 
                                                     <input
                                                         type="number"
@@ -2336,6 +2553,14 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '12px',
         cursor: 'pointer',
     },
+    exerciseThumb: {
+        width: '56px',
+        height: '56px',
+        borderRadius: '12px',
+        objectFit: 'cover',
+        border: `1px solid ${Colors.border}`,
+        flexShrink: 0,
+    },
     exerciseName: {
         fontSize: '18px',
         fontWeight: 800,
@@ -2520,9 +2745,22 @@ const styles: Record<string, React.CSSProperties> = {
     },
     startButtonContainer: {
         display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        gap: '8px',
         justifyContent: 'center',
         padding: '20px 0',
         marginBottom: '16px',
+    },
+    quickModeHint: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        color: Colors.textSecondary,
+        fontSize: '12px',
+        textAlign: 'center' as const,
+        lineHeight: 1.4,
+        maxWidth: '360px',
     },
     startExerciseBtn: {
         padding: '14px 32px',
@@ -2763,6 +3001,32 @@ const styles: Record<string, React.CSSProperties> = {
         marginBottom: '40px',
         maxHeight: '86vh',
         overflowY: 'auto' as const,
+    },
+    guidedStatsRow: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        gap: '8px',
+    },
+    guidedStatChip: {
+        background: `${Colors.primary}14`,
+        border: `1px solid ${Colors.primary}45`,
+        borderRadius: '10px',
+        padding: '8px',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '2px',
+    },
+    guidedStatLabel: {
+        fontSize: '10px',
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.3px',
+        color: Colors.textSecondary,
+        fontWeight: 700,
+    },
+    guidedStatValue: {
+        fontSize: '14px',
+        color: Colors.text,
+        fontWeight: 900,
     },
     guidedHeaderRow: {
         display: 'flex',
@@ -3063,6 +3327,8 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '10px',
     },
 };
+
+
 
 
 

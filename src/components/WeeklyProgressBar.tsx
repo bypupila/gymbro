@@ -1,12 +1,21 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useUserStore, EntrenamientoRealizado, ExtraActivity, ExerciseWorkoutDetail } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import { Check, X, Dumbbell, Activity, Plus, Save, Edit3, Trash2, Shuffle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
+import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES } from '@/data/exerciseDatabase';
 
-export const WeeklyProgressBar: React.FC = () => {
+interface WeeklyProgressBarProps {
+    initialOpenDate?: string;
+    autoEditFirstWorkout?: boolean;
+}
+
+export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
+    initialOpenDate,
+    autoEditFirstWorkout = false
+}) => {
     const perfil = useUserStore((state) => state.perfil);
     const weeklyTracking = perfil.weeklyTracking || {};
     const [showModal, setShowModal] = useState(false);
@@ -24,6 +33,9 @@ export const WeeklyProgressBar: React.FC = () => {
     const [distance, setDistance] = useState<string>('');
     const [intensity, setIntensity] = useState<'baja' | 'media' | 'alta'>('media');
     const [videoUrl, setVideoUrl] = useState('');
+    const [extraActivitySource, setExtraActivitySource] = useState<'outside_gym' | 'catalog_gym' | ''>('');
+    const [extraCatalogSearch, setExtraCatalogSearch] = useState('');
+    const [selectedCatalogExerciseId, setSelectedCatalogExerciseId] = useState<string>('');
 
     // Custom Activity State
     const [isAddingCustom, setIsAddingCustom] = useState(false);
@@ -53,6 +65,16 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const getDatePart = (value: string) => value.split('T')[0];
     type ExerciseStatus = 'completed' | 'partial' | 'not_done';
+    const filteredCatalogExercises = useMemo(() => {
+        const query = extraCatalogSearch.trim().toLowerCase();
+        return EJERCICIOS_DATABASE.filter((exercise) => {
+            if (!query) return true;
+            return (
+                exercise.nombre.toLowerCase().includes(query) ||
+                exercise.grupoMuscular.toLowerCase().includes(query)
+            );
+        }).slice(0, 40);
+    }, [extraCatalogSearch]);
 
     const deriveStatusFromDetail = (detail: ExerciseWorkoutDetail): ExerciseStatus => {
         if (detail.completionStatus) {
@@ -156,6 +178,21 @@ export const WeeklyProgressBar: React.FC = () => {
             .sort((a, b) => b.fecha.localeCompare(a.fecha));
     }, [perfil.actividadesExtras, selectedDate]);
 
+    useEffect(() => {
+        if (!initialOpenDate) return;
+        setSelectedDate(initialOpenDate);
+        setShowDetailsModal(true);
+    }, [initialOpenDate]);
+
+    useEffect(() => {
+        if (!autoEditFirstWorkout) return;
+        if (!showDetailsModal) return;
+        if (editingWorkoutId) return;
+        if (selectedDayWorkouts.length === 0) return;
+        handleStartWorkoutEdit(selectedDayWorkouts[0]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoEditFirstWorkout, showDetailsModal, selectedDayWorkouts, editingWorkoutId]);
+
     const closeDetailsModal = () => {
         setShowDetailsModal(false);
         setEditingWorkoutId(null);
@@ -196,7 +233,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const handleUnmarkDay = async (dateStr: string) => {
         await removeExtraActivitiesOnDate(dateStr);
-        toast.success('Actividades extra eliminadas del dia');
+        toast.success('Actividades extra eliminadas del día');
     };
 
     const handleStartWorkoutEdit = (workout: EntrenamientoRealizado) => {
@@ -304,7 +341,7 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const handleDeleteWorkout = async (workoutId: string) => {
-        const shouldDelete = window.confirm('Eliminar esta rutina del resumen del dia?');
+        const shouldDelete = window.confirm('¿Eliminar esta rutina del resumen del día?');
         if (!shouldDelete) return;
         setDeletingWorkoutId(workoutId);
         try {
@@ -328,13 +365,21 @@ export const WeeklyProgressBar: React.FC = () => {
         if (dayName === 'Actividad Extra') {
             // Show extra activity form instead of marking as complete
             setShowModal(false);
+            setExtraActivitySource('');
+            setSelectedActivityType('');
+            setSelectedCatalogExerciseId('');
+            setExtraCatalogSearch('');
+            setDuration('');
+            setDistance('');
+            setVideoUrl('');
+            setIntensity('media');
             setShowExtraActivityForm(true);
-        } else if (dayName === 'Saltar d?a') {
+        } else if (dayName === 'Saltar día') {
             const { setDayTracking } = useUserStore.getState();
             setDayTracking(selectedDate, 'skipped');
             setShowModal(false);
             setSelectedDate(null);
-            toast.success('D?a marcado como saltado');
+            toast.success('Día marcado como saltado');
         } else {
             const { setDayTracking } = useUserStore.getState();
             setDayTracking(selectedDate, 'completed');
@@ -363,28 +408,36 @@ export const WeeklyProgressBar: React.FC = () => {
     };
 
     const handleSaveExtraActivity = async () => {
-        if (!selectedDate || !selectedActivityType || !duration) return;
+        if (!selectedDate || !duration || !extraActivitySource) return;
+        const selectedCatalogExercise = EJERCICIOS_DATABASE.find((exercise) => exercise.id === selectedCatalogExerciseId) || null;
+        const activityName = extraActivitySource === 'catalog_gym'
+            ? (selectedCatalogExercise?.nombre || '')
+            : selectedActivityType;
+        if (!activityName) return;
 
         try {
             // Calculate calories estimation (METs approx)
             // Low: 4, Med: 8, High: 12
             const mets = intensity === 'baja' ? 4 : intensity === 'media' ? 8 : 12;
             const weight = perfil.usuario.peso || 70;
-            const durationHrs = parseInt(duration) / 60;
+            const durationHrs = parseInt(duration, 10) / 60;
             const estimatedCalories = Math.round(mets * weight * durationHrs);
 
             // Save the extra activity
             const activityToSave: ExtraActivity = {
                 id: `extra_${Date.now()}`,
                 fecha: selectedDate,
-                descripcion: selectedActivityType, // For backward compatibility/display
+                descripcion: activityName, // For backward compatibility/display
+                source: extraActivitySource,
+                catalogExerciseId: extraActivitySource === 'catalog_gym' ? selectedCatalogExercise?.id : undefined,
+                catalogExerciseName: extraActivitySource === 'catalog_gym' ? selectedCatalogExercise?.nombre : undefined,
                 analisisIA: {
-                    tipoDeporte: selectedActivityType,
-                    duracionMinutos: parseInt(duration),
-                    distanciaKm: distance ? parseFloat(distance) : undefined,
+                    tipoDeporte: activityName,
+                    duracionMinutos: parseInt(duration, 10),
+                    distanciaKm: extraActivitySource === 'outside_gym' && distance ? parseFloat(distance) : undefined,
                     intensidad: intensity,
                     calorias: estimatedCalories,
-                    notas: 'Registro manual'
+                    notas: extraActivitySource === 'catalog_gym' ? 'Registro manual desde catálogo' : 'Registro manual'
                 }
             };
 
@@ -402,6 +455,9 @@ export const WeeklyProgressBar: React.FC = () => {
             setVideoUrl('');
             setIntensity('media');
             setSelectedActivityType('');
+            setExtraActivitySource('');
+            setSelectedCatalogExerciseId('');
+            setExtraCatalogSearch('');
             setSelectedDate(null);
         } catch (error) {
             console.error('Error saving extra activity:', error);
@@ -454,7 +510,7 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
 
-    const defaultActivities = ['Running', 'Ciclismo', 'Nataci?n', 'F?tbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
+    const defaultActivities = ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
     const currentActivityCatalog = perfil.catalogoExtras?.length ? perfil.catalogoExtras : defaultActivities;
 
     return (
@@ -563,7 +619,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>?Qu? rutina hiciste?</h3>
+                                <h3 style={styles.modalTitle}>¿Qué rutina hiciste?</h3>
                                 <button onClick={() => setShowModal(false)} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
@@ -597,7 +653,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                     </div>
                                 </button>
                                 <button
-                                    onClick={() => handleRoutineSelection('Saltar d?a')}
+                                    onClick={() => handleRoutineSelection('Saltar día')}
                                     style={{
                                         ...styles.routineOption,
                                         borderColor: Colors.error,
@@ -606,7 +662,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                 >
                                     <X size={18} color={Colors.error} />
                                     <div style={styles.routineInfo}>
-                                        <span style={styles.routineDay}>Saltar d?a</span>
+                                        <span style={styles.routineDay}>Saltar día</span>
                                         <span style={styles.routineMuscle}>No pude entrenar hoy</span>
                                     </div>
                                 </button>
@@ -634,7 +690,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>Resumen del d?a</h3>
+                                <h3 style={styles.modalTitle}>Resumen del día</h3>
                                 <button onClick={closeDetailsModal} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
@@ -643,7 +699,7 @@ export const WeeklyProgressBar: React.FC = () => {
                             <div style={styles.detailsContent}>
                                 {selectedDayWorkouts.length === 0 && selectedDayExtras.length === 0 && (
                                     <div style={styles.noData}>
-                                        No hay datos espec?ficos registrados para este d?a.
+                                        No hay datos específicos registrados para este día.
                                     </div>
                                 )}
 
@@ -667,7 +723,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                                             <div style={{ flex: 1 }}>
                                                                 <span style={styles.routineNameText}>{currentWorkout.nombre}</span>
                                                                 <p style={styles.routineStatsText}>
-                                                                    {details.length} ejercicios ? {currentWorkout.duracionMinutos} min ? {completedCount}/{details.length} completos
+                                                                    {details.length} ejercicios • {currentWorkout.duracionMinutos} min • {completedCount}/{details.length} completos
                                                                 </p>
                                                             </div>
                                                             <div style={styles.workoutActions}>
@@ -853,7 +909,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                                                         ? `${(extraActivity.analisisIA.duracionMinutos / 60).toFixed(1)}h`
                                                                         : `${extraActivity.analisisIA.duracionMinutos}m`}
                                                                 </span>
-                                                                <span style={styles.statLabel}>Duraci?n</span>
+                                                                <span style={styles.statLabel}>Duración</span>
                                                             </div>
                                                         )}
                                                         {extraActivity.analisisIA?.distanciaKm && (
@@ -886,7 +942,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                         onClick={() => handleUnmarkDay(selectedDate)}
                                         style={styles.unmarkBtn}
                                     >
-                                        <X size={16} /> Eliminar actividades extra del d?a
+                                        <X size={16} /> Eliminar actividades extra del día
                                     </button>
                                 )}
                             </div>
@@ -920,7 +976,42 @@ export const WeeklyProgressBar: React.FC = () => {
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                <div>
+                                    <label style={styles.label}>Origen de la actividad</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                        <button
+                                            onClick={() => {
+                                                setExtraActivitySource('outside_gym');
+                                                setSelectedCatalogExerciseId('');
+                                            }}
+                                            style={{
+                                                ...styles.activityTypeBtn,
+                                                background: extraActivitySource === 'outside_gym' ? Colors.primary : Colors.surface,
+                                                color: extraActivitySource === 'outside_gym' ? '#000' : Colors.text,
+                                                borderColor: extraActivitySource === 'outside_gym' ? Colors.primary : Colors.border,
+                                            }}
+                                        >
+                                            Fuera del gym
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setExtraActivitySource('catalog_gym');
+                                                setSelectedActivityType('');
+                                            }}
+                                            style={{
+                                                ...styles.activityTypeBtn,
+                                                background: extraActivitySource === 'catalog_gym' ? Colors.primary : Colors.surface,
+                                                color: extraActivitySource === 'catalog_gym' ? '#000' : Colors.text,
+                                                borderColor: extraActivitySource === 'catalog_gym' ? Colors.primary : Colors.border,
+                                            }}
+                                        >
+                                            Desde catálogo
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {/* Activity Type Selection */}
+                                {extraActivitySource === 'outside_gym' && (
                                 <div>
                                     <label style={styles.label}>Tipo de Actividad</label>
                                     <div style={styles.activityTypeGrid}>
@@ -969,11 +1060,44 @@ export const WeeklyProgressBar: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
+                                )}
+
+                                {extraActivitySource === 'catalog_gym' && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        <label style={styles.label}>Ejercicio del catálogo</label>
+                                        <input
+                                            type="text"
+                                            value={extraCatalogSearch}
+                                            onChange={(e) => setExtraCatalogSearch(e.target.value)}
+                                            placeholder="Buscar ejercicio..."
+                                            style={styles.input}
+                                        />
+                                        <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {filteredCatalogExercises.map((exercise) => (
+                                                <button
+                                                    key={exercise.id}
+                                                    onClick={() => setSelectedCatalogExerciseId(exercise.id)}
+                                                    style={{
+                                                        ...styles.routineOption,
+                                                        padding: '12px',
+                                                        borderColor: selectedCatalogExerciseId === exercise.id ? Colors.primary : Colors.border,
+                                                        background: selectedCatalogExerciseId === exercise.id ? `${Colors.primary}15` : Colors.background,
+                                                    }}
+                                                >
+                                                    <div style={{ ...styles.routineInfo, alignItems: 'flex-start' }}>
+                                                        <span style={{ ...styles.routineDay, fontSize: '14px' }}>{exercise.nombre}</span>
+                                                        <span style={styles.routineMuscle}>{GRUPOS_MUSCULARES[exercise.grupoMuscular]?.nombre || 'General'}</span>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Stats Inputs */}
                                 <div style={styles.statsInputGrid}>
                                     <div>
-                                        <label style={styles.label}>Duraci?n (min)</label>
+                                        <label style={styles.label}>Duración (min)</label>
                                         <input
                                             type="number"
                                             value={duration}
@@ -982,16 +1106,18 @@ export const WeeklyProgressBar: React.FC = () => {
                                             style={styles.input}
                                         />
                                     </div>
-                                    <div>
-                                        <label style={styles.label}>Recorrido (km)</label>
-                                        <input
-                                            type="number"
-                                            value={distance}
-                                            onChange={(e) => setDistance(e.target.value)}
-                                            placeholder="Opcional"
-                                            style={styles.input}
-                                        />
-                                    </div>
+                                    {extraActivitySource === 'outside_gym' && (
+                                        <div>
+                                            <label style={styles.label}>Recorrido (km)</label>
+                                            <input
+                                                type="number"
+                                                value={distance}
+                                                onChange={(e) => setDistance(e.target.value)}
+                                                placeholder="Opcional"
+                                                style={styles.input}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Intensity Selection */}
@@ -1018,24 +1144,36 @@ export const WeeklyProgressBar: React.FC = () => {
                                 </div>
 
                                 {/* Video URL */}
-                                <div>
-                                    <label style={styles.label}>Video URL (opcional)</label>
-                                    <input
-                                        type="url"
-                                        value={videoUrl}
-                                        onChange={(e) => setVideoUrl(e.target.value)}
-                                        placeholder="https://youtube.com/..."
-                                        style={styles.input}
-                                    />
-                                </div>
+                                {extraActivitySource === 'outside_gym' && (
+                                    <div>
+                                        <label style={styles.label}>Video URL (opcional)</label>
+                                        <input
+                                            type="url"
+                                            value={videoUrl}
+                                            onChange={(e) => setVideoUrl(e.target.value)}
+                                            placeholder="https://youtube.com/..."
+                                            style={styles.input}
+                                        />
+                                    </div>
+                                )}
 
                                 {/* Save Button */}
                                 <button
                                     onClick={handleSaveExtraActivity}
-                                    disabled={!selectedActivityType || !duration}
+                                    disabled={
+                                        !extraActivitySource ||
+                                        !duration ||
+                                        (extraActivitySource === 'outside_gym' && !selectedActivityType) ||
+                                        (extraActivitySource === 'catalog_gym' && !selectedCatalogExerciseId)
+                                    }
                                     style={{
                                         ...styles.saveBtn,
-                                        opacity: (!selectedActivityType || !duration) ? 0.5 : 1
+                                        opacity: (
+                                            !extraActivitySource ||
+                                            !duration ||
+                                            (extraActivitySource === 'outside_gym' && !selectedActivityType) ||
+                                            (extraActivitySource === 'catalog_gym' && !selectedCatalogExerciseId)
+                                        ) ? 0.5 : 1
                                     }}
                                 >
                                     Guardar actividad
