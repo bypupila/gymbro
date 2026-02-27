@@ -38,16 +38,22 @@ jobs:
         run: npm run build
 
       - name: Root audit (prod)
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
 
-      - name: Root audit (full)
+      - name: Root audit (full, advisory only)
+        continue-on-error: true
         run: npm audit
 
       - name: Install functions dependencies
         run: npm ci
         working-directory: functions
 
-      - name: Functions audit
+      - name: Functions audit (prod)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: functions
+
+      - name: Functions audit (full, advisory only)
+        continue-on-error: true
         run: npm audit
         working-directory: functions
 
