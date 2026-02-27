@@ -545,6 +545,31 @@ export const firebaseService = {
         });
     },
 
+    async updateWorkoutById(userId: string, workoutId: string, updatedWorkout: EntrenamientoRealizado): Promise<void> {
+        const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
+        const q = query(workoutsRef, where('id', '==', workoutId), limit(1));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+            throw new Error(`Workout not found: ${workoutId}`);
+        }
+
+        const targetRef = snapshot.docs[0].ref;
+        await updateDoc(targetRef, {
+            ...updatedWorkout,
+            fecha: new Date(updatedWorkout.fecha),
+        });
+    },
+
+    async deleteWorkoutById(userId: string, workoutId: string): Promise<void> {
+        const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
+        const q = query(workoutsRef, where('id', '==', workoutId), limit(1));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+            return;
+        }
+        await deleteDoc(snapshot.docs[0].ref);
+    },
+
     async getWorkouts(userId: string, limitCount = 100): Promise<EntrenamientoRealizado[]> {
         const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
         const q = query(workoutsRef, orderBy('fecha', 'desc'), limit(limitCount));

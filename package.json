@@ -17,7 +17,8 @@
     "admin:create:test-accounts": "node scripts/admin/create-test-accounts.mjs",
     "admin:rotate:test-passwords": "node scripts/admin/rotate-test-passwords.mjs",
     "admin:push:github-secrets": "node scripts/admin/push-github-secrets.mjs",
-    "admin:security:report": "node scripts/admin/summarize-gemini-security-logs.mjs"
+    "admin:security:report": "node scripts/admin/summarize-gemini-security-logs.mjs",
+    "media:audit": "node scripts/audit-exercise-media.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

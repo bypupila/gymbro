@@ -7,7 +7,7 @@ import { Card } from '@/components/Card';
 import { ExerciseSelector } from '@/components/ExerciseSelector';
 import { TimeInput } from '@/components/TimeInput';
 import { EjercicioBase, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
-import { getExerciseImage, getExerciseVideo } from '@/data/exerciseMedia';
+import { getExerciseImage } from '@/data/exerciseMedia';
 import { useUserStore, EjercicioRutina, RutinaUsuario } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
@@ -26,7 +26,6 @@ import {
     Sparkles,
     Check,
     Share2,
-    Play,
     Flame,
     FileText,
     Dumbbell,
@@ -40,7 +39,6 @@ import { firebaseService } from '@/services/firebaseService';
 import { routineRequestService } from '@/services/routineRequestService';
 import { cleanupRoutineExercises } from '@/utils/routineHelpers';
 import { ensureScheduleDays } from '@/utils/scheduleDefaults';
-import { toTrustedExternalVideoUrl } from '@/utils/urlSafety';
 import { Reorder, useDragControls, DragControls } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 
@@ -91,23 +89,6 @@ const styles: Record<string, React.CSSProperties> = {
         height: '100%',
         objectFit: 'cover',
         opacity: 0.8,
-    },
-    playOverlay: {
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '50px',
-        height: '50px',
-        background: 'rgba(255, 0, 0, 0.9)',
-        borderRadius: '50%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#fff',
-        fontSize: '22px',
-        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-        transition: 'transform 0.2s ease',
     },
     calentamientoBadge: {
         position: 'absolute',
@@ -1162,46 +1143,21 @@ const ExerciseCardComponent: React.FC<ExerciseCardProps> = ({
                 </div>
             ) : (
                 <div style={styles.exerciseContentWrapper}>
-                    {(() => {
-                        const videoUrl = toTrustedExternalVideoUrl(getExerciseVideo(ejercicio.nombre));
-                        const imageContent = (
-                            <>
-                                <img
-                                    src={ejercicio.imagen || getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
-                                    alt={ejercicio.nombre}
-                                    style={styles.exerciseImage}
-                                    onError={(e) => {
-                                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
-                                    }}
-                                />
-                                {videoUrl && (
-                                    <div style={styles.playOverlay}>
-                                        <Play size={20} color="#fff" fill="#fff" />
-                                    </div>
-                                )}
-                                {ejercicio.categoria === 'calentamiento' && (
-                                    <div style={styles.calentamientoBadge}>
-                                        <Flame size={14} color="#fff" />
-                                    </div>
-                                )}
-                            </>
-                        );
-
-                        return videoUrl ? (
-                            <a
-                                href={videoUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{ ...styles.exerciseImageWrapper, textDecoration: 'none', cursor: 'pointer', display: 'block' }}
-                            >
-                                {imageContent}
-                            </a>
-                        ) : (
-                            <div style={styles.exerciseImageWrapper}>
-                                {imageContent}
+                    <div style={styles.exerciseImageWrapper}>
+                        <img
+                            src={ejercicio.imagen || getExerciseImage(ejercicio.nombre, ejercicio.grupoMuscular)}
+                            alt={ejercicio.nombre}
+                            style={styles.exerciseImage}
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop';
+                            }}
+                        />
+                        {ejercicio.categoria === 'calentamiento' && (
+                            <div style={styles.calentamientoBadge}>
+                                <Flame size={14} color="#fff" />
                             </div>
-                        );
-                    })()}
+                        )}
+                    </div>
 
                     <div style={styles.exerciseHeader}>
                         <div

@@ -91,12 +91,38 @@ export interface EjercicioRealizado {
     sets: SetRealizado[];
 }
 
+export type ExerciseReplacementScope = 'session' | 'routine';
+
+export interface ExerciseSetDetail {
+    numero: number;
+    reps: number;
+    peso: number;
+    completed: boolean;
+    skipped: boolean;
+    rest?: number;
+    duration?: number;
+}
+
+export interface ExerciseWorkoutDetail {
+    exerciseId: string;
+    nombre: string;
+    isCompleted: boolean;
+    isSkipped: boolean;
+    completionStatus?: 'completed' | 'partial' | 'not_done';
+    isExtraAdded?: boolean;
+    isReplaced?: boolean;
+    replacedFromName?: string;
+    replacementScope?: ExerciseReplacementScope;
+    sets: ExerciseSetDetail[];
+}
+
 export interface EntrenamientoRealizado {
     id: string; // ISO Date + ID
     fecha: string;
     duracionMinutos: number;
     nombre: string;
     ejercicios: EjercicioRealizado[];
+    exerciseDetails?: ExerciseWorkoutDetail[];
     // Mood/Energy Tracking
     moodPre?: number;  // 1-5
     moodPost?: number; // 1-5
@@ -186,6 +212,21 @@ const horarioInicial: HorarioSemanal = {
     ]
 };
 
+const MAX_WORKOUT_SYNC_ATTEMPTS = 5;
+const PERMANENT_SYNC_ERROR_CODES = new Set([
+    'permission-denied',
+    'not-found',
+    'unauthenticated',
+    'invalid-argument',
+    'failed-precondition',
+]);
+
+const isPermanentWorkoutSyncError = (error: unknown): boolean => {
+    if (!error || typeof error !== 'object') return false;
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' && PERMANENT_SYNC_ERROR_CODES.has(code);
+};
+
 export interface SetTracking {
     completed: boolean;
     skipped: boolean;
@@ -207,6 +248,10 @@ export interface ExerciseTracking {
     isCompleted?: boolean;
     isOptional?: boolean;
     isSkipped?: boolean;
+    isExtraAdded?: boolean;
+    isReplaced?: boolean;
+    replacedFromName?: string;
+    replacementScope?: ExerciseReplacementScope;
 }
 
 export interface ActiveSession {
@@ -279,7 +324,11 @@ interface UserStore {
     startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, sessionMode?: 'solo' | 'shared' | 'linked', preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string, selectedPartner?: PartnerInfo, trackingDate?: string, liveSessionId?: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>, isPartner?: boolean) => void;
     skipSet: (exerciseId: string, setIndex: number, isPartner?: boolean) => void;
-    replaceExerciseInSession: (oldExerciseId: string, newExercise: EjercicioRutina) => void;
+    replaceExerciseInSession: (
+        oldExerciseId: string,
+        newExercise: EjercicioRutina,
+        options?: { replacementScope?: ExerciseReplacementScope }
+    ) => void;
     addExerciseToSession: (newExercise: EjercicioRutina, isPartner?: boolean) => void;
     markExerciseAsCompleted: (exerciseId: string, isPartner?: boolean) => void;
     finishSession: (durationMinutos: number, postWorkoutData?: { mood?: number; energy?: number; note?: string }) => Promise<void>;
@@ -300,6 +349,8 @@ interface UserStore {
     removeExtraActivity: (activityId: string) => Promise<void>;
     removeExtraActivitiesOnDate: (dateStr: string) => Promise<void>;
     getExtraActivitiesCatalog: () => string[];
+    updateWorkoutById: (workoutId: string, updatedWorkout: EntrenamientoRealizado) => Promise<void>;
+    removeWorkoutById: (workoutId: string) => Promise<void>;
     skipExercise: (exerciseId: string, isPartner?: boolean) => void;
     setDayTracking: (dateStr: string, status: 'completed' | 'skipped' | null) => void;
 
@@ -382,17 +433,33 @@ export const useUserStore = create<UserStore>()(
                         }));
                     } catch (error) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown sync error';
-                        set((state) => ({
-                            pendingWorkoutSync: state.pendingWorkoutSync.map((item) =>
-                                item.id === queued.id
-                                    ? {
-                                        ...item,
-                                        attempts: item.attempts + 1,
-                                        lastError: errorMessage
-                                    }
-                                    : item
-                            )
-                        }));
+                        const isPermanent = isPermanentWorkoutSyncError(error);
+                        set((state) => {
+                            const nextQueue = state.pendingWorkoutSync.flatMap((item) => {
+                                if (item.id !== queued.id) return [item];
+
+                                const nextAttempts = item.attempts + 1;
+                                const hitAttemptCap = nextAttempts >= MAX_WORKOUT_SYNC_ATTEMPTS;
+                                const shouldDrop = isPermanent || hitAttemptCap;
+
+                                if (shouldDrop) return [];
+                                return [{
+                                    ...item,
+                                    attempts: nextAttempts,
+                                    lastError: errorMessage
+                                }];
+                            });
+
+                            return { pendingWorkoutSync: nextQueue };
+                        });
+                        if (isPermanent) {
+                            set({ lastSyncError: `Sync de entrenamiento descartado: ${errorMessage}` });
+                        } else {
+                            const queuedNow = get().pendingWorkoutSync.find((item) => item.id === queued.id);
+                            if (!queuedNow) {
+                                set({ lastSyncError: `Sync de entrenamiento agotado tras ${MAX_WORKOUT_SYNC_ATTEMPTS} intentos` });
+                            }
+                        }
                     }
                 }
             },
@@ -671,6 +738,8 @@ export const useUserStore = create<UserStore>()(
                     ...(ex.imagen ? { imagen: ex.imagen } : {}),
                     isOptional: ex.isOptional ?? false,
                     isCompleted: false,
+                    isExtraAdded: false,
+                    isReplaced: false,
                     sets: Array.from({ length: ex.series }, () => ({
                         completed: false,
                         skipped: false,
@@ -786,8 +855,8 @@ export const useUserStore = create<UserStore>()(
                 }
             },
 
-            // Replace an exercise in the current session only (doesn't affect the main routine)
-            replaceExerciseInSession: (oldExerciseId, newExercise) => set((state) => {
+            // Replace an exercise in the current session only (doesn't affect the main routine unless caller applies it)
+            replaceExerciseInSession: (oldExerciseId, newExercise, options) => set((state) => {
                 if (!state.activeSession) return state;
                 const newExercises = state.activeSession.exercises.map(ex => {
                     if (ex.id !== oldExerciseId) return ex;
@@ -799,6 +868,10 @@ export const useUserStore = create<UserStore>()(
                         categoria: newExercise.categoria,
                         imagen: newExercise.imagen,
                         isCompleted: false,
+                        isExtraAdded: ex.isExtraAdded,
+                        isReplaced: true,
+                        replacedFromName: ex.nombre,
+                        replacementScope: options?.replacementScope || 'session',
                         sets: Array.from({ length: newExercise.series }, () => ({
                             completed: false,
                             skipped: false,
@@ -823,6 +896,7 @@ export const useUserStore = create<UserStore>()(
                     categoria: newExercise.categoria,
                     imagen: newExercise.imagen,
                     isCompleted: false,
+                    isExtraAdded: true,
                     sets: Array.from({ length: newExercise.series }, () => ({
                         completed: false,
                         skipped: false,
@@ -939,12 +1013,17 @@ export const useUserStore = create<UserStore>()(
                 const { userId, perfil, activeSession } = state;
                 const { isDualSession, partnerExercises } = activeSession;
                 const finishedAt = new Date().toISOString();
+                const startedAtMs = Date.parse(activeSession.startTime);
+                const elapsedMinFromStart = Number.isFinite(startedAtMs)
+                    ? Math.max(0, Math.round((Date.now() - startedAtMs) / 60000))
+                    : durationMinutos;
+                const resolvedDurationMin = Math.max(durationMinutos, elapsedMinFromStart);
 
                 // Helper to create a workout object from tracking data
                 const createWorkoutFromExercises = (trackedExercises: ExerciseTracking[]): EntrenamientoRealizado => ({
                     id: `${new Date().toISOString()}-${Math.random().toString(36).substr(2, 9)}`,
                     fecha: finishedAt,
-                    duracionMinutos: durationMinutos,
+                    duracionMinutos: resolvedDurationMin,
                     nombre: `${activeSession.dayName} - ${activeSession.routineName}`,
                     moodPre: activeSession.preWorkoutMood,
                     moodPost: postWorkoutData?.mood,
@@ -961,7 +1040,35 @@ export const useUserStore = create<UserStore>()(
                                 reps: s.reps,
                                 peso: s.weight
                             }))
-                    })).filter(ex => ex.sets.length > 0)
+                    })).filter(ex => ex.sets.length > 0),
+                    exerciseDetails: trackedExercises.map((ex) => {
+                        const allSetsDone = ex.sets.every((set) => set.completed || set.skipped);
+                        const hasAnyProgress = ex.sets.some((set) =>
+                            set.completed || set.skipped || set.reps > 0 || set.weight > 0
+                        );
+                        const isCompleted = Boolean(ex.isCompleted || allSetsDone);
+
+                        return {
+                            exerciseId: ex.id,
+                            nombre: ex.nombre,
+                            isCompleted,
+                            isSkipped: Boolean(ex.isSkipped),
+                            isExtraAdded: ex.isExtraAdded,
+                            isReplaced: ex.isReplaced,
+                            replacedFromName: ex.replacedFromName,
+                            replacementScope: ex.replacementScope,
+                            sets: ex.sets.map((set, index) => ({
+                                numero: index + 1,
+                                reps: set.reps || 0,
+                                peso: set.weight || 0,
+                                completed: Boolean(set.completed),
+                                skipped: Boolean(set.skipped),
+                                rest: set.rest,
+                                duration: set.duration,
+                            })),
+                            completionStatus: isCompleted ? 'completed' : hasAnyProgress ? 'partial' : 'not_done',
+                        };
+                    }),
                 });
 
                 // Create workout for the main user
@@ -1027,7 +1134,7 @@ export const useUserStore = create<UserStore>()(
                             routineName: activeSession.routineName,
                             dayName: activeSession.dayName,
                             finishedAt,
-                            totalDurationMin: durationMinutos,
+                            totalDurationMin: resolvedDurationMin,
                             totalExercises: activeSession.exercises.length,
                             completedExercises,
                             totalSets,
@@ -1405,6 +1512,83 @@ export const useUserStore = create<UserStore>()(
                         ));
                     } catch (error) {
                         console.error('Error removing extra activity:', error);
+                    }
+                }
+            },
+
+            updateWorkoutById: async (workoutId, updatedWorkout) => {
+                const { userId, perfil } = get();
+                const previousWorkout = perfil.historial.find((workout) => workout.id === workoutId);
+                if (!previousWorkout) return;
+
+                const previousDate = previousWorkout.fecha.split('T')[0];
+                const updatedDate = updatedWorkout.fecha.split('T')[0];
+
+                set((state) => {
+                    const nextHistory = state.perfil.historial.map((workout) =>
+                        workout.id === workoutId ? updatedWorkout : workout
+                    );
+                    const nextTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    const datesToRecheck = new Set([previousDate, updatedDate]);
+
+                    for (const dateKey of datesToRecheck) {
+                        const hasWorkout = nextHistory.some((workout) => workout.fecha.split('T')[0] === dateKey);
+                        const hasExtra = state.perfil.actividadesExtras.some((activity) => activity.fecha.split('T')[0] === dateKey);
+                        if (hasWorkout || hasExtra) nextTracking[dateKey] = 'completed';
+                        else delete nextTracking[dateKey];
+                    }
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            historial: nextHistory,
+                            weeklyTracking: nextTracking,
+                        }
+                    };
+                });
+
+                if (userId) {
+                    try {
+                        await firebaseService.updateWorkoutById(userId, workoutId, updatedWorkout);
+                    } catch (error) {
+                        console.error('Error updating workout:', error);
+                        const message = error instanceof Error ? error.message : 'Error updating workout';
+                        set({ lastSyncError: message });
+                    }
+                }
+            },
+
+            removeWorkoutById: async (workoutId) => {
+                const { userId, perfil } = get();
+                const workoutToDelete = perfil.historial.find((workout) => workout.id === workoutId);
+                if (!workoutToDelete) return;
+
+                const dateKey = workoutToDelete.fecha.split('T')[0];
+
+                set((state) => {
+                    const nextHistory = state.perfil.historial.filter((workout) => workout.id !== workoutId);
+                    const nextTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    const hasWorkout = nextHistory.some((workout) => workout.fecha.split('T')[0] === dateKey);
+                    const hasExtra = state.perfil.actividadesExtras.some((activity) => activity.fecha.split('T')[0] === dateKey);
+                    if (hasWorkout || hasExtra) nextTracking[dateKey] = 'completed';
+                    else delete nextTracking[dateKey];
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            historial: nextHistory,
+                            weeklyTracking: nextTracking,
+                        }
+                    };
+                });
+
+                if (userId) {
+                    try {
+                        await firebaseService.deleteWorkoutById(userId, workoutId);
+                    } catch (error) {
+                        console.error('Error removing workout:', error);
+                        const message = error instanceof Error ? error.message : 'Error removing workout';
+                        set({ lastSyncError: message });
                     }
                 }
             },

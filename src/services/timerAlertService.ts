@@ -38,7 +38,7 @@ class TimerAlertService {
 
     private vibrate(): void {
         if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
-        navigator.vibrate([220, 100, 220]);
+        navigator.vibrate([140, 90, 140, 90, 220]);
     }
 
     private async playTone(): Promise<void> {
@@ -50,20 +50,29 @@ class TimerAlertService {
                 await this.audioContext.resume();
             }
 
-            const oscillator = this.audioContext.createOscillator();
-            const gain = this.audioContext.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.value = 880;
-            gain.gain.value = 0.08;
-
-            oscillator.connect(gain);
-            gain.connect(this.audioContext.destination);
-
             const now = this.audioContext.currentTime;
-            gain.gain.setValueAtTime(0.08, now);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-            oscillator.start(now);
-            oscillator.stop(now + 0.35);
+            const playBeep = (startOffset: number, frequency: number, duration: number) => {
+                const oscillator = this.audioContext!.createOscillator();
+                const gain = this.audioContext!.createGain();
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(frequency, now + startOffset);
+
+                const startTime = now + startOffset;
+                const endTime = startTime + duration;
+
+                gain.gain.setValueAtTime(0.0001, startTime);
+                gain.gain.linearRampToValueAtTime(0.14, startTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+                oscillator.connect(gain);
+                gain.connect(this.audioContext!.destination);
+                oscillator.start(startTime);
+                oscillator.stop(endTime);
+            };
+
+            // Double short beep for a clearer end-of-timer cue.
+            playBeep(0, 950, 0.13);
+            playBeep(0.2, 1050, 0.13);
         } catch {
             // Best effort only.
         }
@@ -91,4 +100,3 @@ class TimerAlertService {
 }
 
 export const timerAlertService = new TimerAlertService();
-

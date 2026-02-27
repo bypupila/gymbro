@@ -7,13 +7,21 @@ export interface ExerciseMedia {
     videoId: string;  // ID del video de YouTube (11 caracteres)
 }
 
+const SAFE_FALLBACK_VIDEO_ID = 'g_tea8ZNk5A';
+
+export const isValidYouTubeVideoId = (videoId: string): boolean =>
+    /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+
+const getSafeVideoId = (videoId: string): string =>
+    isValidYouTubeVideoId(videoId) ? videoId : SAFE_FALLBACK_VIDEO_ID;
+
 // Helper para obtener thumbnail de YouTube (alta calidad)
 export const getYouTubeThumbnail = (videoId: string): string =>
-    `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    `https://img.youtube.com/vi/${getSafeVideoId(videoId)}/hqdefault.jpg`;
 
 // Helper para obtener URL completa del video
 export const getYouTubeUrl = (videoId: string): string =>
-    `https://www.youtube.com/watch?v=${videoId}`;
+    `https://www.youtube.com/watch?v=${getSafeVideoId(videoId)}`;
 
 // Mapeo de ejercicios a videos de YouTube
 // Los videos son de canales reconocidos de fitness
@@ -105,7 +113,7 @@ export const EXERCISE_MEDIA: Record<string, ExerciseMedia> = {
     "Pull Over en Polea": { videoId: "Lw0k_Gv0sIM" },       // Fallback Mancuerna (Technique similar)
     "Remo con Barra": { videoId: "3uiWjik2yEQ" },           // Barbell row
     "Remo en Polea": { videoId: "JtTusrYzAos" },            // Cable row
-    "Dominadas": { videoId: "N_8qW6Y6K-c" },                // Pull ups
+    "Dominadas": { videoId: "eGo4IYlbE5g" },                // Pull ups
     "Remo a un Brazo con Mancuerna": { videoId: "evJBZ_8-2ik" }, // One arm dumbbell row
     "Remo a un Brazo en Polea": { videoId: "vTNPYGGrDmg" }, // One arm cable row
 
@@ -323,7 +331,8 @@ export const getExerciseImage = (name: string, group?: string): string => {
 
 export const getExerciseVideo = (name: string): string | null => {
     const media = findExerciseMedia(name);
-    return media ? getYouTubeUrl(media.videoId) : null;
+    if (!media) return null;
+    return getYouTubeUrl(media.videoId);
 };
 
 

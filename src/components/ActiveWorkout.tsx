@@ -16,7 +16,6 @@ import {
     Pause,
     ChevronRight,
     RotateCcw,
-    Trash2,
     Shuffle,
     Search
 } from 'lucide-react';
@@ -49,9 +48,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const addExerciseToSession = useUserStore((state) => state.addExerciseToSession);
     const markExerciseAsCompleted = useUserStore((state) => state.markExerciseAsCompleted);
     const addExtraActivity = useUserStore((state) => state.addExtraActivity);
-    const skipExercise = useUserStore((state) => state.skipExercise);
+    const setRutinaInPlace = useUserStore((state) => state.setRutinaInPlace);
 
-    const [duration, setDuration] = useState(0);
+    const [clockNow, setClockNow] = useState(() => Date.now());
     const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
     const [timerSeconds, setTimerSeconds] = useState<number>(0);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -63,13 +62,17 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [showPartnerDetailsPanel, setShowPartnerDetailsPanel] = useState(false);
     const [partnerExercises, setPartnerExercises] = useState<ExerciseTracking[] | null>(null); // New: partner's real-time exercises
     const [partnerCurrentExercise, setPartnerCurrentExercise] = useState<string | null>(null); // New: partner's current exercise
+    type GuidedStep = { exerciseId: string; setIndex: number };
     const [guidedMode, setGuidedMode] = useState<{
         active: boolean;
         exerciseId: string | null;
         setIndex: number;
         phase: 'preview' | 'work' | 'rest';
-    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+        sequence: GuidedStep[];
+        stepIndex: number;
+    }>({ active: false, exerciseId: null, setIndex: 0, phase: 'preview', sequence: [], stepIndex: 0 });
     const [guidedWorkTimerStarted, setGuidedWorkTimerStarted] = useState(false);
+    const [guidedExerciseStartAt, setGuidedExerciseStartAt] = useState<number | null>(null);
     const previousTimerRef = useRef<number>(0);
     const restTransitionLockRef = useRef(false);
 
@@ -110,11 +113,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const [selectedVariantExerciseId, setSelectedVariantExerciseId] = useState<string | null>(null);
     const [variantSearchQuery, setVariantSearchQuery] = useState('');
     const [variantSelectedCategory, setVariantSelectedCategory] = useState<string | null>(null);
-
-
+    const [pendingReplacement, setPendingReplacement] = useState<{
+        oldExerciseId: string;
+        newExercise: EjercicioBase;
+    } | null>(null);
 
     useEffect(() => {
-        const timer = setInterval(() => setDuration(d => d + 1), 1000);
+        const timer = setInterval(() => setClockNow(Date.now()), 1000);
         return () => clearInterval(timer);
     }, []);
 
@@ -158,6 +163,18 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const s = secs % 60;
         return `${mins}:${s.toString().padStart(2, '0')}`;
     };
+
+    const sessionElapsedSeconds = useMemo(() => {
+        if (!activeSession?.startTime) return 0;
+        const startMs = Date.parse(activeSession.startTime);
+        if (!Number.isFinite(startMs)) return 0;
+        return Math.max(0, Math.floor((clockNow - startMs) / 1000));
+    }, [activeSession?.startTime, clockNow]);
+
+    const exerciseElapsedSeconds = useMemo(() => {
+        if (!guidedExerciseStartAt) return 0;
+        return Math.max(0, Math.floor((clockNow - guidedExerciseStartAt) / 1000));
+    }, [clockNow, guidedExerciseStartAt]);
 
     const toggleExpand = (id: string) => {
         setExpandedExercises(prev =>
@@ -263,37 +280,58 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return parseExplicitTimeSeconds(exercise.targetReps);
     };
 
-    // Handle exercise authorization
-    const handleStartExercise = (exerciseId: string) => {
-        const exercise = activeSession?.exercises.find(e => e.id === exerciseId);
-        if (!exercise) return;
+    const buildGuidedSequence = (exerciseId: string): Array<{ exerciseId: string; setIndex: number }> => {
+        const exercise = activeSession?.exercises.find((item) => item.id === exerciseId);
+        if (!exercise) return [];
 
-        setActiveExerciseId(exerciseId);
-        setCurrentSetIndex(0);
-        setGuidedMode({
-            active: true,
-            exerciseId,
-            setIndex: 0,
-            phase: 'preview'
-        });
-        setTimerSeconds(getGuidedWorkSeconds(exercise, 0));
-        setIsTimerRunning(false);
-        setGuidedWorkTimerStarted(false);
-        toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
+        if (exercise.categoria === 'calentamiento') {
+            const warmupExercises = (activeSession?.exercises || []).filter((item) =>
+                item.categoria === 'calentamiento' && !item.isCompleted && !item.isSkipped
+            );
+            const maxSetCount = warmupExercises.reduce((acc, item) => Math.max(acc, item.sets.length), 0);
+            const warmupSequence: Array<{ exerciseId: string; setIndex: number }> = [];
+
+            for (let round = 0; round < maxSetCount; round++) {
+                for (const warmupExercise of warmupExercises) {
+                    const targetSet = warmupExercise.sets[round];
+                    if (!targetSet) continue;
+                    if (targetSet.completed || targetSet.skipped) continue;
+                    warmupSequence.push({ exerciseId: warmupExercise.id, setIndex: round });
+                }
+            }
+
+            return warmupSequence;
+        }
+
+        return exercise.sets
+            .map((set, index) => ({ set, index }))
+            .filter(({ set }) => !set.completed && !set.skipped)
+            .map(({ index }) => ({ exerciseId: exercise.id, setIndex: index }));
     };
 
-    const handleDiscardClick = (exerciseId: string) => {
-        const shouldDiscard = window.confirm('Omitir ejercicio? No contara para el progreso de hoy.');
-        if (!shouldDiscard) return;
+    // Handle exercise authorization
+    const handleStartExercise = (exerciseId: string) => {
+        const sequence = buildGuidedSequence(exerciseId);
+        const firstStep = sequence[0];
+        if (!firstStep) return;
+        const exercise = activeSession?.exercises.find(e => e.id === firstStep.exerciseId);
+        if (!exercise) return;
 
-        skipExercise(exerciseId, false);
+        setActiveExerciseId(firstStep.exerciseId);
+        setCurrentSetIndex(firstStep.setIndex);
+        setGuidedMode({
+            active: true,
+            exerciseId: firstStep.exerciseId,
+            setIndex: firstStep.setIndex,
+            phase: 'preview',
+            sequence,
+            stepIndex: 0,
+        });
+        setTimerSeconds(getGuidedWorkSeconds(exercise, firstStep.setIndex));
         setIsTimerRunning(false);
-        setTimerSeconds(0);
-        toast.success('Ejercicio omitido', { id: 'exercise-skipped', duration: 3000 });
-
-        if (guidedMode.active && guidedMode.exerciseId === exerciseId) {
-            handleGuidedNext();
-        }
+        setGuidedWorkTimerStarted(false);
+        setGuidedExerciseStartAt(Date.now());
+        toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
 
     const handleVariantClick = (exerciseId: string) => {
@@ -385,39 +423,46 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const handleGuidedNext = () => {
         if (!guidedMode.active || !guidedMode.exerciseId) return;
 
-        const exercise = activeSession?.exercises.find((e) => e.id === guidedMode.exerciseId);
+        const currentStep = guidedMode.sequence[guidedMode.stepIndex];
+        if (!currentStep) return;
+
+        const exercise = activeSession?.exercises.find((e) => e.id === currentStep.exerciseId);
         if (!exercise) return;
 
-        const endGuidedExercise = () => {
-            markExerciseAsCompleted(exercise.id, false);
-            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+        const endGuidedFlow = () => {
+            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview', sequence: [], stepIndex: 0 });
             setIsTimerRunning(false);
             setTimerSeconds(0);
             setActiveExerciseId(null);
             setGuidedWorkTimerStarted(false);
+            setGuidedExerciseStartAt(null);
             restTransitionLockRef.current = false;
             toast.success('Ejercicio finalizado', { id: 'exercise-finished', duration: 3000 });
         };
 
+        const markStepExerciseIfDone = (exerciseId: string) => {
+            const latestSession = useUserStore.getState().activeSession;
+            const latestExercise = latestSession?.exercises.find((item) => item.id === exerciseId);
+            if (!latestExercise) return;
+            const allDone = latestExercise.sets.every((set) => set.completed || set.skipped);
+            if (allDone) {
+                markExerciseAsCompleted(exerciseId, false);
+            }
+        };
+
         if (guidedMode.phase === 'preview') {
             setGuidedMode((prev) => ({ ...prev, phase: 'work' }));
-            setCurrentSetIndex(guidedMode.setIndex);
-            setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
+            setCurrentSetIndex(currentStep.setIndex);
+            setTimerSeconds(getGuidedWorkSeconds(exercise, currentStep.setIndex));
             setIsTimerRunning(false);
             setGuidedWorkTimerStarted(false);
+            setGuidedExerciseStartAt(Date.now());
             return;
         }
 
         if (guidedMode.phase === 'work') {
-            updateSet(guidedMode.exerciseId, guidedMode.setIndex, { completed: true });
-
-            const isLastSet = guidedMode.setIndex >= exercise.sets.length - 1;
-            if (isLastSet) {
-                endGuidedExercise();
-                return;
-            }
-
-            const restSeconds = exercise.sets[guidedMode.setIndex]?.rest || 30;
+            updateSet(currentStep.exerciseId, currentStep.setIndex, { completed: true, skipped: false });
+            const restSeconds = exercise.sets[currentStep.setIndex]?.rest || 30;
             setGuidedMode((prev) => ({ ...prev, phase: 'rest' }));
             setTimerSeconds(restSeconds);
             setIsTimerRunning(true);
@@ -426,17 +471,37 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             return;
         }
 
-        const nextSetIndex = guidedMode.setIndex + 1;
-        if (nextSetIndex >= exercise.sets.length) {
-            endGuidedExercise();
+        markStepExerciseIfDone(currentStep.exerciseId);
+
+        const nextStepIndex = guidedMode.stepIndex + 1;
+        if (nextStepIndex >= guidedMode.sequence.length) {
+            endGuidedFlow();
             return;
         }
 
-        setGuidedMode((prev) => ({ ...prev, setIndex: nextSetIndex, phase: 'work' }));
-        setCurrentSetIndex(nextSetIndex);
-        setTimerSeconds(getGuidedWorkSeconds(exercise, nextSetIndex));
+        const nextStep = guidedMode.sequence[nextStepIndex];
+        const latestSession = useUserStore.getState().activeSession;
+        const nextExercise = latestSession?.exercises.find((item) => item.id === nextStep.exerciseId);
+        if (!nextExercise) {
+            endGuidedFlow();
+            return;
+        }
+
+        setGuidedMode((prev) => ({
+            ...prev,
+            exerciseId: nextStep.exerciseId,
+            setIndex: nextStep.setIndex,
+            stepIndex: nextStepIndex,
+            phase: 'work'
+        }));
+        setCurrentSetIndex(nextStep.setIndex);
+        setActiveExerciseId(nextStep.exerciseId);
+        setTimerSeconds(getGuidedWorkSeconds(nextExercise, nextStep.setIndex));
         setIsTimerRunning(false);
         setGuidedWorkTimerStarted(false);
+        if (nextStep.exerciseId !== currentStep.exerciseId) {
+            setGuidedExerciseStartAt(Date.now());
+        }
         restTransitionLockRef.current = false;
     };
 
@@ -462,6 +527,55 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
         setGuidedWorkTimerStarted(false);
         setIsTimerRunning(false);
+    };
+
+    const applyPendingReplacement = (scope: 'session' | 'routine') => {
+        if (!pendingReplacement) return;
+        const currentExercise = activeSession?.exercises.find((exercise) => exercise.id === pendingReplacement.oldExerciseId);
+        if (!currentExercise) {
+            setPendingReplacement(null);
+            return;
+        }
+
+        replaceExerciseInSession(
+            pendingReplacement.oldExerciseId,
+            {
+                id: pendingReplacement.newExercise.id,
+                nombre: pendingReplacement.newExercise.nombre,
+                series: currentExercise.targetSeries,
+                repeticiones: currentExercise.targetReps,
+                descanso: currentExercise.sets[0]?.rest || 60,
+                categoria: currentExercise.categoria || 'maquina',
+                imagen: pendingReplacement.newExercise.imagen,
+            },
+            { replacementScope: scope }
+        );
+
+        if (scope === 'routine' && perfil.rutina) {
+            const hasExerciseInRoutine = perfil.rutina.ejercicios.some((exercise) => exercise.id === pendingReplacement.oldExerciseId);
+            if (hasExerciseInRoutine) {
+                const updatedRoutineExercises = perfil.rutina.ejercicios.map((exercise) => (
+                    exercise.id === pendingReplacement.oldExerciseId
+                        ? {
+                            ...exercise,
+                            id: pendingReplacement.newExercise.id,
+                            nombre: pendingReplacement.newExercise.nombre,
+                            imagen: pendingReplacement.newExercise.imagen,
+                            nombreOriginal: currentExercise.nombre,
+                        }
+                        : exercise
+                ));
+                setRutinaInPlace({
+                    ...perfil.rutina,
+                    ejercicios: updatedRoutineExercises,
+                });
+            }
+        }
+
+        toast.success(scope === 'routine' ? 'Ejercicio reemplazado para siempre' : 'Ejercicio reemplazado por esta sesion');
+        setPendingReplacement(null);
+        setVariantModalOpen(false);
+        setVariantSearchQuery('');
     };
 
     // Keep the screen awake while a timer is active.
@@ -557,7 +671,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 </button>
                 <div style={styles.timerBadge}>
                     <Clock size={14} color={Colors.primary} />
-                    <span>{formatTime(duration)}</span>
+                    <span>{formatTime(sessionElapsedSeconds)}</span>
                 </div>
                 <button
                     onClick={() => {
@@ -815,7 +929,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             onClick={() => {
                                                 setPendingCompletion({
                                                     type: 'routine',
-                                                    duration: Math.floor(duration / 60)
+                                                    duration: Math.floor(sessionElapsedSeconds / 60)
                                                 });
                                                 setShowCompletionModal(false);
                                                 setShowMoodCheckin(true);
@@ -1001,7 +1115,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                                                 setPendingCompletion({
                                                     type: 'extra',
-                                                    duration: Math.floor(duration / 60),
+                                                    duration: Math.floor(sessionElapsedSeconds / 60),
                                                     extraData
                                                 });
                                                 setShowCompletionModal(false);
@@ -1032,10 +1146,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     const isWorkPhase = guidedMode.phase === 'work';
                     const workHasTimer = isWorkPhase && hasGuidedWorkTimer(ex, guidedMode.setIndex);
                     const timerExpired = !isPreview && timerSeconds <= 0;
-                    const nextSetNumber = Math.min(guidedMode.setIndex + 2, ex.sets.length);
+                    const nextStep = guidedMode.sequence[guidedMode.stepIndex + 1];
+                    const nextExercise = nextStep ? activeSession.exercises.find((exercise) => exercise.id === nextStep.exerciseId) : null;
+                    const nextSetNumber = nextStep ? nextStep.setIndex + 1 : ex.sets.length;
                     const showWorkStart = workHasTimer && !guidedWorkTimerStarted && !isTimerRunning;
                     const showWorkPaused = workHasTimer && guidedWorkTimerStarted && !isTimerRunning;
                     const showCircularTimer = isRestPhase || (isWorkPhase && workHasTimer && (isTimerRunning || showWorkPaused));
+                    const shouldShowGuidedSummary = ex.categoria === 'calentamiento' || hasGuidedWorkTimer(ex, guidedMode.setIndex);
 
                     return (
                         <div style={styles.modalOverlay}>
@@ -1050,8 +1167,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
                                         <p style={styles.guidedSubtitle}>
                                             {isRestPhase
-                                                ? `Siguiente: serie ${nextSetNumber} de ${ex.sets.length}`
+                                                ? `Siguiente: ${nextExercise?.nombre || ex.nombre} - serie ${nextSetNumber}`
                                                 : `Serie ${guidedMode.setIndex + 1} de ${ex.sets.length}`}
+                                        </p>
+                                        <p style={styles.guidedClocks}>
+                                            Total {formatTime(sessionElapsedSeconds)} | Ejercicio {formatTime(exerciseElapsedSeconds)}
                                         </p>
                                     </div>
                                     <div style={styles.guidedHeaderActions}>
@@ -1060,12 +1180,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             style={styles.iconBtn}
                                         >
                                             <Shuffle size={20} color={Colors.textSecondary} />
-                                        </button>
-                                        <button
-                                            onClick={() => guidedMode.exerciseId && handleDiscardClick(guidedMode.exerciseId)}
-                                            style={styles.iconBtn}
-                                        >
-                                            <Trash2 size={20} color={Colors.textSecondary} />
                                         </button>
                                     </div>
                                 </div>
@@ -1093,20 +1207,22 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     )}
                                 </button>
 
-                                <div style={styles.guidedSummaryCard}>
-                                    <div style={styles.guidedSummaryRow}>
-                                        <span style={styles.guidedSummaryLabel}>Series objetivo</span>
-                                        <strong>{ex.targetSeries}</strong>
+                                {shouldShowGuidedSummary && (
+                                    <div style={styles.guidedSummaryCard}>
+                                        <div style={styles.guidedSummaryRow}>
+                                            <span style={styles.guidedSummaryLabel}>Series objetivo</span>
+                                            <strong>{ex.targetSeries}</strong>
+                                        </div>
+                                        <div style={styles.guidedSummaryRow}>
+                                            <span style={styles.guidedSummaryLabel}>Reps objetivo</span>
+                                            <strong>{ex.targetReps}</strong>
+                                        </div>
+                                        <div style={styles.guidedSummaryRow}>
+                                            <span style={styles.guidedSummaryLabel}>Descanso</span>
+                                            <strong>{currentSet?.rest || 30}s</strong>
+                                        </div>
                                     </div>
-                                    <div style={styles.guidedSummaryRow}>
-                                        <span style={styles.guidedSummaryLabel}>Reps objetivo</span>
-                                        <strong>{ex.targetReps}</strong>
-                                    </div>
-                                    <div style={styles.guidedSummaryRow}>
-                                        <span style={styles.guidedSummaryLabel}>Descanso</span>
-                                        <strong>{currentSet?.rest || 30}s</strong>
-                                    </div>
-                                </div>
+                                )}
 
                                 {showWorkStart && (
                                     <button
@@ -1216,10 +1332,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         onClick={() => {
                                             const shouldExit = window.confirm('Salir del modo guiado?');
                                             if (!shouldExit) return;
-                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview' });
+                                            setGuidedMode({ active: false, exerciseId: null, setIndex: 0, phase: 'preview', sequence: [], stepIndex: 0 });
                                             setIsTimerRunning(false);
                                             setGuidedWorkTimerStarted(false);
                                             setActiveExerciseId(null);
+                                            setGuidedExerciseStartAt(null);
                                         }}
                                     >
                                         Salir
@@ -1311,6 +1428,40 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
             {/* Variant Selection Modal */}
             {variantModalOpen && renderVariantModal()}
+            {pendingReplacement && (
+                <div style={styles.modalOverlay}>
+                    <motion.div
+                        initial={{ opacity: 0, y: 24 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 24 }}
+                        style={styles.modalContent}
+                    >
+                        <div style={styles.modalHeader}>
+                            <h3 style={styles.modalTitle}>Reemplazar ejercicio</h3>
+                            <button onClick={() => setPendingReplacement(null)} style={styles.closeModalBtn}>
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <p style={{ margin: 0, color: Colors.textSecondary, fontSize: '14px' }}>
+                                Elige el alcance del reemplazo:
+                            </p>
+                            <button style={styles.startExerciseBtn} onClick={() => applyPendingReplacement('session')}>
+                                <Shuffle size={18} /> Solo esta sesion
+                            </button>
+                            <button
+                                style={{ ...styles.startExerciseBtn, background: Colors.warning, color: '#111' }}
+                                onClick={() => applyPendingReplacement('routine')}
+                            >
+                                <Save size={18} /> Modificar rutina para siempre
+                            </button>
+                            <button style={styles.closeModalBtn} onClick={() => setPendingReplacement(null)}>
+                                Cancelar
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 
@@ -1408,17 +1559,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 <button
                                                     key={ex.id}
                                                     onClick={() => {
-                                                        replaceExerciseInSession(selectedVariantExerciseId, {
-                                                            id: ex.id,
-                                                            nombre: ex.nombre,
-                                                            series: currentExercise.targetSeries,
-                                                            repeticiones: currentExercise.targetReps,
-                                                            descanso: 60,
-                                                            categoria: currentExercise.categoria || 'maquina'
+                                                        setPendingReplacement({
+                                                            oldExerciseId: selectedVariantExerciseId,
+                                                            newExercise: ex,
                                                         });
-                                                        setVariantModalOpen(false);
-                                                        setVariantSearchQuery(''); // Reset search
-                                                        toast.success('Ejercicio reemplazado');
                                                     }}
                                                     style={{
                                                         ...styles.previewItem,
@@ -1504,15 +1648,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             style={styles.actionIconBtn}
                         >
                             <Shuffle size={18} color={Colors.textSecondary} />
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleDiscardClick(ex.id);
-                            }}
-                            style={styles.actionIconBtn}
-                        >
-                            <Trash2 size={18} color={Colors.textSecondary} />
                         </button>
                         <div style={{ width: '1px', height: '16px', background: Colors.border, margin: '0 4px' }} />
                         {expandedExercises.includes(ex.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -2715,6 +2850,13 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '13px',
         color: Colors.textSecondary,
         textAlign: 'center' as const,
+    },
+    guidedClocks: {
+        margin: '4px 0 0 0',
+        fontSize: '12px',
+        color: Colors.textTertiary,
+        textAlign: 'center' as const,
+        fontWeight: 600,
     },
     guidedTimerContainer: {
         display: 'flex',

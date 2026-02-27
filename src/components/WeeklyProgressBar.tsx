@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { useUserStore, ExtraActivity } from '@/stores/userStore';
+import React, { useMemo, useState } from 'react';
+import { useUserStore, EntrenamientoRealizado, ExtraActivity, ExerciseWorkoutDetail } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Check, X, Dumbbell, Activity, Plus } from 'lucide-react';
+import { Check, X, Dumbbell, Activity, Plus, Save, Edit3, Trash2, Shuffle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
@@ -13,6 +13,10 @@ export const WeeklyProgressBar: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showExtraActivityForm, setShowExtraActivityForm] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+    const [workoutDraft, setWorkoutDraft] = useState<EntrenamientoRealizado | null>(null);
+    const [isSavingWorkout, setIsSavingWorkout] = useState(false);
+    const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
 
     // Manual Entry State
     const [selectedActivityType, setSelectedActivityType] = useState<string>('');
@@ -27,6 +31,8 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const addExtraActivity = useUserStore((state) => state.addExtraActivity);
     const removeExtraActivitiesOnDate = useUserStore((state) => state.removeExtraActivitiesOnDate);
+    const updateWorkoutById = useUserStore((state) => state.updateWorkoutById);
+    const removeWorkoutById = useUserStore((state) => state.removeWorkoutById);
 
     // Get current week days (Monday as start)
     const getWeekDays = () => {
@@ -45,6 +51,131 @@ export const WeeklyProgressBar: React.FC = () => {
     const weekDays = getWeekDays();
     const dayNames = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 
+    const getDatePart = (value: string) => value.split('T')[0];
+    type ExerciseStatus = 'completed' | 'partial' | 'not_done';
+
+    const deriveStatusFromDetail = (detail: ExerciseWorkoutDetail): ExerciseStatus => {
+        if (detail.completionStatus) {
+            return detail.completionStatus;
+        }
+
+        const totalSets = detail.sets.length;
+        const completedSets = detail.sets.filter((set) => set.completed || set.skipped).length;
+        const hasAnyProgress = detail.sets.some((set) => set.completed || set.skipped || set.reps > 0 || set.peso > 0);
+
+        if (detail.isCompleted || (totalSets > 0 && completedSets === totalSets)) return 'completed';
+        if (hasAnyProgress) return 'partial';
+        return 'not_done';
+    };
+
+    const normalizeWorkoutDetails = (workout: EntrenamientoRealizado): ExerciseWorkoutDetail[] => {
+        if (workout.exerciseDetails && workout.exerciseDetails.length > 0) {
+            return workout.exerciseDetails.map((detail, index) => {
+                const normalizedSets = (detail.sets || []).map((set, setIdx) => ({
+                    numero: set.numero || setIdx + 1,
+                    reps: set.reps || 0,
+                    peso: set.peso || 0,
+                    completed: Boolean(set.completed),
+                    skipped: Boolean(set.skipped),
+                    rest: set.rest,
+                    duration: set.duration,
+                }));
+
+                const normalizedDetail: ExerciseWorkoutDetail = {
+                    ...detail,
+                    exerciseId: detail.exerciseId || `detail_${index}`,
+                    sets: normalizedSets,
+                };
+
+                const status = deriveStatusFromDetail(normalizedDetail);
+                return {
+                    ...normalizedDetail,
+                    isCompleted: status === 'completed',
+                    completionStatus: status,
+                };
+            });
+        }
+
+        return workout.ejercicios.map((exercise, index) => {
+            const sets = exercise.sets.map((set, setIdx) => ({
+                numero: set.numero || setIdx + 1,
+                reps: set.reps || 0,
+                peso: set.peso || 0,
+                completed: true,
+                skipped: false,
+            }));
+            const status: ExerciseStatus = sets.length > 0 ? 'completed' : 'not_done';
+            return {
+                exerciseId: `legacy_${index}_${exercise.nombre}`,
+                nombre: exercise.nombre,
+                isCompleted: status === 'completed',
+                isSkipped: false,
+                completionStatus: status,
+                sets,
+            };
+        });
+    };
+
+    const buildWorkoutForSave = (workout: EntrenamientoRealizado): EntrenamientoRealizado => {
+        const normalizedDetails = normalizeWorkoutDetails(workout).map((detail) => {
+            const status = deriveStatusFromDetail(detail);
+            return {
+                ...detail,
+                completionStatus: status,
+                isCompleted: status === 'completed',
+            };
+        });
+
+        return {
+            ...workout,
+            exerciseDetails: normalizedDetails,
+            ejercicios: normalizedDetails.map((detail) => ({
+                nombre: detail.nombre,
+                sets: detail.sets
+                    .filter((set) => set.completed || set.skipped || set.reps > 0 || set.peso > 0)
+                    .map((set, setIndex) => ({
+                        numero: setIndex + 1,
+                        reps: set.reps || 0,
+                        peso: set.peso || 0,
+                    })),
+            })),
+        };
+    };
+
+    const selectedDayWorkouts = useMemo(() => {
+        if (!selectedDate) return [];
+        return (perfil.historial || [])
+            .filter((workout) => getDatePart(workout.fecha) === selectedDate)
+            .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    }, [perfil.historial, selectedDate]);
+
+    const selectedDayExtras = useMemo(() => {
+        if (!selectedDate) return [];
+        return (perfil.actividadesExtras || [])
+            .filter((activity) => getDatePart(activity.fecha) === selectedDate)
+            .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    }, [perfil.actividadesExtras, selectedDate]);
+
+    const closeDetailsModal = () => {
+        setShowDetailsModal(false);
+        setEditingWorkoutId(null);
+        setWorkoutDraft(null);
+        setDeletingWorkoutId(null);
+    };
+
+    const getExerciseStatusColor = (status: ExerciseStatus, isExtra = false): string => {
+        if (isExtra) return Colors.accent;
+        if (status === 'completed') return Colors.success;
+        if (status === 'partial') return Colors.warning;
+        return Colors.error;
+    };
+
+    const getExerciseStatusLabel = (status: ExerciseStatus): string => {
+        if (status === 'completed') return 'Completado';
+        if (status === 'partial') return 'Incompleto';
+        return 'No realizado';
+    };
+
     const handleDayClick = (dateStr: string) => {
         const trackingStatus = weeklyTracking[dateStr];
         const hasActivity = activeDatesSet.has(dateStr);
@@ -53,6 +184,9 @@ export const WeeklyProgressBar: React.FC = () => {
         if (isMarked || hasActivity) {
             setSelectedDate(dateStr);
             setShowDetailsModal(true);
+            setEditingWorkoutId(null);
+            setWorkoutDraft(null);
+            setDeletingWorkoutId(null);
         } else {
             // If not completed/skipped, show modal to select routine
             setSelectedDate(dateStr);
@@ -62,11 +196,130 @@ export const WeeklyProgressBar: React.FC = () => {
 
     const handleUnmarkDay = async (dateStr: string) => {
         await removeExtraActivitiesOnDate(dateStr);
-        // Also clear the tracking status
-        const { setDayTracking } = useUserStore.getState();
-        setDayTracking(dateStr, null);
-        setShowDetailsModal(false);
-        setSelectedDate(null);
+        toast.success('Actividades extra eliminadas del dia');
+    };
+
+    const handleStartWorkoutEdit = (workout: EntrenamientoRealizado) => {
+        setEditingWorkoutId(workout.id);
+        setWorkoutDraft(buildWorkoutForSave(workout));
+    };
+
+    const handleCancelWorkoutEdit = () => {
+        setEditingWorkoutId(null);
+        setWorkoutDraft(null);
+    };
+
+    const handleDraftExerciseStatusChange = (exerciseId: string, status: ExerciseStatus) => {
+        setWorkoutDraft((current) => {
+            if (!current) return current;
+            const details = normalizeWorkoutDetails(current).map((detail) => {
+                if (detail.exerciseId !== exerciseId) return detail;
+
+                if (status === 'completed') {
+                    return {
+                        ...detail,
+                        isCompleted: true,
+                        completionStatus: 'completed' as const,
+                        sets: detail.sets.map((set) => ({
+                            ...set,
+                            completed: true,
+                            skipped: false,
+                        })),
+                    };
+                }
+
+                if (status === 'not_done') {
+                    return {
+                        ...detail,
+                        isCompleted: false,
+                        completionStatus: 'not_done' as const,
+                        sets: detail.sets.map((set) => ({
+                            ...set,
+                            completed: false,
+                            skipped: false,
+                            reps: 0,
+                            peso: 0,
+                        })),
+                    };
+                }
+
+                return {
+                    ...detail,
+                    isCompleted: false,
+                    completionStatus: 'partial' as const,
+                };
+            });
+
+            return { ...current, exerciseDetails: details };
+        });
+    };
+
+    const handleDraftSetFieldChange = (
+        exerciseId: string,
+        setIndex: number,
+        field: 'reps' | 'peso',
+        value: number
+    ) => {
+        setWorkoutDraft((current) => {
+            if (!current) return current;
+            const details = normalizeWorkoutDetails(current).map((detail) => {
+                if (detail.exerciseId !== exerciseId) return detail;
+                const nextSets = detail.sets.map((set, idx) => {
+                    if (idx !== setIndex) return set;
+                    return {
+                        ...set,
+                        [field]: value,
+                        completed: value > 0 || (field === 'reps' ? set.peso > 0 : set.reps > 0) || set.completed,
+                    };
+                });
+
+                const nextDetail = { ...detail, sets: nextSets };
+                const status = deriveStatusFromDetail(nextDetail);
+                return {
+                    ...nextDetail,
+                    completionStatus: status,
+                    isCompleted: status === 'completed',
+                };
+            });
+
+            return { ...current, exerciseDetails: details };
+        });
+    };
+
+    const handleSaveWorkoutEdit = async () => {
+        if (!editingWorkoutId || !workoutDraft) return;
+        setIsSavingWorkout(true);
+        try {
+            const normalizedWorkout = buildWorkoutForSave(workoutDraft);
+            await updateWorkoutById(editingWorkoutId, normalizedWorkout);
+            toast.success('Rutina actualizada');
+            setEditingWorkoutId(null);
+            setWorkoutDraft(null);
+        } catch (error) {
+            console.error('Error updating workout:', error);
+            toast.error('No se pudo actualizar la rutina');
+        } finally {
+            setIsSavingWorkout(false);
+        }
+    };
+
+    const handleDeleteWorkout = async (workoutId: string) => {
+        const shouldDelete = window.confirm('Eliminar esta rutina del resumen del dia?');
+        if (!shouldDelete) return;
+        setDeletingWorkoutId(workoutId);
+        try {
+            await removeWorkoutById(workoutId);
+            if (editingWorkoutId === workoutId) {
+                setEditingWorkoutId(null);
+                setWorkoutDraft(null);
+            }
+            toast.success('Rutina eliminada');
+        } catch (error) {
+            console.error('Error deleting workout:', error);
+            toast.error('No se pudo eliminar la rutina');
+        } finally {
+            setDeletingWorkoutId(null);
+        }
     };
 
     const handleRoutineSelection = async (dayName: string) => {
@@ -371,7 +624,7 @@ export const WeeklyProgressBar: React.FC = () => {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         style={styles.modalOverlay}
-                        onClick={() => setShowDetailsModal(false)}
+                        onClick={closeDetailsModal}
                     >
                         <motion.div
                             initial={{ scale: 0.9, opacity: 0 }}
@@ -382,120 +635,260 @@ export const WeeklyProgressBar: React.FC = () => {
                         >
                             <div style={styles.modalHeader}>
                                 <h3 style={styles.modalTitle}>Resumen del d?a</h3>
-                                <button onClick={() => setShowDetailsModal(false)} style={styles.closeBtn}>
+                                <button onClick={closeDetailsModal} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
                             </div>
 
                             <div style={styles.detailsContent}>
-                                {(() => {
-                                    const extraActivity = perfil.actividadesExtras?.find(a => a.fecha.split('T')[0] === selectedDate);
-                                    const workout = perfil.historial?.find(h => h.fecha.startsWith(selectedDate));
+                                {selectedDayWorkouts.length === 0 && selectedDayExtras.length === 0 && (
+                                    <div style={styles.noData}>
+                                        No hay datos espec?ficos registrados para este d?a.
+                                    </div>
+                                )}
 
-                                    if (extraActivity) {
-                                        return (
-                                            <div style={styles.activityCard}>
-                                                <div style={styles.activityHeader}>
-                                                    <Activity size={24} color={Colors.primary} />
-                                                    <span style={styles.activityType}>
-                                                        {extraActivity.analisisIA?.tipoDeporte || extraActivity.descripcion}
-                                                    </span>
-                                                </div>
-
-                                                <div style={styles.statsGrid}>
-                                                    {extraActivity.analisisIA?.duracionMinutos && (
-                                                        <div style={styles.statBox}>
-                                                            <span style={styles.statValue}>
-                                                                {extraActivity.analisisIA.duracionMinutos >= 60
-                                                                    ? `${(extraActivity.analisisIA.duracionMinutos / 60).toFixed(1)}h`
-                                                                    : `${extraActivity.analisisIA.duracionMinutos}m`}
-                                                            </span>
-                                                            <span style={styles.statLabel}>Duraci?n</span>
-                                                        </div>
-                                                    )}
-                                                    {extraActivity.analisisIA?.distanciaKm && (
-                                                        <div style={styles.statBox}>
-                                                            <span style={styles.statValue}>{extraActivity.analisisIA.distanciaKm}km</span>
-                                                            <span style={styles.statLabel}>Recorrido</span>
-                                                        </div>
-                                                    )}
-                                                    {extraActivity.analisisIA?.calorias && (
-                                                        <div style={styles.statBox}>
-                                                            <span style={styles.statValue}>{extraActivity.analisisIA.calorias}</span>
-                                                            <span style={styles.statLabel}>Kcal</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {extraActivity.analisisIA?.notas && extraActivity.analisisIA.notas !== 'Registro manual' && (
-                                                    <p style={styles.activityNotes}>
-                                                        &quot;{extraActivity.analisisIA.notas}&quot;
-                                                    </p>
-                                                )}
-                                            </div>
-                                        );
-                                    }
-
-                                    if (workout) {
-                                        return (
-                                            <div style={styles.routineDetailContainer}>
-                                                <div style={styles.routineSummary}>
-                                                    <Dumbbell size={24} color={Colors.success} />
-                                                    <div style={{ flex: 1 }}>
-                                                        <span style={styles.routineNameText}>{workout.nombre}</span>
-                                                        <p style={styles.routineStatsText}>
-                                                            {workout.ejercicios.length} ejercicios ? {workout.duracionMinutos} min
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                <div style={styles.exerciseList}>
-                                                    {workout.ejercicios.map((ex, exIdx) => (
-                                                        <div key={exIdx} style={styles.exerciseItem}>
-                                                            <div style={styles.exerciseHeader}>
-                                                                <span style={styles.exerciseName}>{ex.nombre}</span>
-                                                                <span style={styles.exerciseSetsCount}>{ex.sets.length} series</span>
-                                                            </div>
-                                                            <div style={styles.setsGrid}>
-                                                                {ex.sets.map((set, setIdx) => (
-                                                                    <div key={setIdx} style={styles.setMinicard}>
-                                                                        <span style={styles.setInfo}>
-                                                                            {set.reps} <small>reps</small>
-                                                                        </span>
-                                                                        <span style={styles.setWeight}>
-                                                                            {set.peso} <small>kg</small>
-                                                                        </span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-
-                                                {workout.moodPost && (
-                                                    <div style={styles.moodBadge}>
-                                                        <span>Estado post-entreno:</span>
-                                                        <span style={styles.moodValue}>
-                                                            {workout.moodPost === 1 ? '&#128555;' : workout.moodPost === 2 ? '&#128533;' : workout.moodPost === 3 ? '&#128528;' : workout.moodPost === 4 ? '&#128578;' : '&#128293;'}
-                                                        </span>                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    }
-
-                                    return (
-                                        <div style={styles.noData}>
-                                            No hay datos espec?ficos registrados para este d?a.
+                                {selectedDayWorkouts.length > 0 && (
+                                    <div style={styles.detailsSection}>
+                                        <div style={styles.detailsSectionHeader}>
+                                            <Dumbbell size={16} color={Colors.success} />
+                                            <span style={styles.detailsSectionTitle}>Rutinas ({selectedDayWorkouts.length})</span>
                                         </div>
-                                    );
-                                })()}
+                                        <div style={styles.detailsList}>
+                                            {selectedDayWorkouts.map((workout) => {
+                                                const isEditing = editingWorkoutId === workout.id && workoutDraft?.id === workout.id;
+                                                const currentWorkout = isEditing && workoutDraft ? workoutDraft : workout;
+                                                const details = normalizeWorkoutDetails(currentWorkout);
+                                                const completedCount = details.filter((detail) => deriveStatusFromDetail(detail) === 'completed').length;
 
-                                <button
-                                    onClick={() => handleUnmarkDay(selectedDate)}
-                                    style={styles.unmarkBtn}
-                                >
-                                    <X size={16} /> Desmarcar d?a
-                                </button>
+                                                return (
+                                                    <div key={workout.id} style={styles.routineDetailContainer}>
+                                                        <div style={styles.routineSummary}>
+                                                            <Dumbbell size={24} color={Colors.success} />
+                                                            <div style={{ flex: 1 }}>
+                                                                <span style={styles.routineNameText}>{currentWorkout.nombre}</span>
+                                                                <p style={styles.routineStatsText}>
+                                                                    {details.length} ejercicios ? {currentWorkout.duracionMinutos} min ? {completedCount}/{details.length} completos
+                                                                </p>
+                                                            </div>
+                                                            <div style={styles.workoutActions}>
+                                                                {isEditing ? (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={handleSaveWorkoutEdit}
+                                                                            disabled={isSavingWorkout}
+                                                                            style={{ ...styles.iconActionBtn, opacity: isSavingWorkout ? 0.5 : 1 }}
+                                                                        >
+                                                                            <Save size={16} color={Colors.success} />
+                                                                        </button>
+                                                                        <button onClick={handleCancelWorkoutEdit} style={styles.iconActionBtn}>
+                                                                            <X size={16} color={Colors.textSecondary} />
+                                                                        </button>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <button onClick={() => handleStartWorkoutEdit(workout)} style={styles.iconActionBtn}>
+                                                                            <Edit3 size={16} color={Colors.primary} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeleteWorkout(workout.id)}
+                                                                            style={{ ...styles.iconActionBtn, opacity: deletingWorkoutId === workout.id ? 0.5 : 1 }}
+                                                                            disabled={deletingWorkoutId === workout.id}
+                                                                        >
+                                                                            <Trash2 size={16} color={Colors.error} />
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div style={styles.exerciseList}>
+                                                            {details.map((detail) => {
+                                                                const status = deriveStatusFromDetail(detail);
+                                                                const statusColor = getExerciseStatusColor(status, Boolean(detail.isExtraAdded));
+                                                                return (
+                                                                    <div key={detail.exerciseId} style={styles.exerciseItem}>
+                                                                        <div style={styles.exerciseHeader}>
+                                                                            <span style={styles.exerciseName}>{detail.nombre}</span>
+                                                                            <div style={styles.exerciseMeta}>
+                                                                                {detail.isReplaced && (
+                                                                                    <span style={{
+                                                                                        ...styles.replacedBadge,
+                                                                                        borderColor: `${statusColor}50`,
+                                                                                        background: `${statusColor}20`,
+                                                                                        color: statusColor,
+                                                                                    }}>
+                                                                                        <Shuffle size={12} />
+                                                                                        Reemplazado
+                                                                                    </span>
+                                                                                )}
+                                                                                {isEditing ? (
+                                                                                    <select
+                                                                                        value={status}
+                                                                                        onChange={(event) => handleDraftExerciseStatusChange(
+                                                                                            detail.exerciseId,
+                                                                                            event.target.value as ExerciseStatus
+                                                                                        )}
+                                                                                        style={{
+                                                                                            ...styles.statusSelect,
+                                                                                            borderColor: statusColor,
+                                                                                            color: statusColor
+                                                                                        }}
+                                                                                    >
+                                                                                        <option value="completed">Completado</option>
+                                                                                        <option value="partial">Incompleto</option>
+                                                                                        <option value="not_done">No realizado</option>
+                                                                                    </select>
+                                                                                ) : (
+                                                                                    <span style={{
+                                                                                        ...styles.exerciseStatusBadge,
+                                                                                        background: `${statusColor}20`,
+                                                                                        borderColor: `${statusColor}50`,
+                                                                                        color: statusColor
+                                                                                    }}>
+                                                                                        {getExerciseStatusLabel(status)}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div style={styles.setsGrid}>
+                                                                            {detail.sets.length === 0 && (
+                                                                                <span style={styles.emptySetLabel}>Sin series registradas</span>
+                                                                            )}
+                                                                            {detail.sets.map((set, setIdx) => (
+                                                                                isEditing ? (
+                                                                                    <div key={`${detail.exerciseId}_${setIdx}`} style={styles.setEditorCard}>
+                                                                                        <span style={styles.setEditorTitle}>Serie {setIdx + 1}</span>
+                                                                                        <div style={styles.setEditorInputs}>
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                value={set.reps}
+                                                                                                min={0}
+                                                                                                onChange={(event) =>
+                                                                                                    handleDraftSetFieldChange(
+                                                                                                        detail.exerciseId,
+                                                                                                        setIdx,
+                                                                                                        'reps',
+                                                                                                        parseInt(event.target.value || '0', 10) || 0
+                                                                                                    )}
+                                                                                                style={styles.inlineInput}
+                                                                                            />
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                value={set.peso}
+                                                                                                min={0}
+                                                                                                onChange={(event) =>
+                                                                                                    handleDraftSetFieldChange(
+                                                                                                        detail.exerciseId,
+                                                                                                        setIdx,
+                                                                                                        'peso',
+                                                                                                        parseFloat(event.target.value || '0') || 0
+                                                                                                    )}
+                                                                                                style={styles.inlineInput}
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div key={`${detail.exerciseId}_${setIdx}`} style={styles.setMinicard}>
+                                                                                        <span style={styles.setInfo}>
+                                                                                            {set.reps} <small>reps</small>
+                                                                                        </span>
+                                                                                        <span style={styles.setWeight}>
+                                                                                            {set.peso} <small>kg</small>
+                                                                                        </span>
+                                                                                    </div>
+                                                                                )
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        {currentWorkout.moodPost && (
+                                                            <div style={styles.moodBadge}>
+                                                                <span>Estado post-entreno:</span>
+                                                                <span style={styles.moodValue}>
+                                                                    {currentWorkout.moodPost === 1 ? '&#128555;' : currentWorkout.moodPost === 2 ? '&#128533;' : currentWorkout.moodPost === 3 ? '&#128528;' : currentWorkout.moodPost === 4 ? '&#128578;' : '&#128293;'}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selectedDayExtras.length > 0 && (
+                                    <div style={styles.detailsSection}>
+                                        <div style={styles.detailsSectionHeader}>
+                                            <Activity size={16} color={Colors.accent} />
+                                            <span style={styles.detailsSectionTitle}>Actividades extra ({selectedDayExtras.length})</span>
+                                        </div>
+
+                                        <div style={styles.detailsList}>
+                                            {selectedDayExtras.map((extraActivity) => (
+                                                <div key={extraActivity.id} style={{ ...styles.activityCard, borderColor: `${Colors.accent}50`, background: `${Colors.accent}12` }}>
+                                                    <div style={styles.activityHeader}>
+                                                        <Activity size={20} color={Colors.accent} />
+                                                        <span style={styles.activityType}>
+                                                            {extraActivity.analisisIA?.tipoDeporte || extraActivity.descripcion}
+                                                        </span>
+                                                        <span style={{
+                                                            ...styles.exerciseStatusBadge,
+                                                            background: `${Colors.accent}20`,
+                                                            borderColor: `${Colors.accent}50`,
+                                                            color: Colors.accent
+                                                        }}>
+                                                            Extra
+                                                        </span>
+                                                    </div>
+
+                                                    <div style={styles.statsGrid}>
+                                                        {extraActivity.analisisIA?.duracionMinutos && (
+                                                            <div style={styles.statBox}>
+                                                                <span style={styles.statValue}>
+                                                                    {extraActivity.analisisIA.duracionMinutos >= 60
+                                                                        ? `${(extraActivity.analisisIA.duracionMinutos / 60).toFixed(1)}h`
+                                                                        : `${extraActivity.analisisIA.duracionMinutos}m`}
+                                                                </span>
+                                                                <span style={styles.statLabel}>Duraci?n</span>
+                                                            </div>
+                                                        )}
+                                                        {extraActivity.analisisIA?.distanciaKm && (
+                                                            <div style={styles.statBox}>
+                                                                <span style={styles.statValue}>{extraActivity.analisisIA.distanciaKm}km</span>
+                                                                <span style={styles.statLabel}>Recorrido</span>
+                                                            </div>
+                                                        )}
+                                                        {extraActivity.analisisIA?.calorias && (
+                                                            <div style={styles.statBox}>
+                                                                <span style={styles.statValue}>{extraActivity.analisisIA.calorias}</span>
+                                                                <span style={styles.statLabel}>Kcal</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {extraActivity.analisisIA?.notas && extraActivity.analisisIA.notas !== 'Registro manual' && (
+                                                        <p style={styles.activityNotes}>
+                                                            &quot;{extraActivity.analisisIA.notas}&quot;
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selectedDayExtras.length > 0 && (
+                                    <button
+                                        onClick={() => handleUnmarkDay(selectedDate)}
+                                        style={styles.unmarkBtn}
+                                    >
+                                        <X size={16} /> Eliminar actividades extra del d?a
+                                    </button>
+                                )}
                             </div>
                         </motion.div>
                     </motion.div>
@@ -645,7 +1038,7 @@ export const WeeklyProgressBar: React.FC = () => {
                                         opacity: (!selectedActivityType || !duration) ? 0.5 : 1
                                     }}
                                 >
-                                    ?? Guardar Actividad
+                                    Guardar actividad
                                 </button>
                             </div>
                         </motion.div>
@@ -886,6 +1279,28 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '20px',
         padding: '10px 0',
     },
+    detailsSection: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+    },
+    detailsSectionHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+    },
+    detailsSectionTitle: {
+        fontSize: '14px',
+        fontWeight: 800,
+        color: Colors.text,
+        textTransform: 'uppercase',
+        letterSpacing: '0.4px',
+    },
+    detailsList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+    },
     activityCard: {
         background: `${Colors.primary}10`,
         borderRadius: '20px',
@@ -960,6 +1375,22 @@ const styles: Record<string, React.CSSProperties> = {
         borderRadius: '16px',
         border: `1px solid ${Colors.border}`,
     },
+    workoutActions: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+    },
+    iconActionBtn: {
+        width: '32px',
+        height: '32px',
+        borderRadius: '8px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.surface,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
     routineNameText: {
         fontSize: '16px',
         fontWeight: 700,
@@ -1000,11 +1431,52 @@ const styles: Record<string, React.CSSProperties> = {
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '8px',
+        gap: '12px',
     },
     exerciseName: {
         fontSize: '14px',
         fontWeight: 800,
         color: Colors.text,
+        flex: 1,
+    },
+    exerciseMeta: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+    },
+    replacedBadge: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '3px 8px',
+        borderRadius: '999px',
+        border: `1px solid ${Colors.warning}50`,
+        background: `${Colors.warning}20`,
+        color: Colors.warning,
+        fontSize: '10px',
+        fontWeight: 700,
+    },
+    statusSelect: {
+        borderRadius: '8px',
+        border: '1px solid',
+        background: Colors.surface,
+        fontSize: '12px',
+        fontWeight: 700,
+        padding: '4px 8px',
+        cursor: 'pointer',
+    },
+    exerciseStatusBadge: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        borderRadius: '999px',
+        border: '1px solid',
+        padding: '3px 8px',
+        fontSize: '10px',
+        fontWeight: 800,
+        textTransform: 'uppercase',
+        letterSpacing: '0.3px',
     },
     exerciseSetsCount: {
         fontSize: '11px',
@@ -1018,6 +1490,10 @@ const styles: Record<string, React.CSSProperties> = {
         flexWrap: 'wrap',
         gap: '6px',
     },
+    emptySetLabel: {
+        fontSize: '12px',
+        color: Colors.textTertiary,
+    },
     setMinicard: {
         display: 'flex',
         flexDirection: 'column',
@@ -1027,6 +1503,36 @@ const styles: Record<string, React.CSSProperties> = {
         borderRadius: '8px',
         border: `1px solid ${Colors.border}30`,
         minWidth: '45px',
+    },
+    setEditorCard: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        background: Colors.surface,
+        padding: '8px',
+        borderRadius: '8px',
+        border: `1px solid ${Colors.border}40`,
+        minWidth: '120px',
+    },
+    setEditorTitle: {
+        fontSize: '11px',
+        color: Colors.textTertiary,
+        fontWeight: 700,
+    },
+    setEditorInputs: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '6px',
+    },
+    inlineInput: {
+        width: '100%',
+        padding: '6px 8px',
+        borderRadius: '6px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.background,
+        color: Colors.text,
+        fontSize: '12px',
+        outline: 'none',
     },
     setInfo: {
         fontSize: '12px',
