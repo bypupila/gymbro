@@ -12,9 +12,17 @@ interface Props {
     partnerId: string;
     onClose: () => void;
     isInitialSetup?: boolean;
+    onSkipForever?: () => void | Promise<void>;
 }
 
-export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, partnerId, onClose, isInitialSetup = true }) => {
+export const RoutineCopyModal: React.FC<Props> = ({
+    partnerName,
+    partnerAlias,
+    partnerId,
+    onClose,
+    isInitialSetup = true,
+    onSkipForever,
+}) => {
     void partnerAlias;
     const perfil = useUserStore((state) => state.perfil);
     const userId = useUserStore((state) => state.userId);
@@ -38,7 +46,7 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
                 type: 'copy_my_routine_to_partner',
                 syncAfterAccept: true,
             });
-            toast.success(`Se envio solicitud a ${partnerName}.`);
+            toast.success(`Se envió solicitud a ${partnerName}.`);
             onClose();
         } catch (error) {
             console.error('[RoutineCopyModal] Error creando solicitud:', error);
@@ -62,7 +70,7 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
                 type: 'copy_partner_routine_to_me',
                 syncAfterAccept: true,
             });
-            toast.success(`Se envio solicitud a ${partnerName}.`);
+            toast.success(`Se envió solicitud a ${partnerName}.`);
             onClose();
         } catch (error) {
             toast.error('No se pudo crear la solicitud de rutina.');
@@ -72,17 +80,30 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
         }
     };
 
+    const handleSkip = async () => {
+        try {
+            if (onSkipForever) {
+                await onSkipForever();
+                return;
+            }
+            onClose();
+        } catch (error) {
+            console.error('[RoutineCopyModal] Error omitiendo modal:', error);
+            toast.error('No se pudo guardar tu preferencia.');
+        }
+    };
+
     return (
         <div style={styles.overlay}>
             <Card style={styles.modal}>
                 <div style={styles.header}>
-                    <h3 style={styles.title}>{isInitialSetup ? 'Vinculacion exitosa' : 'Copiar Rutina'}</h3>
+                    <h3 style={styles.title}>{isInitialSetup ? 'Vinculación exitosa' : 'Copiar Rutina'}</h3>
                     <button onClick={onClose} style={styles.closeButton}><X size={20} /></button>
                 </div>
                 <p style={styles.text}>
                     {isInitialSetup
-                        ? <>Ahora estas vinculado con <span style={styles.partnerName}>{partnerName}</span>. Elige si quieres solicitar una copia inicial de rutina.</>
-                        : <>Elige una opcion para sincronizar rutinas con <span style={styles.partnerName}>{partnerName}</span>.</>
+                        ? <>Ahora estás vinculado con <span style={styles.partnerName}>{partnerName}</span>. Elige si quieres solicitar una copia inicial de rutina.</>
+                        : <>Elige una opción para sincronizar rutinas con <span style={styles.partnerName}>{partnerName}</span>.</>
                     }
                 </p>
                 <div style={styles.buttonGroup}>
@@ -103,9 +124,12 @@ export const RoutineCopyModal: React.FC<Props> = ({ partnerName, partnerAlias, p
                         <span>Solicitar copiar la rutina de {partnerName}</span>
                     </button>
                 </div>
-                <button style={styles.skipButton} onClick={onClose}>
-                    Omitir por ahora
+                <button style={styles.skipButton} onClick={() => { void handleSkip(); }}>
+                    OMITIR
                 </button>
+                <p style={styles.skipHint}>
+                    Si quieres copiarla más adelante, puedes hacerlo desde tu perfil.
+                </p>
             </Card>
         </div>
     );
@@ -176,9 +200,25 @@ const styles: Record<string, React.CSSProperties> = {
     },
     skipButton: {
         marginTop: '16px',
-        background: 'none',
-        border: 'none',
-        color: Colors.textSecondary,
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        padding: '16px',
+        borderRadius: '12px',
+        background: 'transparent',
+        border: `1px solid ${Colors.error}`,
+        color: Colors.error,
+        fontWeight: 800,
+        fontSize: '14px',
         cursor: 'pointer',
+    },
+    skipHint: {
+        margin: '10px 0 0 0',
+        color: Colors.textSecondary,
+        fontSize: '12px',
+        lineHeight: 1.4,
+        textAlign: 'center',
     },
 };

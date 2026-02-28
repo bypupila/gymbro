@@ -75,12 +75,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         stepIndex: number;
     }>({ active: false, exerciseId: null, setIndex: 0, phase: 'work', sequence: [], stepIndex: 0 });
     const [guidedWorkTimerStarted, setGuidedWorkTimerStarted] = useState(false);
-    const [guidedExerciseStartAt, setGuidedExerciseStartAt] = useState<number | null>(null);
     const [guidedSetStartedAt, setGuidedSetStartedAt] = useState<number | null>(null);
     const previousTimerRef = useRef<number>(0);
     const restTransitionLockRef = useRef(false);
 
     // Add Exercise Flow State
+    const [addExerciseSource, setAddExerciseSource] = useState<'catalog_gym' | 'outside_gym' | ''>('');
     const [selectedExerciseForAdd, setSelectedExerciseForAdd] = useState<EjercicioBase | null>(null);
     const [addConfig, setAddConfig] = useState({
         series: 3,
@@ -181,17 +181,25 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         return `${mins}:${s.toString().padStart(2, '0')}`;
     };
 
+    const formatDurationCompact = (seconds: number) => {
+        if (!seconds || seconds <= 0) return '';
+        if (seconds >= 3600) {
+            const hours = seconds / 3600;
+            return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} h`;
+        }
+        if (seconds >= 60) {
+            const minutes = seconds / 60;
+            return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} min`;
+        }
+        return `${seconds}s`;
+    };
+
     const sessionElapsedSeconds = useMemo(() => {
         if (!activeSession?.startTime) return 0;
         const startMs = Date.parse(activeSession.startTime);
         if (!Number.isFinite(startMs)) return 0;
         return Math.max(0, Math.floor((clockNow - startMs) / 1000));
     }, [activeSession?.startTime, clockNow]);
-
-    const exerciseElapsedSeconds = useMemo(() => {
-        if (!guidedExerciseStartAt) return 0;
-        return Math.max(0, Math.floor((clockNow - guidedExerciseStartAt) / 1000));
-    }, [clockNow, guidedExerciseStartAt]);
 
     const filteredExtraCatalogExercises = useMemo(() => {
         const query = extraCatalogSearch.trim().toLowerCase();
@@ -360,7 +368,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setTimerSeconds(getGuidedWorkSeconds(exercise, firstStep.setIndex));
         setIsTimerRunning(false);
         setGuidedWorkTimerStarted(false);
-        setGuidedExerciseStartAt(Date.now());
         setGuidedSetStartedAt(hasGuidedWorkTimer(exercise, firstStep.setIndex) ? null : Date.now());
         toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
@@ -466,7 +473,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
             setTimerSeconds(0);
             setActiveExerciseId(null);
             setGuidedWorkTimerStarted(false);
-            setGuidedExerciseStartAt(null);
             setGuidedSetStartedAt(null);
             restTransitionLockRef.current = false;
             toast.success('Ejercicio finalizado', { id: 'exercise-finished', duration: 3000 });
@@ -530,9 +536,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setTimerSeconds(getGuidedWorkSeconds(nextExercise, nextStep.setIndex));
         setIsTimerRunning(false);
         setGuidedWorkTimerStarted(false);
-        if (nextStep.exerciseId !== currentStep.exerciseId) {
-            setGuidedExerciseStartAt(Date.now());
-        }
         setGuidedSetStartedAt(hasGuidedWorkTimer(nextExercise, nextStep.setIndex) ? null : Date.now());
         restTransitionLockRef.current = false;
     };
@@ -755,7 +758,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 {activeSession.exercises.filter(ex => ex.categoria === 'calentamiento').length > 0 && (
                     <>
                         <div style={styles.sectionHeader}>
-                            <span style={styles.sectionEmoji}>??</span>
+                            <span style={styles.sectionEmoji}>🧘‍♂️</span>
                             <div style={styles.sectionTextContainer}>
                                 <h3 style={styles.sectionTitle}>CALENTAMIENTO</h3>
                                 <p style={styles.sectionSubtitle}>Prepara tu cuerpo antes de empezar</p>
@@ -769,7 +772,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                 {/* Main Routine Section */}
                 <div style={styles.sectionHeader}>
-                    <span style={styles.sectionEmoji}>??</span>
+                    <span style={styles.sectionEmoji}>🔥</span>
                     <div style={styles.sectionTextContainer}>
                         <h3 style={styles.sectionTitle}>RUTINA PRINCIPAL</h3>
                         <p style={styles.sectionSubtitle}>Pulsa Play para empezar cada ejercicio</p>
@@ -782,7 +785,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 {/* Add Exercise Button */}
                 <button
                     style={styles.addExerciseBtn}
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setAddExerciseSource('');
+                        setSelectedExerciseForAdd(null);
+                        setExtraActivityType('');
+                        setExtraActivityDuration('');
+                        setExtraActivityDistance('');
+                        setExtraActivityIntensity('media');
+                        setShowAddModal(true);
+                    }}
                 >
                     <Plus size={20} color={Colors.primary} />
                     <span>Agregar Ejercicio Extra</span>
@@ -798,7 +809,165 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 exit={{ opacity: 0, y: 100 }}
                                 style={styles.modalContent}
                             >
-                                {selectedExerciseForAdd ? (
+                                {addExerciseSource === '' ? (
+                                    <>
+                                        <div style={styles.modalHeader}>
+                                            <h3 style={styles.modalTitle}>Agregar Ejercicio Extra</h3>
+                                            <button onClick={() => setShowAddModal(false)} style={styles.closeModalBtn}>
+                                                <X size={24} />
+                                            </button>
+                                        </div>
+                                        <div style={{ padding: '24px', display: 'grid', gap: '12px' }}>
+                                            <button
+                                                style={styles.optionBtn}
+                                                onClick={() => {
+                                                    setAddExerciseSource('catalog_gym');
+                                                    setSelectedExerciseForAdd(null);
+                                                    setSearchQuery('');
+                                                }}
+                                            >
+                                                <div style={styles.optionIcon}><Dumbbell size={18} /></div>
+                                                <div style={styles.optionText}>
+                                                    <h4>Dentro del gimnasio</h4>
+                                                    <p>Elegir ejercicio desde el catálogo</p>
+                                                </div>
+                                                <ChevronLeft size={20} style={{ transform: 'rotate(180deg)' }} />
+                                            </button>
+                                            <button
+                                                style={styles.optionBtn}
+                                                onClick={() => {
+                                                    setAddExerciseSource('outside_gym');
+                                                    setExtraActivityType('');
+                                                    setExtraActivityDuration('');
+                                                    setExtraActivityDistance('');
+                                                    setExtraActivityIntensity('media');
+                                                }}
+                                            >
+                                                <div style={styles.optionIcon}><Activity size={18} /></div>
+                                                <div style={styles.optionText}>
+                                                    <h4>Fuera del gimnasio</h4>
+                                                    <p>Registrar running, bici, yoga u otro deporte</p>
+                                                </div>
+                                                <ChevronLeft size={20} style={{ transform: 'rotate(180deg)' }} />
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : addExerciseSource === 'outside_gym' ? (
+                                    <>
+                                        <div style={styles.modalHeader}>
+                                            <h3 style={styles.modalTitle}>Actividad fuera del gimnasio</h3>
+                                            <button
+                                                onClick={() => setAddExerciseSource('')}
+                                                style={styles.closeModalBtn}
+                                            >
+                                                <ChevronLeft size={22} />
+                                            </button>
+                                        </div>
+                                        <div style={{ padding: '0 24px 24px', display: 'grid', gap: '14px' }}>
+                                            <div>
+                                                <label style={styles.inputLabel}>Tipo de actividad</label>
+                                                <input
+                                                    type="text"
+                                                    value={extraActivityType}
+                                                    onChange={(e) => setExtraActivityType(e.target.value)}
+                                                    placeholder="Ej: Running, Yoga, Fútbol"
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Duración (min)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={extraActivityDuration}
+                                                        onChange={(e) => setExtraActivityDuration(e.target.value)}
+                                                        placeholder="30"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Distancia (km)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={extraActivityDistance}
+                                                        onChange={(e) => setExtraActivityDistance(e.target.value)}
+                                                        placeholder="Opcional"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label style={styles.inputLabel}>Esfuerzo</label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                                    {(['baja', 'media', 'alta'] as const).map((level) => (
+                                                        <button
+                                                            key={level}
+                                                            onClick={() => setExtraActivityIntensity(level)}
+                                                            style={{
+                                                                padding: '10px',
+                                                                borderRadius: '10px',
+                                                                border: '1px solid',
+                                                                background: extraActivityIntensity === level
+                                                                    ? (level === 'alta' ? Colors.error : level === 'media' ? Colors.warning : Colors.success)
+                                                                    : Colors.surface,
+                                                                color: extraActivityIntensity === level ? '#FFF' : Colors.textSecondary,
+                                                                borderColor: extraActivityIntensity === level ? 'transparent' : Colors.border,
+                                                                fontSize: '12px',
+                                                                fontWeight: 700,
+                                                                cursor: 'pointer',
+                                                                textTransform: 'uppercase'
+                                                            }}
+                                                        >
+                                                            {level}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <button
+                                                style={{
+                                                    ...styles.startExerciseBtn,
+                                                    width: '100%',
+                                                    opacity: extraActivityType && extraActivityDuration ? 1 : 0.5
+                                                }}
+                                                disabled={!extraActivityType || !extraActivityDuration}
+                                                onClick={async () => {
+                                                    const durationMinutes = parseInt(extraActivityDuration, 10) || 0;
+                                                    if (!extraActivityType || durationMinutes <= 0) return;
+                                                    const mets = extraActivityIntensity === 'baja' ? 4 : extraActivityIntensity === 'media' ? 8 : 12;
+                                                    const weight = perfil.usuario.peso || 70;
+                                                    const durationHrs = durationMinutes / 60;
+                                                    const estimatedCalories = Math.round(mets * weight * durationHrs);
+                                                    const activityDate = activeSession.trackingDate
+                                                        ? `${activeSession.trackingDate}T12:00:00.000Z`
+                                                        : new Date().toISOString();
+                                                    await addExtraActivity({
+                                                        id: `extra_${Date.now()}`,
+                                                        fecha: activityDate,
+                                                        descripcion: extraActivityType,
+                                                        source: 'outside_gym',
+                                                        analisisIA: {
+                                                            tipoDeporte: extraActivityType,
+                                                            duracionMinutos: durationMinutes,
+                                                            distanciaKm: extraActivityDistance ? parseFloat(extraActivityDistance) : undefined,
+                                                            intensidad: extraActivityIntensity,
+                                                            calorias: estimatedCalories,
+                                                            notas: 'Registrado durante la sesión activa'
+                                                        }
+                                                    });
+                                                    toast.success('Actividad extra guardada');
+                                                    setShowAddModal(false);
+                                                    setAddExerciseSource('');
+                                                    setExtraActivityType('');
+                                                    setExtraActivityDuration('');
+                                                    setExtraActivityDistance('');
+                                                }}
+                                            >
+                                                <Save size={18} />
+                                                <span>Guardar actividad</span>
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : selectedExerciseForAdd ? (
                                     <div style={{ padding: '0 20px 20px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
                                             <button
@@ -865,19 +1034,26 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     setShowAddModal(false);
                                                     setSelectedExerciseForAdd(null);
                                                     setSearchQuery('');
+                                                    setAddExerciseSource('');
                                                 }}
                                                 style={styles.startExerciseBtn}
                                             >
                                                 <Plus size={20} />
-                                                <span>Agregar a la Rutina</span>
+                                                <span>Agregar a la rutina</span>
                                             </button>
                                         </div>
                                     </div>
                                 ) : (
                                     <>
                                         <div style={styles.modalHeader}>
-                                            <h3 style={styles.modalTitle}>Agregar Ejercicio</h3>
-                                            <button onClick={() => setShowAddModal(false)} style={styles.closeModalBtn}>
+                                            <h3 style={styles.modalTitle}>Agregar ejercicio de catálogo</h3>
+                                            <button
+                                                onClick={() => {
+                                                    setAddExerciseSource('');
+                                                    setShowAddModal(false);
+                                                }}
+                                                style={styles.closeModalBtn}
+                                            >
                                                 <X size={24} />
                                             </button>
                                         </div>
@@ -1361,14 +1537,17 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 style={styles.guidedContainer}
                             >
-                                <div style={styles.guidedStatsRow}>
+                                <div style={{
+                                    ...styles.guidedStatsRow,
+                                    gridTemplateColumns: isNarrowMobile ? '1fr' : styles.guidedStatsRow.gridTemplateColumns
+                                }}>
                                     <div style={styles.guidedStatChip}>
                                         <span style={styles.guidedStatLabel}>Tiempo total</span>
                                         <strong style={styles.guidedStatValue}>{formatTime(sessionElapsedSeconds)}</strong>
                                     </div>
                                     <div style={styles.guidedStatChip}>
-                                        <span style={styles.guidedStatLabel}>Tiempo ejercicio</span>
-                                        <strong style={styles.guidedStatValue}>{formatTime(exerciseElapsedSeconds)}</strong>
+                                        <span style={styles.guidedStatLabel}>Ejercicio</span>
+                                        <strong style={styles.guidedStatValue}>{isRestPhase ? 'Descanso' : ex.nombre}</strong>
                                     </div>
                                     <div style={styles.guidedStatChip}>
                                         <span style={styles.guidedStatLabel}>Serie</span>
@@ -1378,19 +1557,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 <div style={styles.guidedHeaderRow}>
                                     <div style={styles.guidedHeaderText}>
                                         <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
-                                        <p style={styles.guidedSubtitle}>
-                                            {isRestPhase
-                                                ? `Siguiente: ${nextExercise?.nombre || ex.nombre} - serie ${nextSetNumber}`
-                                                : `Serie ${guidedMode.setIndex + 1} de ${ex.sets.length}`}
-                                        </p>
-                                    </div>
-                                    <div style={styles.guidedHeaderActions}>
-                                        <button
-                                            onClick={() => guidedMode.exerciseId && handleVariantClick(guidedMode.exerciseId)}
-                                            style={styles.iconBtn}
-                                        >
-                                            <Shuffle size={20} color={Colors.textSecondary} />
-                                        </button>
+                                        {isRestPhase && (
+                                            <p style={styles.guidedSubtitle}>
+                                                {`Siguiente: ${nextExercise?.nombre || ex.nombre} - serie ${nextSetNumber}`}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
 
@@ -1490,7 +1661,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 )}
 
                                 {guidedMode.phase === 'work' && currentSet && (
-                                    <div style={styles.guidedSetInputGrid}>
+                                    <div style={{
+                                        ...styles.guidedSetInputGrid,
+                                        gridTemplateColumns: isNarrowMobile ? '1fr' : '1fr 1fr'
+                                    }}>
                                         <div>
                                             <label style={styles.inputLabel}>Peso (kg)</label>
                                             <input
@@ -1542,7 +1716,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             setIsTimerRunning(false);
                                             setGuidedWorkTimerStarted(false);
                                             setActiveExerciseId(null);
-                                            setGuidedExerciseStartAt(null);
                                             setGuidedSetStartedAt(null);
                                             setTimerSeconds(0);
                                         }}
@@ -1814,8 +1987,15 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const partnerEx = isDualSession && partnerExercises ? partnerExercises.find((pEx: ExerciseTracking) => pEx.id === ex.id) : null;
         const isResting = guidedMode.active && guidedMode.exerciseId === ex.id && guidedMode.phase === 'rest';
         const imageSrc = ex.imagen || getExerciseImage(ex.nombre);
+        const maxWeight = ex.sets.reduce((acc, set) => Math.max(acc, set.weight || 0), 0);
+        const totalDuration = ex.sets.reduce((acc, set) => acc + (set.duration || 0), 0);
+        const exerciseMetaParts = [
+            `${ex.targetSeries} series`,
+            ...(maxWeight > 0 ? [`${maxWeight} kg`] : []),
+            ...(totalDuration > 0 ? [formatDurationCompact(totalDuration)] : []),
+        ];
         const singleSetGridTemplate = isNarrowMobile
-            ? '1.2fr 1.2fr 1.4fr 1.2fr 1fr'
+            ? '1fr 1fr 1.2fr 1fr 0.9fr'
             : '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr';
 
         return (
@@ -1857,7 +2037,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 </span>
                             )}
                         </h3>
-                        <p style={styles.exerciseMeta}>{ex.targetSeries} series</p>
+                        <p style={styles.exerciseMeta}>{exerciseMetaParts.join(' • ')}</p>
                     </div>
                     <div style={styles.exerciseActions}>
                         <button
@@ -1896,15 +2076,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
                                 {/* Start Exercise Button or Timer Display */}
                                 {activeExerciseId !== ex.id ? (
-                                    <div style={styles.startButtonContainer}>
+                                    <div style={styles.guidedInlineStartContainer}>
                                         <button
-                                            style={styles.startExerciseBtn}
+                                            style={styles.guidedInlineStartBtn}
                                             onClick={() => handleStartExercise(ex.id)}
                                         >
-                                            <Play size={24} color={Colors.background} />
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                                <span style={{ fontSize: '16px', fontWeight: 800 }}>Comenzar Ejercicio</span>
-                                            </div>
+                                            <Play size={16} color={Colors.background} />
+                                            <span>Modo guiado</span>
                                         </button>
                                         <div style={styles.quickModeHint}>
                                             <Info size={14} />
@@ -2001,7 +2179,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         placeholder="0"
                                                         value={set.weight || ''}
                                                         onChange={(e) => updateSet(ex.id, sIdx, { weight: parseFloat(e.target.value) || 0 })}
-                                                        style={styles.newInput}
+                                                        style={{
+                                                            ...styles.newInput,
+                                                            padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                            fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                        }}
                                                         disabled={set.completed || set.skipped}
                                                         onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
                                                     />
@@ -2011,7 +2193,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         placeholder="0"
                                                         value={set.reps || ''}
                                                         onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
-                                                        style={styles.newInput}
+                                                        style={{
+                                                            ...styles.newInput,
+                                                            padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                            fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                        }}
                                                         disabled={set.completed || set.skipped}
                                                         onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
                                                     />
@@ -2035,7 +2221,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                                 if (unit === 'h') multiplier = 3600;
                                                                 updateSet(ex.id, sIdx, { duration: Math.round(val * multiplier) });
                                                             }}
-                                                            style={{ ...styles.newInput, padding: '8px 2px', minWidth: 0 }}
+                                                            style={{
+                                                                ...styles.newInput,
+                                                                padding: isNarrowMobile ? '6px 2px' : '8px 2px',
+                                                                fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                minWidth: 0
+                                                            }}
                                                             disabled={set.completed || set.skipped}
                                                             onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
                                                         />
@@ -2046,10 +2237,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                                 background: 'transparent',
                                                                 border: 'none',
                                                                 color: Colors.textSecondary,
-                                                                fontSize: '10px',
+                                                                fontSize: isNarrowMobile ? '9px' : '10px',
                                                                 padding: 0,
                                                                 cursor: 'pointer',
-                                                                width: '30px'
+                                                                width: isNarrowMobile ? '24px' : '30px'
                                                             }}
                                                             disabled={set.completed || set.skipped}
                                                         >
@@ -2064,7 +2255,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         placeholder="-"
                                                         value={set.rest || ''}
                                                         onChange={(e) => updateSet(ex.id, sIdx, { rest: parseInt(e.target.value) || 0 })}
-                                                        style={styles.newInput}
+                                                        style={{
+                                                            ...styles.newInput,
+                                                            padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                            fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                        }}
                                                         disabled={set.completed || set.skipped}
                                                         onFocus={() => setActiveExerciseId(ex.id)}
                                                     />
@@ -2554,8 +2749,8 @@ const styles: Record<string, React.CSSProperties> = {
         cursor: 'pointer',
     },
     exerciseThumb: {
-        width: '56px',
-        height: '56px',
+        width: '70px',
+        height: '70px',
         borderRadius: '12px',
         objectFit: 'cover',
         border: `1px solid ${Colors.border}`,
@@ -2743,14 +2938,29 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 700,
         color: Colors.primary,
     },
-    startButtonContainer: {
+    guidedInlineStartContainer: {
         display: 'flex',
         flexDirection: 'column' as const,
-        alignItems: 'center',
+        alignItems: 'stretch',
         gap: '8px',
         justifyContent: 'center',
-        padding: '20px 0',
+        padding: '8px 0 14px 0',
         marginBottom: '16px',
+    },
+    guidedInlineStartBtn: {
+        padding: '10px 14px',
+        borderRadius: '12px',
+        background: Colors.primary,
+        border: 'none',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 800,
+        color: Colors.background,
+        width: '100%',
     },
     quickModeHint: {
         display: 'flex',
@@ -2758,9 +2968,9 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '6px',
         color: Colors.textSecondary,
         fontSize: '12px',
-        textAlign: 'center' as const,
+        textAlign: 'left' as const,
         lineHeight: 1.4,
-        maxWidth: '360px',
+        maxWidth: '100%',
     },
     startExerciseBtn: {
         padding: '14px 32px',
@@ -2946,9 +3156,10 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'flex',
         alignItems: 'center',
         padding: '20px',
-        background: Colors.surfaceLight,
+        background: '#fff',
+        color: '#000',
         borderRadius: '16px',
-        border: `1px solid ${Colors.border}`,
+        border: '1px solid #d6d6d6',
         width: '100%',
         cursor: 'pointer',
         textAlign: 'left' as const,
@@ -2959,7 +3170,8 @@ const styles: Record<string, React.CSSProperties> = {
         width: '48px',
         height: '48px',
         borderRadius: '12px',
-        background: Colors.surface,
+        background: '#f3f4f6',
+        color: '#111',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -3027,6 +3239,9 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '14px',
         color: Colors.text,
         fontWeight: 900,
+        whiteSpace: 'nowrap' as const,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
     },
     guidedHeaderRow: {
         display: 'flex',

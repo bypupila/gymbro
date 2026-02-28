@@ -12,6 +12,19 @@ const formatMinutes = (minutes: number): string => {
     return `${hours} h ${remaining} min`;
 };
 
+const formatSeconds = (seconds: number): string => {
+    if (!seconds || seconds <= 0) return '0s';
+    if (seconds >= 3600) {
+        const hours = seconds / 3600;
+        return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} h`;
+    }
+    if (seconds >= 60) {
+        const minutes = seconds / 60;
+        return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} min`;
+    }
+    return `${seconds}s`;
+};
+
 const formatMood = (value?: number): string => {
     if (!value || value <= 0) return '--';
     if (value <= 1) return '1/5 (Muy bajo)';
@@ -53,6 +66,22 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
         });
     }, [summary]);
 
+    const routineStatus = useMemo(() => {
+        if (detailRows.length === 0) return 'Sin detalle';
+        const allCompleted = detailRows.every((row) => row.status === 'completed');
+        return allCompleted ? 'Completa' : 'Incompleta';
+    }, [detailRows]);
+
+    const exerciseTimes = useMemo(() => {
+        return detailRows
+            .filter((row) => row.totalDurationSec > 0)
+            .map((row) => ({
+                id: row.id,
+                label: row.name,
+                value: formatSeconds(row.totalDurationSec),
+            }));
+    }, [detailRows]);
+
     if (!summary) return null;
 
     const handleClose = () => {
@@ -84,7 +113,31 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
                         <span style={styles.metricLabel}>Duración total</span>
                         <strong style={styles.metricValue}>{formatMinutes(summary.totalDurationMin)}</strong>
                     </div>
+                    <div style={styles.metricRow}>
+                        <span style={styles.metricLabel}>Rutina</span>
+                        <strong
+                            style={{
+                                ...styles.metricValue,
+                                color: routineStatus === 'Completa' ? Colors.success : Colors.warning,
+                            }}
+                        >
+                            {routineStatus}
+                        </strong>
+                    </div>
                 </div>
+
+                {exerciseTimes.length > 0 && (
+                    <div style={styles.exerciseTimesContainer}>
+                        <span style={styles.exerciseTimesTitle}>Tiempo por ejercicio</span>
+                        <div style={styles.exerciseTimesList}>
+                            {exerciseTimes.map((item, itemIdx) => (
+                                <span key={`${item.id}_${itemIdx}`} style={styles.exerciseTimeBadge}>
+                                    {item.label}: {item.value}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <button onClick={() => setShowDetails((value) => !value)} style={styles.secondaryButton}>
                     {showDetails ? 'Ocultar detalle' : 'Ver más en detalle'}
@@ -92,21 +145,26 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
 
                 {showDetails && (
                     <div style={styles.detailList}>
-                        {detailRows.map((row) => {
+                        {detailRows.map((row, rowIdx) => {
                             const statusColor = row.status === 'completed'
                                 ? Colors.success
                                 : row.status === 'partial'
                                     ? Colors.warning
                                     : Colors.error;
+                            const detailMetaParts = [
+                                `${row.completedSets}/${row.totalSets} series`,
+                                ...(row.maxWeight > 0 ? [`${row.maxWeight} kg máx`] : []),
+                                ...(row.totalDurationSec > 0 ? [formatSeconds(row.totalDurationSec)] : []),
+                            ];
                             return (
-                                <div key={row.id} style={styles.detailRow}>
+                                <div key={`${row.id}_${rowIdx}`} style={styles.detailRow}>
                                     <div style={{ minWidth: 0 }}>
                                         <div style={styles.detailName}>
                                             {row.name}
                                             {row.replaced && <span style={{ color: Colors.warning }}> • Reemplazado</span>}
                                         </div>
                                         <div style={styles.detailMeta}>
-                                            {row.completedSets}/{row.totalSets} series • {row.maxWeight} kg máx • {row.totalDurationSec}s
+                                            {detailMetaParts.join(' • ')}
                                         </div>
                                     </div>
                                     <span style={{
@@ -229,6 +287,38 @@ const styles: Record<string, React.CSSProperties> = {
     },
     metricValue: {
         color: Colors.text,
+    },
+    exerciseTimesContainer: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        background: Colors.background,
+        borderRadius: '12px',
+        border: `1px solid ${Colors.border}55`,
+        padding: '10px',
+    },
+    exerciseTimesTitle: {
+        fontSize: '12px',
+        fontWeight: 800,
+        color: Colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: '0.4px',
+    },
+    exerciseTimesList: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '6px',
+    },
+    exerciseTimeBadge: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 8px',
+        borderRadius: '999px',
+        background: `${Colors.primary}1A`,
+        border: `1px solid ${Colors.primary}4D`,
+        color: Colors.text,
+        fontSize: '11px',
+        fontWeight: 700,
     },
     secondaryButton: {
         border: `1px solid ${Colors.border}`,

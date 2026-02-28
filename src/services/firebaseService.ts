@@ -42,6 +42,22 @@ const debugLog = (...args: unknown[]) => {
 
 const stripUndefinedDeep = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+const toIsoDateString = (value: unknown): string => {
+    if (value && typeof value === 'object' && 'toISOString' in value && typeof (value as { toISOString?: unknown }).toISOString === 'function') {
+        return (value as { toISOString: () => string }).toISOString();
+    }
+    if (value && typeof value === 'object' && 'seconds' in value && typeof (value as { seconds?: unknown }).seconds === 'number') {
+        return new Date(((value as { seconds: number }).seconds) * 1000).toISOString();
+    }
+    if (typeof value === 'string') {
+        const parsed = Date.parse(value);
+        if (Number.isFinite(parsed)) {
+            return new Date(parsed).toISOString();
+        }
+    }
+    return new Date().toISOString();
+};
+
 const fromRoutinePayload = (routineData: unknown): RutinaUsuario | null => {
     if (!routineData || typeof routineData !== 'object') {
         return null;
@@ -342,7 +358,9 @@ export const firebaseService = {
                 this.getExtraActivitiesCatalog(userId)
             ]);
         } catch (error: any) {
-            debugLog('[getProfile] Error fetching related data:', error?.code || error?.message || error);
+            if (error?.code !== 'permission-denied') {
+                debugLog('[getProfile] Error fetching related data:', error?.code || error?.message || error);
+            }
         }
 
         return normalizeProfileData(
@@ -422,7 +440,9 @@ export const firebaseService = {
                 return nextRelatedData;
             } catch (error: any) {
                 // If permissions fail, return empty data instead of crashing
-                debugLog('[getRelatedData] Error fetching related data:', error?.code);
+                if (error?.code !== 'permission-denied') {
+                    debugLog('[getRelatedData] Error fetching related data:', error?.code);
+                }
                 return {
                     historial: [],
                     historialRutinas: [],
@@ -540,54 +560,57 @@ export const firebaseService = {
     // ========== WORKOUT HISTORY ==========
 
     async addWorkout(userId: string, workout: EntrenamientoRealizado): Promise<void> {
-        const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
-        await addDoc(workoutsRef, {
+        const workoutDocId = workout.id || `workout_${Date.now()}`;
+        const workoutRef = doc(db, 'users', userId, 'workoutHistory', workoutDocId);
+        await setDoc(workoutRef, stripUndefinedDeep({
             ...workout,
+            id: workoutDocId,
             fecha: new Date(workout.fecha),
-        });
+        }), { merge: true });
     },
 
     async updateWorkoutById(userId: string, workoutId: string, updatedWorkout: EntrenamientoRealizado): Promise<void> {
         const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
-        const q = query(workoutsRef, where('id', '==', workoutId), limit(1));
+        const q = query(workoutsRef, where('id', '==', workoutId));
         const snapshotByField = await getDocs(q);
 
-        let targetRef = snapshotByField.docs[0]?.ref;
-        if (!targetRef) {
+        let targetRefs = snapshotByField.docs.map((docSnap) => docSnap.ref);
+        if (targetRefs.length === 0) {
             const byDocIdRef = doc(db, 'users', userId, 'workoutHistory', workoutId);
             const byDocIdSnap = await getDoc(byDocIdRef);
             if (byDocIdSnap.exists()) {
-                targetRef = byDocIdRef;
+                targetRefs = [byDocIdRef];
             }
         }
 
-        if (!targetRef) {
+        if (targetRefs.length === 0) {
             throw new Error(`Workout not found: ${workoutId}`);
         }
 
         const payload = stripUndefinedDeep({
             ...updatedWorkout,
+            id: updatedWorkout.id || workoutId,
             fecha: new Date(updatedWorkout.fecha),
         });
-        await updateDoc(targetRef, payload);
+        await Promise.all(targetRefs.map((targetRef) => updateDoc(targetRef, payload)));
     },
 
     async deleteWorkoutById(userId: string, workoutId: string): Promise<void> {
         const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
-        const q = query(workoutsRef, where('id', '==', workoutId), limit(1));
+        const q = query(workoutsRef, where('id', '==', workoutId));
         const snapshotByField = await getDocs(q);
 
-        let targetRef = snapshotByField.docs[0]?.ref;
-        if (!targetRef) {
+        let targetRefs = snapshotByField.docs.map((docSnap) => docSnap.ref);
+        if (targetRefs.length === 0) {
             const byDocIdRef = doc(db, 'users', userId, 'workoutHistory', workoutId);
             const byDocIdSnap = await getDoc(byDocIdRef);
             if (byDocIdSnap.exists()) {
-                targetRef = byDocIdRef;
+                targetRefs = [byDocIdRef];
             }
         }
 
-        if (!targetRef) return;
-        await deleteDoc(targetRef);
+        if (targetRefs.length === 0) return;
+        await Promise.all(targetRefs.map((targetRef) => deleteDoc(targetRef)));
     },
 
     async deleteWorkoutsByDate(userId: string, dateStr: string): Promise<void> {
@@ -614,10 +637,30 @@ export const firebaseService = {
         const q = query(workoutsRef, orderBy('fecha', 'desc'), limit(limitCount));
         const snapshot = await getDocs(q);
 
-        return snapshot.docs.map(doc => ({
-            ...doc.data(),
-            fecha: doc.data().fecha.toISOString ? doc.data().fecha.toISOString() : new Date(doc.data().fecha.seconds * 1000).toISOString(),
-        })) as EntrenamientoRealizado[];
+        const normalized = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data() as Record<string, unknown>;
+            return {
+                ...data,
+                id: typeof data.id === 'string' && data.id ? data.id : docSnap.id,
+                fecha: toIsoDateString(data.fecha),
+            } as EntrenamientoRealizado;
+        });
+
+        // Guard against duplicated workout docs with the same logical workout id.
+        const uniqueById = new Map<string, EntrenamientoRealizado>();
+        normalized.forEach((workout) => {
+            const existing = uniqueById.get(workout.id);
+            if (!existing) {
+                uniqueById.set(workout.id, workout);
+                return;
+            }
+            if (Date.parse(workout.fecha) >= Date.parse(existing.fecha)) {
+                uniqueById.set(workout.id, workout);
+            }
+        });
+
+        return Array.from(uniqueById.values())
+            .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
     },
 
     async addWorkoutToPartner(partnerId: string, workout: EntrenamientoRealizado): Promise<boolean> {
@@ -916,7 +959,14 @@ export const firebaseService = {
         let receivedPartners: AcceptedPartnerEvent[] = [];
         let unlinksByTarget: UnlinkPartnerEvent[] = [];
 
+        // Gate: only emit once all 3 listeners have fired at least once
+        // to prevent race conditions where incomplete data triggers destructive cleanup.
+        let sentReady = false;
+        let receivedReady = false;
+        let unlinksReady = false;
+
         const emit = () => {
+            if (!sentReady || !receivedReady || !unlinksReady) return;
             const activePartners = resolveActivePartnersFromEvents(
                 [...sentPartners, ...receivedPartners],
                 unlinksByTarget,
@@ -938,12 +988,14 @@ export const firebaseService = {
                     acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
                 } as AcceptedPartnerEvent;
             });
+            sentReady = true;
             emit();
         }, (error) => {
             const firestoreError = error as { code?: string; message?: string };
             if (firestoreError?.code === 'permission-denied') {
                 debugLog('[onAcceptedLinkRequestsChange] sentQ permission denied, ignored');
                 sentPartners = [];
+                sentReady = true;
                 emit();
                 return;
             }
@@ -962,12 +1014,14 @@ export const firebaseService = {
                     acceptedAtMs: parseTimestamp(data.resolvedAt || data.createdAt),
                 } as AcceptedPartnerEvent;
             });
+            receivedReady = true;
             emit();
         }, (error) => {
             const firestoreError = error as { code?: string; message?: string };
             if (firestoreError?.code === 'permission-denied') {
                 debugLog('[onAcceptedLinkRequestsChange] receivedQ permission denied, ignored');
                 receivedPartners = [];
+                receivedReady = true;
                 emit();
                 return;
             }
@@ -982,12 +1036,14 @@ export const firebaseService = {
                     createdAtMs: parseTimestamp(data.createdAt),
                 };
             });
+            unlinksReady = true;
             emit();
         }, (error) => {
             const firestoreError = error as { code?: string; message?: string };
             if (firestoreError?.code === 'permission-denied') {
                 debugLog('[onAcceptedLinkRequestsChange] unlinkByTargetQ permission denied, ignored');
                 unlinksByTarget = [];
+                unlinksReady = true;
                 emit();
                 return;
             }

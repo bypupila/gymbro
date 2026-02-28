@@ -1,12 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useUserStore } from '@/stores/userStore';
 import { authService } from '@/services/authService';
 import { firebaseService } from '@/services/firebaseService';
+
+const REQUIRED_ABSENCE_COUNT = 2;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const setUserId = useUserStore((state) => state.setUserId);
     const setLinkRequests = useUserStore((state) => state.setLinkRequests);
     const setPartners = useUserStore((state) => state.setPartners);
+    // Track consecutive emissions where a partner is absent before triggering cleanup.
+    // This prevents destructive removePartnerFromOwnProfile calls from transient empty emissions.
+    const partnerAbsenceCountRef = useRef(new Map<string, number>());
 
     useEffect(() => {
         let unsubscribeLinkRequests: (() => void) | null = null;
@@ -25,6 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (user) {
                 setUserId(user.uid);
+                partnerAbsenceCountRef.current.clear();
 
                 // Setup listener for link requests
                 unsubscribeLinkRequests = firebaseService.onLinkRequestsChange(user.uid, (requests) => {
@@ -32,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 });
 
                 // Spark-safe fallback: derive current partner from accepted/unlink events.
-                // Important: this listener is read-only and must not mutate Firestore.
                 unsubscribeAcceptedLinkRequests = firebaseService.onAcceptedLinkRequestsChange(user.uid, (partners) => {
                     const stateBeforeUpdate = useUserStore.getState();
                     const persistedIdsBefore = new Set<string>();
@@ -43,11 +48,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setPartners(partners);
 
                     const activeIds = new Set(partners.map((partner) => partner.id));
+                    const absenceMap = partnerAbsenceCountRef.current;
+
+                    // Reset absence count for partners that are present
+                    for (const id of activeIds) {
+                        absenceMap.delete(id);
+                    }
+
                     persistedIdsBefore.forEach((partnerId) => {
                         if (!activeIds.has(partnerId)) {
-                            void firebaseService.removePartnerFromOwnProfile(user.uid, partnerId).catch((error) => {
-                                console.error('[AuthProvider] Failed to cleanup stale partner link:', error);
-                            });
+                            const count = (absenceMap.get(partnerId) || 0) + 1;
+                            absenceMap.set(partnerId, count);
+
+                            // Only cleanup after partner is confirmed absent in multiple consecutive emissions
+                            if (count >= REQUIRED_ABSENCE_COUNT) {
+                                absenceMap.delete(partnerId);
+                                void firebaseService.removePartnerFromOwnProfile(user.uid, partnerId).catch((error) => {
+                                    console.error('[AuthProvider] Failed to cleanup stale partner link:', error);
+                                });
+                            }
                         }
                     });
                 });
@@ -55,6 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setUserId(null);
                 setLinkRequests([]); // Clear requests on logout
                 setPartners([]);
+                partnerAbsenceCountRef.current.clear();
             }
         });
 
