@@ -4,13 +4,16 @@
 
 import { Card } from '@/components/Card';
 import { useUserStore, EntrenamientoRealizado, ExtraActivity } from '@/stores/userStore';
+import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
 import Colors from '@/styles/colors';
 import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy, Activity, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { calculateGlobalStats } from '@/utils/statsUtils';
+import { useLocation } from 'react-router-dom';
 
 export const ProgressPage: React.FC = () => {
+    const location = useLocation();
     const perfil = useUserStore((state) => state.perfil);
     const removeExtraActivity = useUserStore((state) => state.removeExtraActivity);
     const partners = perfil.partners || [];
@@ -18,6 +21,9 @@ export const ProgressPage: React.FC = () => {
     const hasPartner = !!activePartner || !!perfil.pareja;
     const history = useMemo(() => perfil.historial || [], [perfil.historial]);
     const [showAllExtras, setShowAllExtras] = useState(false);
+    const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const preselectedDate = queryParams.get('date') || undefined;
+    const autoEditFromQuery = queryParams.get('edit') === '1';
 
     // Global Stats Calculation
     const stats = useMemo(() => calculateGlobalStats(perfil), [perfil]);
@@ -32,6 +38,65 @@ export const ProgressPage: React.FC = () => {
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
     const startOffset = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
+    const completionSummary = useMemo(() => {
+        const normalize = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const nowDate = new Date();
+        const todayKey = nowDate.toISOString().split('T')[0];
+
+        const completedRoutines = history.filter((workout) => {
+            const details = workout.exerciseDetails || [];
+            if (details.length === 0) return false;
+            return details.every((detail) => {
+                if (detail.completionStatus) return detail.completionStatus === 'completed';
+                const totalSets = detail.sets.length;
+                const doneSets = detail.sets.filter((set) => set.completed || set.skipped).length;
+                return totalSets > 0 && doneSets === totalSets;
+            });
+        }).length;
+
+        const incompleteRoutines = history.filter((workout) => {
+            const details = workout.exerciseDetails || [];
+            if (details.length === 0) return false;
+            const hasAnyProgress = details.some((detail) => {
+                const doneSets = detail.sets.filter((set) => set.completed || set.skipped).length;
+                return doneSets > 0 || detail.sets.some((set) => set.reps > 0 || set.peso > 0);
+            });
+            const allCompleted = details.every((detail) => {
+                if (detail.completionStatus) return detail.completionStatus === 'completed';
+                const totalSets = detail.sets.length;
+                const doneSets = detail.sets.filter((set) => set.completed || set.skipped).length;
+                return totalSets > 0 && doneSets === totalSets;
+            });
+            return hasAnyProgress && !allCompleted;
+        }).length;
+
+        const monthScheduleDays = perfil.horario.dias.filter((day) => day.entrena);
+        const extras = perfil.actividadesExtras || [];
+        const weekdayNames = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+
+        let missedTrainingDays = 0;
+        for (let day = 1; day <= nowDate.getDate(); day++) {
+            const date = new Date(nowDate.getFullYear(), nowDate.getMonth(), day);
+            const dateKey = date.toISOString().split('T')[0];
+            if (dateKey > todayKey) continue;
+
+            const weekday = weekdayNames[date.getDay()];
+            const isScheduled = monthScheduleDays.some((d) => normalize(d.dia) === normalize(weekday));
+            if (!isScheduled) continue;
+
+            const hasWorkout = history.some((workout) => workout.fecha.startsWith(dateKey));
+            const hasExtra = extras.some((extra) => extra.fecha.startsWith(dateKey));
+            if (!hasWorkout && !hasExtra) {
+                missedTrainingDays++;
+            }
+        }
+
+        return {
+            completedRoutines,
+            incompleteRoutines,
+            missedTrainingDays,
+        };
+    }, [history, perfil.actividadesExtras, perfil.horario.dias]);
 
     // Advanced Stats Calculations (Gym Specific)
     const gymStats = useMemo(() => {
@@ -171,11 +236,32 @@ export const ProgressPage: React.FC = () => {
                     </div>
                 </div>
                 <button
-                    onClick={() => toast('Proximamente: analisis visual con IA', { icon: 'AI' })}
+                    onClick={() => toast('Próximamente: análisis visual con IA', { icon: 'AI' })}
                     style={styles.cameraBtn}
                 >
                     <Camera size={24} color={Colors.primary} />
                 </button>
+            </div>
+
+            <WeeklyProgressBar
+                initialOpenDate={preselectedDate}
+                autoEditFirstWorkout={autoEditFromQuery}
+            />
+
+            <h3 style={styles.sectionTitle}>Cumplimiento mensual</h3>
+            <div style={styles.complianceGrid}>
+                <Card style={styles.complianceCard}>
+                    <span style={styles.complianceLabel}>Rutinas al 100%</span>
+                    <strong style={{ ...styles.complianceValue, color: Colors.success }}>{completionSummary.completedRoutines}</strong>
+                </Card>
+                <Card style={styles.complianceCard}>
+                    <span style={styles.complianceLabel}>Rutinas incompletas</span>
+                    <strong style={{ ...styles.complianceValue, color: Colors.warning }}>{completionSummary.incompleteRoutines}</strong>
+                </Card>
+                <Card style={styles.complianceCard}>
+                    <span style={styles.complianceLabel}>Días sin entrenar</span>
+                    <strong style={{ ...styles.complianceValue, color: Colors.error }}>{completionSummary.missedTrainingDays}</strong>
+                </Card>
             </div>
 
             {/* Main Stats Grid */}
@@ -231,7 +317,7 @@ export const ProgressPage: React.FC = () => {
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: '15px', fontWeight: 800, color: Colors.text }}>
-                                                    {extra.analisisIA?.tipoDeporte || 'Actividad Varia'}
+                                                    {extra.analisisIA?.tipoDeporte || 'Actividad varia'}
                                                 </div>
                                                 <div style={{ fontSize: '12px', color: Colors.textSecondary }}>
                                                     {new Date(extra.fecha).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -446,7 +532,7 @@ export const ProgressPage: React.FC = () => {
                 <Card style={styles.mostTrainedCard}>
                     <Trophy size={24} color={Colors.warning} />
                     <div style={styles.mostTrainedInfo}>
-                        <span style={styles.mostTrainedLabel}>Ejercicio Mas Realizado</span>
+                        <span style={styles.mostTrainedLabel}>Ejercicio más realizado</span>
                         <span style={styles.mostTrainedValue}>{gymStats.mostTrained}</span>
                     </div>
                 </Card>
@@ -505,7 +591,7 @@ export const ProgressPage: React.FC = () => {
             {/* Yearly Stat */}
             <div style={styles.yearlyBox}>
                 <div style={styles.yearlyContent}>
-                    <h4 style={styles.yearlyTitle}>Resumen del Ano {currentYear}</h4>
+                    <h4 style={styles.yearlyTitle}>Resumen del año {currentYear}</h4>
                     <p style={styles.yearlySub}>Has completado un total de:</p>
                     <div style={styles.yearlyMain}>
                         <span style={styles.yearlyValue}>{yearlyTotal}</span>
@@ -557,7 +643,78 @@ export const ProgressPage: React.FC = () => {
                 ) : (
                     <div style={styles.emptyState}>
                         <Activity size={40} color={Colors.textTertiary} />
-                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aun no hay actividad registrada</p>
+                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aún no hay actividad registrada</p>
+                    </div>
+                )}
+            </div>
+
+            <h3 style={styles.sectionTitle}>Detalle de ejercicios</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
+                {history.length > 0 ? (
+                    history.slice(0, 6).map((workout) => {
+                        const details = workout.exerciseDetails && workout.exerciseDetails.length > 0
+                            ? workout.exerciseDetails
+                            : workout.ejercicios.map((exercise, idx) => ({
+                                exerciseId: `legacy_${workout.id}_${idx}`,
+                                nombre: exercise.nombre,
+                                isCompleted: true,
+                                isSkipped: false,
+                                sets: exercise.sets.map((set, setIdx) => ({
+                                    numero: setIdx + 1,
+                                    reps: set.reps || 0,
+                                    peso: set.peso || 0,
+                                    completed: true,
+                                    skipped: false,
+                                })),
+                                completionStatus: 'completed' as const,
+                            }));
+
+                        return (
+                            <Card key={`workout_details_${workout.id}`} style={{ padding: '16px', border: `1px solid ${Colors.border}40` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <strong style={{ color: Colors.text }}>{workout.nombre}</strong>
+                                    <span style={{ fontSize: '12px', color: Colors.textSecondary }}>
+                                        {new Date(workout.fecha).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {details.map((detail) => {
+                                        const totalSets = detail.sets.length;
+                                        const completedSets = detail.sets.filter((set) => set.completed || set.skipped).length;
+                                        const status = detail.completionStatus || (totalSets > 0 && completedSets === totalSets ? 'completed' : completedSets > 0 ? 'partial' : 'not_done');
+                                        const statusColor = status === 'completed' ? Colors.success : status === 'partial' ? Colors.warning : Colors.error;
+                                        const maxWeight = detail.sets.reduce((acc, set) => Math.max(acc, set.peso || 0), 0);
+                                        const durationSec = detail.sets.reduce((acc, set) => acc + (set.duration || 0), 0);
+                                        return (
+                                            <div key={detail.exerciseId} style={styles.exerciseDetailRow}>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ fontSize: '13px', fontWeight: 700, color: Colors.text }}>
+                                                        {detail.nombre}
+                                                        {detail.isReplaced && <span style={{ color: Colors.warning }}> • Reemplazado</span>}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: Colors.textSecondary }}>
+                                                        {completedSets}/{totalSets} series • {maxWeight} kg máx • {durationSec}s
+                                                    </div>
+                                                </div>
+                                                <span style={{
+                                                    ...styles.exerciseDetailStatus,
+                                                    color: statusColor,
+                                                    borderColor: `${statusColor}55`,
+                                                    background: `${statusColor}1A`,
+                                                }}>
+                                                    {status === 'completed' ? 'Completado' : status === 'partial' ? 'Incompleto' : 'No realizado'}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </Card>
+                        );
+                    })
+                ) : (
+                    <div style={styles.emptyState}>
+                        <Dumbbell size={40} color={Colors.textTertiary} />
+                        <p style={{ color: Colors.textSecondary, fontSize: '14px', margin: '8px 0 0 0' }}>Aún no hay rutinas registradas</p>
                     </div>
                 )}
             </div>
@@ -568,7 +725,7 @@ export const ProgressPage: React.FC = () => {
                 <Camera size={48} color={Colors.textTertiary} />
                 <p style={styles.emptyText}>Sin fotos aun</p>
                 <p style={styles.emptySubtext}>
-                    Toma tu primera foto para trackear tu transformacion
+                    Toma tu primera foto para trackear tu transformación
                 </p>
             </div>
         </div>
@@ -649,6 +806,48 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 800,
         color: Colors.text,
         margin: '0 0 16px 0',
+    },
+    complianceGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '12px',
+        marginBottom: '28px',
+    },
+    complianceCard: {
+        padding: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+    },
+    complianceLabel: {
+        fontSize: '11px',
+        color: Colors.textSecondary,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+    },
+    complianceValue: {
+        fontSize: '24px',
+        fontWeight: 900,
+    },
+    exerciseDetailRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '10px',
+        padding: '10px 12px',
+        borderRadius: '10px',
+        background: Colors.background,
+        border: `1px solid ${Colors.border}40`,
+    },
+    exerciseDetailStatus: {
+        border: '1px solid',
+        borderRadius: '999px',
+        padding: '4px 8px',
+        fontSize: '10px',
+        fontWeight: 800,
+        textTransform: 'uppercase',
+        letterSpacing: '0.3px',
+        flexShrink: 0,
     },
     detailedStatsGrid: {
         display: 'grid',
@@ -894,6 +1093,16 @@ const styles: Record<string, React.CSSProperties> = {
     },
     yearlyIcon: {
         fontSize: '40px',
+    },
+    emptyState: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '28px 20px',
+        background: Colors.surface,
+        borderRadius: '16px',
+        border: `1px solid ${Colors.border}40`,
     }
 };
 

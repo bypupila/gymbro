@@ -40,6 +40,8 @@ const debugLog = (...args: unknown[]) => {
     }
 };
 
+const stripUndefinedDeep = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 const fromRoutinePayload = (routineData: unknown): RutinaUsuario | null => {
     if (!routineData || typeof routineData !== 'object') {
         return null;
@@ -548,26 +550,63 @@ export const firebaseService = {
     async updateWorkoutById(userId: string, workoutId: string, updatedWorkout: EntrenamientoRealizado): Promise<void> {
         const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
         const q = query(workoutsRef, where('id', '==', workoutId), limit(1));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
+        const snapshotByField = await getDocs(q);
+
+        let targetRef = snapshotByField.docs[0]?.ref;
+        if (!targetRef) {
+            const byDocIdRef = doc(db, 'users', userId, 'workoutHistory', workoutId);
+            const byDocIdSnap = await getDoc(byDocIdRef);
+            if (byDocIdSnap.exists()) {
+                targetRef = byDocIdRef;
+            }
+        }
+
+        if (!targetRef) {
             throw new Error(`Workout not found: ${workoutId}`);
         }
 
-        const targetRef = snapshot.docs[0].ref;
-        await updateDoc(targetRef, {
+        const payload = stripUndefinedDeep({
             ...updatedWorkout,
             fecha: new Date(updatedWorkout.fecha),
         });
+        await updateDoc(targetRef, payload);
     },
 
     async deleteWorkoutById(userId: string, workoutId: string): Promise<void> {
         const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
         const q = query(workoutsRef, where('id', '==', workoutId), limit(1));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
-            return;
+        const snapshotByField = await getDocs(q);
+
+        let targetRef = snapshotByField.docs[0]?.ref;
+        if (!targetRef) {
+            const byDocIdRef = doc(db, 'users', userId, 'workoutHistory', workoutId);
+            const byDocIdSnap = await getDoc(byDocIdRef);
+            if (byDocIdSnap.exists()) {
+                targetRef = byDocIdRef;
+            }
         }
-        await deleteDoc(snapshot.docs[0].ref);
+
+        if (!targetRef) return;
+        await deleteDoc(targetRef);
+    },
+
+    async deleteWorkoutsByDate(userId: string, dateStr: string): Promise<void> {
+        const workoutsRef = collection(db, 'users', userId, 'workoutHistory');
+        const start = new Date(`${dateStr}T00:00:00.000`);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+
+        const q = query(
+            workoutsRef,
+            where('fecha', '>=', start),
+            where('fecha', '<', end)
+        );
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) return;
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
+        await batch.commit();
     },
 
     async getWorkouts(userId: string, limitCount = 100): Promise<EntrenamientoRealizado[]> {

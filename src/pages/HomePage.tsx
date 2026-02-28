@@ -61,8 +61,11 @@ export const HomePage: React.FC = () => {
     // Day picker state
     const [showDayPickerModal, setShowDayPickerModal] = useState(false);
     const [selectedTrackingDate, setSelectedTrackingDate] = useState<string | undefined>(undefined);
+    const [showDuplicateDateModal, setShowDuplicateDateModal] = useState(false);
+    const [duplicateDateWorkoutCount, setDuplicateDateWorkoutCount] = useState(0);
 
     const hasPartners = (perfil.partners && perfil.partners.length > 0) || !!perfil.partnerId;
+    const removeWorkoutsByDate = useUserStore((state) => state.removeWorkoutsByDate);
 
     useEffect(() => {
         return authService.onAuthChange((user) => {
@@ -100,12 +103,14 @@ export const HomePage: React.FC = () => {
         setTempMood(undefined);
         setSelectedPartner(null);
         setSelectedTrackingDate(undefined);
+        setShowDuplicateDateModal(false);
+        setDuplicateDateWorkoutCount(0);
         setModeStep('choose');
         setIsWaitingForAccept(false);
         setPendingInvitationId(null);
         setPendingLiveSessionId(null);
         linkedSessionStartedRef.current = false;
-    }, [setShowModeModal, setTempSessionData, setTempMood, setSelectedPartner, setSelectedTrackingDate, setModeStep, setIsWaitingForAccept]);
+    }, [setShowModeModal, setTempSessionData, setTempMood, setSelectedPartner, setSelectedTrackingDate, setShowDuplicateDateModal, setDuplicateDateWorkoutCount, setModeStep, setIsWaitingForAccept]);
 
     const cancelPendingInvitation = useCallback(async (options?: { closeModal?: boolean }) => {
         if (pendingInvitationId) {
@@ -167,8 +172,37 @@ export const HomePage: React.FC = () => {
     };
 
     const handleDayPickerConfirm = () => {
+        if (!selectedTrackingDate) return;
+        const workoutsOnDate = (perfil.historial || []).filter((workout) => workout.fecha.split('T')[0] === selectedTrackingDate);
+        if (workoutsOnDate.length > 0) {
+            setDuplicateDateWorkoutCount(workoutsOnDate.length);
+            setShowDayPickerModal(false);
+            setShowDuplicateDateModal(true);
+            return;
+        }
         setShowDayPickerModal(false);
         setShowMoodModal(true);
+    };
+
+    const handleReplaceExistingDateRecords = async () => {
+        if (!selectedTrackingDate) return;
+        try {
+            await removeWorkoutsByDate(selectedTrackingDate);
+            setShowDuplicateDateModal(false);
+            setShowMoodModal(true);
+            toast.success('Se reemplazará el registro anterior de ese día.');
+        } catch (error) {
+            console.error('Error replacing workouts by date:', error);
+            toast.error('No se pudo reemplazar el registro de esa fecha.');
+        }
+    };
+
+    const handleEditExistingDateRecords = () => {
+        if (!selectedTrackingDate) return;
+        setShowDuplicateDateModal(false);
+        setTempSessionData(null);
+        setTempMood(undefined);
+        navigate(`/progress?date=${selectedTrackingDate}&edit=1`);
     };
 
     const confirmStartSession = (mood: number) => {
@@ -265,7 +299,7 @@ export const HomePage: React.FC = () => {
                 setModeStep('selectMode'); // stay on same step but show waiting state
             } catch (error) {
                 console.error('Error sending invitation:', error);
-                toast.error('No se pudo enviar la invitacion', { id: 'invite-send-error', duration: 3000 });
+                toast.error('No se pudo enviar la invitación', { id: 'invite-send-error', duration: 3000 });
                 if (preparedLiveSessionId) {
                     void liveSessionService.cancelSession(preparedLiveSessionId).catch(() => undefined);
                 }
@@ -298,7 +332,7 @@ export const HomePage: React.FC = () => {
                     if (invitation.liveSessionId) {
                         void liveSessionService.cancelSession(invitation.liveSessionId).catch(() => undefined);
                     }
-                    toast.error(`${selectedPartner?.nombre || 'Partner'} rechazo la invitacion`, {
+                    toast.error(`${selectedPartner?.nombre || 'Partner'} rechazó la invitación`, {
                         id: 'invite-declined',
                         duration: 3000
                     });
@@ -309,7 +343,7 @@ export const HomePage: React.FC = () => {
                     if (invitation.liveSessionId) {
                         void liveSessionService.cancelSession(invitation.liveSessionId).catch(() => undefined);
                     }
-                    toast.error('La invitacion expiro', { id: 'invite-expired', duration: 3000 });
+                    toast.error('La invitación expiró', { id: 'invite-expired', duration: 3000 });
                     setIsWaitingForAccept(false);
                     setPendingInvitationId(null);
                     setPendingLiveSessionId(null);
@@ -466,7 +500,7 @@ export const HomePage: React.FC = () => {
                             {tempSessionData.day} - {tempSessionData.name}
                         </h2>
                         <p style={styles.modalSubtitle}>
-                            Selecciona el dia para el que cuenta este entrenamiento
+                            Selecciona el día para el que cuenta este entrenamiento
                         </p>
 
                         <div style={{
@@ -588,6 +622,44 @@ export const HomePage: React.FC = () => {
                 </div>
             )}
 
+            {showDuplicateDateModal && selectedTrackingDate && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modalContent}>
+                        <h2 style={styles.modalTitle}>Ya existe un registro ese día</h2>
+                        <p style={styles.modalSubtitle}>
+                            Hay {duplicateDateWorkoutCount} rutina(s) en {selectedTrackingDate}. Elige qué quieres hacer.
+                        </p>
+
+                        <button
+                            style={styles.confirmModeBtn}
+                            onClick={() => { void handleReplaceExistingDateRecords(); }}
+                        >
+                            Reemplazar registro existente
+                        </button>
+                        <button
+                            style={{
+                                ...styles.confirmModeBtn,
+                                background: Colors.surfaceLight,
+                                color: Colors.text,
+                                border: `1px solid ${Colors.border}`,
+                            }}
+                            onClick={handleEditExistingDateRecords}
+                        >
+                            Editar registro existente
+                        </button>
+                        <button
+                            style={styles.cancelLink}
+                            onClick={() => {
+                                setShowDuplicateDateModal(false);
+                                setShowDayPickerModal(true);
+                            }}
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Mood / Energy Pre-Workout Modal */}
             {showMoodModal && (
                 <div style={styles.modalOverlay}>
@@ -633,7 +705,7 @@ export const HomePage: React.FC = () => {
                         {/* Step 1: Solo or with someone */}
                         {modeStep === 'choose' && (
                             <>
-                                <h2 style={styles.modalTitle}>Como entrenaras hoy?</h2>
+                                <h2 style={styles.modalTitle}>¿Cómo entrenarás hoy?</h2>
                                 <p style={styles.modalSubtitle}>Elige tu modo de entrenamiento</p>
 
                                 <div style={styles.modeGrid}>
@@ -756,7 +828,7 @@ export const HomePage: React.FC = () => {
                                     <button style={styles.modeCard} onClick={() => handleModeConfirm('linked')}>
                                         <div style={styles.modeIcon}>{'🔗'}</div>
                                         <h3 style={styles.modeTitle}>Cada quien su cel</h3>
-                                        <p style={styles.modeDesc}>Sincronizacion en tiempo real</p>
+                                        <p style={styles.modeDesc}>Sincronización en tiempo real</p>
                                     </button>
                                 </div>
                             </>
@@ -779,7 +851,7 @@ export const HomePage: React.FC = () => {
                                     }} />
                                     <h2 style={{ ...styles.modalTitle, fontSize: '18px' }}>Esperando a {selectedPartner.nombre}</h2>
                                     <p style={styles.modalSubtitle}>
-                                        Se envio una invitacion. Cuando la acepte, el entrenamiento comenzara automaticamente.
+                                        Se envió una invitación. Cuando la acepte, el entrenamiento comenzará automáticamente.
                                     </p>
                                     <img
                                         src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedPartner.nombre || selectedPartner.alias}`}

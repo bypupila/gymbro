@@ -144,6 +144,9 @@ export interface ExtraActivity {
     id: string;
     fecha: string;
     descripcion: string;
+    source?: 'outside_gym' | 'catalog_gym';
+    catalogExerciseId?: string;
+    catalogExerciseName?: string;
     videoUrl?: string;
     analisisIA?: {
         tipoDeporte?: string;
@@ -290,8 +293,11 @@ export interface WorkoutCompletionSummary {
     totalDurationMin: number;
     totalExercises: number;
     completedExercises: number;
-    totalSets: number;
-    completedSets: number;
+    moodAtStart?: number;
+    moodAtEnd?: number;
+    energyAtStart?: number;
+    energyAtEnd?: number;
+    exerciseDetails: ExerciseWorkoutDetail[];
 }
 
 interface UserStore {
@@ -351,6 +357,7 @@ interface UserStore {
     getExtraActivitiesCatalog: () => string[];
     updateWorkoutById: (workoutId: string, updatedWorkout: EntrenamientoRealizado) => Promise<void>;
     removeWorkoutById: (workoutId: string) => Promise<void>;
+    removeWorkoutsByDate: (dateStr: string) => Promise<void>;
     skipExercise: (exerciseId: string, isPartner?: boolean) => void;
     setDayTracking: (dateStr: string, status: 'completed' | 'skipped' | null) => void;
 
@@ -1097,10 +1104,6 @@ export const useUserStore = create<UserStore>()(
                     });
                 }
 
-                const totalSets = activeSession.exercises.reduce((acc, exercise) => acc + exercise.sets.length, 0);
-                const completedSets = activeSession.exercises.reduce((acc, exercise) => {
-                    return acc + exercise.sets.filter((set) => set.completed || set.skipped).length;
-                }, 0);
                 const completedExercises = activeSession.exercises.filter((exercise) => {
                     if (exercise.isCompleted) return true;
                     return exercise.sets.every((set) => set.completed || set.skipped);
@@ -1137,8 +1140,11 @@ export const useUserStore = create<UserStore>()(
                             totalDurationMin: resolvedDurationMin,
                             totalExercises: activeSession.exercises.length,
                             completedExercises,
-                            totalSets,
-                            completedSets,
+                            moodAtStart: activeSession.preWorkoutMood,
+                            moodAtEnd: postWorkoutData?.mood,
+                            energyAtStart: activeSession.preWorkoutEnergy,
+                            energyAtEnd: postWorkoutData?.energy,
+                            exerciseDetails: userWorkout.exerciseDetails || [],
                         },
                         activeSession: null
                     };
@@ -1554,6 +1560,7 @@ export const useUserStore = create<UserStore>()(
                         console.error('Error updating workout:', error);
                         const message = error instanceof Error ? error.message : 'Error updating workout';
                         set({ lastSyncError: message });
+                        throw error;
                     }
                 }
             },
@@ -1589,6 +1596,40 @@ export const useUserStore = create<UserStore>()(
                         console.error('Error removing workout:', error);
                         const message = error instanceof Error ? error.message : 'Error removing workout';
                         set({ lastSyncError: message });
+                        throw error;
+                    }
+                }
+            },
+
+            removeWorkoutsByDate: async (dateStr) => {
+                const { userId, perfil } = get();
+                const workoutsForDate = perfil.historial.filter((workout) => workout.fecha.split('T')[0] === dateStr);
+                if (workoutsForDate.length === 0) return;
+
+                set((state) => {
+                    const nextHistory = state.perfil.historial.filter((workout) => workout.fecha.split('T')[0] !== dateStr);
+                    const nextTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    const hasExtra = state.perfil.actividadesExtras.some((activity) => activity.fecha.split('T')[0] === dateStr);
+                    if (hasExtra) nextTracking[dateStr] = 'completed';
+                    else delete nextTracking[dateStr];
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            historial: nextHistory,
+                            weeklyTracking: nextTracking,
+                        }
+                    };
+                });
+
+                if (userId) {
+                    try {
+                        await firebaseService.deleteWorkoutsByDate(userId, dateStr);
+                    } catch (error) {
+                        console.error('Error removing workouts by date:', error);
+                        const message = error instanceof Error ? error.message : 'Error removing workouts by date';
+                        set({ lastSyncError: message });
+                        throw error;
                     }
                 }
             },
