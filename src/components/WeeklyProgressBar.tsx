@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useUserStore, EntrenamientoRealizado, ExtraActivity, ExerciseWorkoutDetail } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { Check, X, Dumbbell, Activity, Plus, Save, Edit3, Trash2, Shuffle } from 'lucide-react';
+import { Check, X, Dumbbell, Activity, Plus, Save, Edit3, Trash2, Shuffle, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
-import { calculateGlobalStats } from '@/utils/statsUtils';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES } from '@/data/exerciseDatabase';
+import { useNavigate } from 'react-router-dom';
 
 interface WeeklyProgressBarProps {
     initialOpenDate?: string;
@@ -16,6 +16,7 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     initialOpenDate,
     autoEditFirstWorkout = false
 }) => {
+    const navigate = useNavigate();
     const perfil = useUserStore((state) => state.perfil);
     const weeklyTracking = perfil.weeklyTracking || {};
     const [showModal, setShowModal] = useState(false);
@@ -26,6 +27,7 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     const [workoutDraft, setWorkoutDraft] = useState<EntrenamientoRealizado | null>(null);
     const [isSavingWorkout, setIsSavingWorkout] = useState(false);
     const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
+    const [weekOffset, setWeekOffset] = useState(0);
 
     // Manual Entry State
     const [selectedActivityType, setSelectedActivityType] = useState<string>('');
@@ -47,11 +49,12 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     const removeWorkoutById = useUserStore((state) => state.removeWorkoutById);
 
     // Get current week days (Monday as start)
-    const getWeekDays = () => {
+    const getWeekDays = (offset = 0) => {
         const today = new Date();
         const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ...
         const monday = new Date(today);
         monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+        monday.setDate(monday.getDate() + (offset * 7));
 
         return Array.from({ length: 7 }, (_, i) => {
             const date = new Date(monday);
@@ -60,7 +63,7 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
         });
     };
 
-    const weekDays = getWeekDays();
+    const weekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
     const dayNames = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 
     const getDatePart = (value: string) => value.split('T')[0];
@@ -166,16 +169,32 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
 
     const selectedDayWorkouts = useMemo(() => {
         if (!selectedDate) return [];
-        return (perfil.historial || [])
+        const items = (perfil.historial || [])
             .filter((workout) => getDatePart(workout.fecha) === selectedDate)
             .sort((a, b) => b.fecha.localeCompare(a.fecha));
+        const deduped = new Map<string, EntrenamientoRealizado>();
+        items.forEach((workout) => {
+            const workoutKey = workout.id || `${workout.fecha}_${workout.nombre}`;
+            if (!deduped.has(workoutKey)) {
+                deduped.set(workoutKey, workout);
+            }
+        });
+        return Array.from(deduped.values());
     }, [perfil.historial, selectedDate]);
 
     const selectedDayExtras = useMemo(() => {
         if (!selectedDate) return [];
-        return (perfil.actividadesExtras || [])
+        const items = (perfil.actividadesExtras || [])
             .filter((activity) => getDatePart(activity.fecha) === selectedDate)
             .sort((a, b) => b.fecha.localeCompare(a.fecha));
+        const deduped = new Map<string, ExtraActivity>();
+        items.forEach((activity) => {
+            const activityKey = activity.id || `${activity.fecha}_${activity.descripcion}`;
+            if (!deduped.has(activityKey)) {
+                deduped.set(activityKey, activity);
+            }
+        });
+        return Array.from(deduped.values());
     }, [perfil.actividadesExtras, selectedDate]);
 
     useEffect(() => {
@@ -214,18 +233,19 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     };
 
     const handleDayClick = (dateStr: string) => {
-        const trackingStatus = weeklyTracking[dateStr];
         const hasActivity = activeDatesSet.has(dateStr);
-        const isMarked = trackingStatus === 'completed' || trackingStatus === 'skipped' || trackingStatus === true;
-
-        if (isMarked || hasActivity) {
+        if (hasActivity) {
             setSelectedDate(dateStr);
             setShowDetailsModal(true);
             setEditingWorkoutId(null);
             setWorkoutDraft(null);
             setDeletingWorkoutId(null);
         } else {
-            // If not completed/skipped, show modal to select routine
+            // If there is no workout/extra data, always open quick-register modal.
+            if (weeklyTracking[dateStr] === 'completed' || weeklyTracking[dateStr] === true) {
+                const { setDayTracking } = useUserStore.getState();
+                setDayTracking(dateStr, null);
+            }
             setSelectedDate(dateStr);
             setShowModal(true);
         }
@@ -494,16 +514,18 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
         );
     };
 
-    const stats = calculateGlobalStats(perfil);
-    const activeDatesSet = new Set(stats.unifiedHistory.map(h => formatDate(h.date)));
+    const activeDatesSet = useMemo(() => {
+        const workoutDates = (perfil.historial || []).map((item) => getDatePart(item.fecha));
+        const extraDates = (perfil.actividadesExtras || []).map((item) => getDatePart(item.fecha));
+        return new Set([...workoutDates, ...extraDates]);
+    }, [perfil.actividadesExtras, perfil.historial]);
 
     const completedDays = weekDays.filter(d => {
         const dateStr = formatDate(d);
         const status = weeklyTracking[dateStr];
         // Skipped days do NOT count as completed
         if (status === 'skipped') return false;
-        const isCompleted = status === 'completed' || status === true;
-        return activeDatesSet.has(dateStr) || isCompleted;
+        return activeDatesSet.has(dateStr);
     }).length;
 
     const scheduledDays = weekDays.filter((_, i) => getDaySchedule((i + 1) % 7)?.entrena).length;
@@ -512,6 +534,15 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
 
     const defaultActivities = ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
     const currentActivityCatalog = perfil.catalogoExtras?.length ? perfil.catalogoExtras : defaultActivities;
+
+    useEffect(() => {
+        const staleCompletedDates = Object.entries(weeklyTracking)
+            .filter(([dateKey, status]) => (status === 'completed' || status === true) && !activeDatesSet.has(dateKey))
+            .map(([dateKey]) => dateKey);
+        if (staleCompletedDates.length === 0) return;
+        const { setDayTracking } = useUserStore.getState();
+        staleCompletedDates.forEach((dateKey) => setDayTracking(dateKey, null));
+    }, [activeDatesSet, weeklyTracking]);
 
     return (
         <>
@@ -530,13 +561,45 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                     </div>
                 </div>
 
+                <div style={styles.weekControls}>
+                    <button
+                        type="button"
+                        style={styles.weekNavBtn}
+                        onClick={() => setWeekOffset((prev) => prev - 1)}
+                        aria-label="Semana anterior"
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                    <span style={styles.weekLabel}>
+                        {weekDays[0].toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })} - {weekDays[6].toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                    </span>
+                    <button
+                        type="button"
+                        style={{ ...styles.weekNavBtn, opacity: weekOffset >= 0 ? 0.45 : 1 }}
+                        onClick={() => setWeekOffset((prev) => Math.min(0, prev + 1))}
+                        aria-label="Semana siguiente"
+                        disabled={weekOffset >= 0}
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                    <button
+                        type="button"
+                        style={styles.monthButton}
+                        onClick={() => navigate('/progress')}
+                    >
+                        <CalendarDays size={14} />
+                        Ver mes
+                    </button>
+                </div>
+
                 <div style={styles.daysContainer}>
                     {weekDays.map((date, index) => {
                         const dateStr = formatDate(date);
                         const trackingStatus = weeklyTracking[dateStr];
                         // IMPORTANT: skipped takes priority over completed
                         const isSkipped = trackingStatus === 'skipped';
-                        const isCompleted = !isSkipped && (activeDatesSet.has(dateStr) || trackingStatus === 'completed' || trackingStatus === true);
+                        const hasActivity = activeDatesSet.has(dateStr);
+                        const isCompleted = !isSkipped && hasActivity;
                         const schedule = getDaySchedule((index + 1) % 7); // Adjust for Monday start
                         const isScheduled = schedule?.entrena;
                         const today = isToday(date);
@@ -698,9 +761,16 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
 
                             <div style={styles.detailsContent}>
                                 {selectedDayWorkouts.length === 0 && selectedDayExtras.length === 0 && (
-                                    <div style={styles.noData}>
-                                        No hay datos específicos registrados para este día.
-                                    </div>
+                                    <button
+                                        type="button"
+                                        style={styles.emptyDayAction}
+                                        onClick={() => {
+                                            closeDetailsModal();
+                                            setShowModal(true);
+                                        }}
+                                    >
+                                        Registrar rutina o actividad para este día
+                                    </button>
                                 )}
 
                                 {selectedDayWorkouts.length > 0 && (
@@ -710,14 +780,14 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                                             <span style={styles.detailsSectionTitle}>Rutinas ({selectedDayWorkouts.length})</span>
                                         </div>
                                         <div style={styles.detailsList}>
-                                            {selectedDayWorkouts.map((workout) => {
+                                            {selectedDayWorkouts.map((workout, workoutIdx) => {
                                                 const isEditing = editingWorkoutId === workout.id && workoutDraft?.id === workout.id;
                                                 const currentWorkout = isEditing && workoutDraft ? workoutDraft : workout;
                                                 const details = normalizeWorkoutDetails(currentWorkout);
                                                 const completedCount = details.filter((detail) => deriveStatusFromDetail(detail) === 'completed').length;
 
                                                 return (
-                                                    <div key={workout.id} style={styles.routineDetailContainer}>
+                                                    <div key={`${workout.id || 'workout'}_${workoutIdx}`} style={styles.routineDetailContainer}>
                                                         <div style={styles.routineSummary}>
                                                             <Dumbbell size={24} color={Colors.success} />
                                                             <div style={{ flex: 1 }}>
@@ -884,8 +954,8 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                                         </div>
 
                                         <div style={styles.detailsList}>
-                                            {selectedDayExtras.map((extraActivity) => (
-                                                <div key={extraActivity.id} style={{ ...styles.activityCard, borderColor: `${Colors.accent}50`, background: `${Colors.accent}12` }}>
+                                            {selectedDayExtras.map((extraActivity, extraIdx) => (
+                                                <div key={`${extraActivity.id || 'extra'}_${extraIdx}`} style={{ ...styles.activityCard, borderColor: `${Colors.accent}50`, background: `${Colors.accent}12` }}>
                                                     <div style={styles.activityHeader}>
                                                         <Activity size={20} color={Colors.accent} />
                                                         <span style={styles.activityType}>
@@ -1211,6 +1281,45 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '13px',
         color: Colors.textSecondary,
         margin: '2px 0 0 0',
+    },
+    weekControls: {
+        display: 'grid',
+        gridTemplateColumns: '32px 1fr 32px auto',
+        gap: '8px',
+        alignItems: 'center',
+        marginBottom: '12px',
+    },
+    weekNavBtn: {
+        width: '32px',
+        height: '32px',
+        borderRadius: '10px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.surfaceLight,
+        color: Colors.text,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+    weekLabel: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        textAlign: 'center',
+        textTransform: 'capitalize',
+    },
+    monthButton: {
+        border: `1px solid ${Colors.border}`,
+        background: Colors.surfaceLight,
+        color: Colors.text,
+        borderRadius: '10px',
+        padding: '7px 10px',
+        fontSize: '12px',
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        cursor: 'pointer',
     },
     progressCircle: {
         width: '50px',
@@ -1540,10 +1649,16 @@ const styles: Record<string, React.CSSProperties> = {
         color: Colors.textSecondary,
         margin: '4px 0 0 0',
     },
-    noData: {
-        textAlign: 'center',
+    emptyDayAction: {
+        width: '100%',
+        padding: '12px',
+        borderRadius: '12px',
+        border: `1px dashed ${Colors.border}`,
+        background: Colors.surfaceLight,
         color: Colors.textSecondary,
-        padding: '20px',
+        fontSize: '13px',
+        fontWeight: 700,
+        cursor: 'pointer',
     },
     routineDetailContainer: {
         display: 'flex',

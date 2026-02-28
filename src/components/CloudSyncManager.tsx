@@ -9,8 +9,14 @@ import { authService } from '../services/authService';
 import { RoutineCopyModal } from './RoutineCopyModal';
 import { requestNotificationPermission, onForegroundMessage } from '../services/pushNotificationService';
 
+const ROUTINE_COPY_DISMISSED_KEY_PREFIX = 'gymbro_routine_copy_dismissed_';
+
 const debugLog = (...args: unknown[]) => {
-    if (import.meta.env.DEV) {
+    if (
+        import.meta.env.DEV &&
+        typeof window !== 'undefined' &&
+        window.localStorage.getItem('gymbro_debug_cloudsync') === '1'
+    ) {
         console.log(...args);
     }
 };
@@ -55,12 +61,35 @@ export const CloudSyncManager: React.FC = () => {
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [partnerDetails, setPartnerDetails] = useState<{ id: string; name: string; alias: string } | null>(null);
     const pendingWorkoutSyncCount = pendingWorkoutSync.filter((item) => item.ownerUserId === userId).length;
+    const routineCopyDismissedKey = userId ? `${ROUTINE_COPY_DISMISSED_KEY_PREFIX}${userId}` : null;
+    const isRoutineCopyDismissed = Boolean(
+        routineCopyDismissedKey &&
+        typeof window !== 'undefined' &&
+        window.localStorage.getItem(routineCopyDismissedKey) === '1'
+    );
 
     useEffect(() => {
         return authService.onAuthChange((user) => {
             setAuthUid(user?.uid ?? null);
         });
     }, []);
+
+    const clearPendingRoutineCopyPrompt = useCallback(async () => {
+        setShowRoutineCopyModal(false);
+        setLinkSetupPendingPartnerId(null);
+
+        // Also clear from Firestore to prevent modal loop on reload
+        if (!userId) return;
+        try {
+            const profileRef = doc(db, 'users', userId, 'profile', 'main');
+            await updateDoc(profileRef, {
+                linkSetupPendingPartnerId: null,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Error clearing pending partner ID:', error);
+        }
+    }, [setLinkSetupPendingPartnerId, userId]);
 
     const applyRemoteProfile = useCallback((cloudProfile: PerfilCompleto, source: 'initial' | 'live' | 'deferred') => {
         const remoteUpdatedAtMs = getProfileUpdatedAtMs(cloudProfile);
@@ -331,7 +360,22 @@ export const CloudSyncManager: React.FC = () => {
         const partnerIdToPrompt = pendingPartnerId || null;
 
         if (partnerIdToPrompt) {
+            // Guard: verify partner is still active before showing modal
+            const isStillLinked = (perfil.partners || []).some(p => p.id === partnerIdToPrompt) ||
+                perfil.activePartnerId === partnerIdToPrompt ||
+                perfil.partnerId === partnerIdToPrompt;
+
+            if (!isStillLinked) {
+                // Partner no longer active — clear stale pending ID silently
+                void clearPendingRoutineCopyPrompt();
+                return;
+            }
+
             const fetchPartnerDetails = async () => {
+                if (isRoutineCopyDismissed) {
+                    await clearPendingRoutineCopyPrompt();
+                    return;
+                }
                 const partnerProfile = await firebaseService.getProfile(partnerIdToPrompt);
                 if (partnerProfile && partnerProfile.alias) {
                     setPartnerDetails({
@@ -345,7 +389,14 @@ export const CloudSyncManager: React.FC = () => {
             fetchPartnerDetails();
         }
 
-    }, [perfil.activePartnerId, perfil.partnerId, perfil.linkSetupPendingPartnerId]);
+    }, [
+        clearPendingRoutineCopyPrompt,
+        isRoutineCopyDismissed,
+        perfil.activePartnerId,
+        perfil.partnerId,
+        perfil.linkSetupPendingPartnerId,
+        perfil.partners,
+    ]);
 
     // Background sync for pending workout history writes (local-first queue).
     useEffect(() => {
@@ -406,22 +457,14 @@ export const CloudSyncManager: React.FC = () => {
                     partnerId={partnerDetails.id}
                     partnerName={partnerDetails.name}
                     partnerAlias={partnerDetails.alias}
-                    onClose={async () => {
-                        setShowRoutineCopyModal(false);
-                        setLinkSetupPendingPartnerId(null);
-
-                        // Also clear from Firestore to prevent modal loop on reload
-                        if (userId) {
-                            try {
-                                const profileRef = doc(db, 'users', userId, 'profile', 'main');
-                                await updateDoc(profileRef, {
-                                    linkSetupPendingPartnerId: null,
-                                    updatedAt: new Date().toISOString()
-                                });
-                            } catch (e) {
-                                console.error('Error clearing pending partner ID:', e);
-                            }
+                    onClose={() => {
+                        void clearPendingRoutineCopyPrompt();
+                    }}
+                    onSkipForever={async () => {
+                        if (routineCopyDismissedKey && typeof window !== 'undefined') {
+                            window.localStorage.setItem(routineCopyDismissedKey, '1');
                         }
+                        await clearPendingRoutineCopyPrompt();
                     }}
                 />
             )}

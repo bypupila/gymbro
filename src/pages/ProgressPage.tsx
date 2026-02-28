@@ -19,7 +19,18 @@ export const ProgressPage: React.FC = () => {
     const partners = perfil.partners || [];
     const activePartner = partners.find((p) => p.id === perfil.activePartnerId) || partners[0] || null;
     const hasPartner = !!activePartner || !!perfil.pareja;
-    const history = useMemo(() => perfil.historial || [], [perfil.historial]);
+    const history = useMemo(() => {
+        const raw = perfil.historial || [];
+        const unique = new Map<string, EntrenamientoRealizado>();
+        raw.forEach((workout) => {
+            const key = workout.id || `${workout.fecha}_${workout.nombre}`;
+            const existing = unique.get(key);
+            if (!existing || Date.parse(workout.fecha) >= Date.parse(existing.fecha)) {
+                unique.set(key, workout);
+            }
+        });
+        return Array.from(unique.values()).sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+    }, [perfil.historial]);
     const [showAllExtras, setShowAllExtras] = useState(false);
     const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
     const preselectedDate = queryParams.get('date') || undefined;

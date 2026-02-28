@@ -183,6 +183,7 @@ export const onRelationshipActionCreated = functions.firestore
                     : (sourceProfile.activePartnerId || null),
                 partnerIds: (sourceProfile.partnerIds || []).filter((id: string) => id !== targetUserId),
                 partners: sourcePartners,
+                linkSetupPendingPartnerId: null,
                 routineSync: {
                     enabled: false,
                     partnerId: null,
@@ -200,6 +201,7 @@ export const onRelationshipActionCreated = functions.firestore
                     : (targetProfile.activePartnerId || null),
                 partnerIds: (targetProfile.partnerIds || []).filter((id: string) => id !== sourceUserId),
                 partners: targetPartners,
+                linkSetupPendingPartnerId: null,
                 routineSync: {
                     enabled: false,
                     partnerId: null,
