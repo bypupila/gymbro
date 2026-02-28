@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onProfileRoutineChanged = exports.onRoutineRequestAccepted = exports.onRoutineRequestCreated = exports.onRelationshipActionCreated = exports.onLinkRequestAccepted = exports.cleanupExpiredInvitations = exports.onTrainingInvitationCreated = void 0;
-const functions = __importStar(require("firebase-functions"));
+const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
 const db = admin.firestore();
@@ -183,6 +183,7 @@ exports.onRelationshipActionCreated = functions.firestore
                 : (sourceProfile.activePartnerId || null),
             partnerIds: (sourceProfile.partnerIds || []).filter((id) => id !== targetUserId),
             partners: sourcePartners,
+            linkSetupPendingPartnerId: null,
             routineSync: {
                 enabled: false,
                 partnerId: null,
@@ -199,6 +200,7 @@ exports.onRelationshipActionCreated = functions.firestore
                 : (targetProfile.activePartnerId || null),
             partnerIds: (targetProfile.partnerIds || []).filter((id) => id !== sourceUserId),
             partners: targetPartners,
+            linkSetupPendingPartnerId: null,
             routineSync: {
                 enabled: false,
                 partnerId: null,
