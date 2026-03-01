@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ReactNode } from 'react';
 
 // A local error boundary so if a component fails to render due to missing props,
 // it doesn't break the whole gallery page.
@@ -9,7 +9,7 @@ class GalleryErrorBoundary extends Component<{ children: ReactNode; name: string
         return { hasError: true, error };
     }
 
-    componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    componentDidCatch(error: Error) {
         console.warn(`Gallery: Component ${this.props.name} crashed because it likely needs specific props to render. Error:`, error);
     }
 
