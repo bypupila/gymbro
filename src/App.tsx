@@ -30,6 +30,7 @@ const ProgressPage = lazy(() => import('./pages/ProgressPage').then(module => ({
 const RoutineDetailPage = lazy(() => import('./pages/RoutineDetailPage').then(module => ({ default: module.RoutineDetailPage })));
 const SchedulePage = lazy(() => import('./pages/SchedulePage').then(module => ({ default: module.SchedulePage })));
 const TrainPage = lazy(() => import('./pages/TrainPage').then(module => ({ default: module.TrainPage })));
+const ComponentGalleryPage = lazy(() => import('./pages/ComponentGalleryPage').then(module => ({ default: module.ComponentGalleryPage })));
 const CatalogPage = lazy(() => import('./pages/CatalogPage').then(module => ({ default: module.CatalogPage })));
 
 
@@ -109,6 +110,9 @@ function App() {
 
                         {/* Login Route */}
                         <Route path="/login" element={<LoginPage />} />
+
+                        {/* Component Gallery (Desarrollo / Debug) */}
+                        <Route path="/gallery" element={<ComponentGalleryPage />} />
 
                         {/* Main App Routes - Responsive Layout (Desktop Sidebar / Mobile Bottom Nav) */}
                         <Route path="/" element={
