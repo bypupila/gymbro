@@ -230,6 +230,44 @@ const isPermanentWorkoutSyncError = (error: unknown): boolean => {
     return typeof code === 'string' && PERMANENT_SYNC_ERROR_CODES.has(code);
 };
 
+const DATE_KEY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+const toLocalNoonIsoFromDateKey = (dateKey?: string): string | null => {
+    if (!dateKey) return null;
+    const match = DATE_KEY_REGEX.exec(dateKey);
+    if (!match) return null;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const parsedDate = new Date(year, month - 1, day, 12, 0, 0, 0);
+
+    if (
+        Number.isNaN(parsedDate.getTime()) ||
+        parsedDate.getFullYear() !== year ||
+        parsedDate.getMonth() !== month - 1 ||
+        parsedDate.getDate() !== day
+    ) {
+        return null;
+    }
+
+    return parsedDate.toISOString();
+};
+
+const parseTargetReps = (value: string): number => {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 10;
+    return parsed;
+};
+
+const estimateQuickWorkoutDurationMinutes = (exercises: EjercicioRutina[]): number => {
+    const totalSets = exercises.reduce((acc, exercise) => {
+        const safeSeries = Number.isFinite(exercise.series) ? exercise.series : 0;
+        return acc + Math.max(1, safeSeries || 1);
+    }, 0);
+    return Math.max(20, Math.min(120, (exercises.length * 4) + totalSets));
+};
+
 export interface SetTracking {
     completed: boolean;
     skipped: boolean;
@@ -360,6 +398,12 @@ interface UserStore {
     removeWorkoutsByDate: (dateStr: string) => Promise<void>;
     skipExercise: (exerciseId: string, isPartner?: boolean) => void;
     setDayTracking: (dateStr: string, status: 'completed' | 'skipped' | null) => void;
+    registerQuickCompletedWorkout: (payload: {
+        dateStr: string;
+        dayName: string;
+        routineName: string;
+        exercises: EjercicioRutina[];
+    }) => Promise<EntrenamientoRealizado>;
 
     // New routine management functions
     activateRoutine: (routineId: string) => void;
@@ -1020,6 +1064,11 @@ export const useUserStore = create<UserStore>()(
                 const { userId, perfil, activeSession } = state;
                 const { isDualSession, partnerExercises } = activeSession;
                 const finishedAt = new Date().toISOString();
+                const trackingDateIso = toLocalNoonIsoFromDateKey(activeSession.trackingDate);
+                const effectiveWorkoutDateIso = trackingDateIso || finishedAt;
+                const effectiveWorkoutDateKey = activeSession.trackingDate && trackingDateIso
+                    ? activeSession.trackingDate
+                    : effectiveWorkoutDateIso.split('T')[0];
                 const startedAtMs = Date.parse(activeSession.startTime);
                 const elapsedMinFromStart = Number.isFinite(startedAtMs)
                     ? Math.max(0, Math.round((Date.now() - startedAtMs) / 60000))
@@ -1029,7 +1078,7 @@ export const useUserStore = create<UserStore>()(
                 // Helper to create a workout object from tracking data
                 const createWorkoutFromExercises = (trackedExercises: ExerciseTracking[]): EntrenamientoRealizado => ({
                     id: `${new Date().toISOString()}-${Math.random().toString(36).substr(2, 9)}`,
-                    fecha: finishedAt,
+                    fecha: effectiveWorkoutDateIso,
                     duracionMinutos: resolvedDurationMin,
                     nombre: `${activeSession.dayName} - ${activeSession.routineName}`,
                     moodPre: activeSession.preWorkoutMood,
@@ -1112,9 +1161,7 @@ export const useUserStore = create<UserStore>()(
                 // Final state update
                 set((s) => {
                     const newTracking = { ...(s.perfil.weeklyTracking || {}) };
-                    // Use trackingDate if set (user chose a specific day), otherwise use today
-                    const dateKey = activeSession.trackingDate || userWorkout.fecha.split('T')[0];
-                    newTracking[dateKey] = 'completed';
+                    newTracking[effectiveWorkoutDateKey] = 'completed';
                     const nextPendingQueue = [...s.pendingWorkoutSync];
                     for (const pendingItem of pendingQueueItems) {
                         if (nextPendingQueue.some((queued) => queued.id === pendingItem.id)) continue;
@@ -1158,6 +1205,96 @@ export const useUserStore = create<UserStore>()(
 
                 // Fire-and-forget cloud sync. Local history is already stored safely.
                 void get().flushPendingWorkoutSync();
+            },
+
+            registerQuickCompletedWorkout: async ({ dateStr, dayName, routineName, exercises }) => {
+                const trimmedDate = dateStr.trim();
+                const workoutDateIso = toLocalNoonIsoFromDateKey(trimmedDate);
+                if (!workoutDateIso) {
+                    throw new Error('Invalid quick workout date');
+                }
+
+                const sanitizedExercises = exercises.filter((exercise) => exercise && exercise.id && exercise.nombre);
+                if (sanitizedExercises.length === 0) {
+                    throw new Error('No exercises available for quick workout');
+                }
+
+                const { userId } = get();
+                const nowIso = new Date().toISOString();
+                const quickWorkout: EntrenamientoRealizado = {
+                    id: `quick_${trimmedDate}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    fecha: workoutDateIso,
+                    duracionMinutos: estimateQuickWorkoutDurationMinutes(sanitizedExercises),
+                    nombre: `${dayName} - ${routineName}`,
+                    ejercicios: sanitizedExercises.map((exercise) => {
+                        const totalSets = Math.max(1, exercise.series || 1);
+                        const targetReps = parseTargetReps(exercise.repeticiones);
+                        return {
+                            nombre: exercise.nombre,
+                            sets: Array.from({ length: totalSets }, (_, index) => ({
+                                numero: index + 1,
+                                reps: targetReps,
+                                peso: 0,
+                            })),
+                        };
+                    }),
+                    exerciseDetails: sanitizedExercises.map((exercise) => {
+                        const totalSets = Math.max(1, exercise.series || 1);
+                        const targetReps = parseTargetReps(exercise.repeticiones);
+                        return {
+                            exerciseId: exercise.id,
+                            nombre: exercise.nombre,
+                            isCompleted: true,
+                            isSkipped: false,
+                            completionStatus: 'completed' as const,
+                            sets: Array.from({ length: totalSets }, (_, index) => ({
+                                numero: index + 1,
+                                reps: targetReps,
+                                peso: 0,
+                                completed: true,
+                                skipped: false,
+                                rest: exercise.descanso || 60,
+                                duration: exercise.segundos || 0,
+                            })),
+                        };
+                    }),
+                };
+
+                set((state) => {
+                    const nextTracking = { ...(state.perfil.weeklyTracking || {}) };
+                    nextTracking[trimmedDate] = 'completed';
+
+                    const nextPendingQueue = [...state.pendingWorkoutSync];
+                    if (userId) {
+                        const pendingItem: PendingWorkoutSyncItem = {
+                            id: `self-${quickWorkout.id}`,
+                            ownerUserId: userId,
+                            targetUserId: userId,
+                            workout: quickWorkout,
+                            source: 'self',
+                            createdAt: nowIso,
+                            attempts: 0,
+                        };
+                        if (!nextPendingQueue.some((queued) => queued.id === pendingItem.id)) {
+                            nextPendingQueue.push(pendingItem);
+                        }
+                    }
+
+                    return {
+                        perfil: {
+                            ...state.perfil,
+                            historial: [quickWorkout, ...state.perfil.historial],
+                            weeklyTracking: nextTracking,
+                        },
+                        pendingWorkoutSync: nextPendingQueue,
+                    };
+                });
+
+                if (userId) {
+                    void get().flushPendingWorkoutSync();
+                }
+
+                return quickWorkout;
             },
 
             setDayTracking: (dateStr, status) => {

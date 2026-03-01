@@ -5,7 +5,6 @@ import { Check, X, Dumbbell, Activity, Plus, Save, Edit3, Trash2, Shuffle, Chevr
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES } from '@/data/exerciseDatabase';
-import { useNavigate } from 'react-router-dom';
 
 interface WeeklyProgressBarProps {
     initialOpenDate?: string;
@@ -16,10 +15,14 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     initialOpenDate,
     autoEditFirstWorkout = false
 }) => {
-    const navigate = useNavigate();
     const perfil = useUserStore((state) => state.perfil);
-    const weeklyTracking = perfil.weeklyTracking || {};
+    const weeklyTracking = useMemo(() => perfil.weeklyTracking || {}, [perfil.weeklyTracking]);
     const [showModal, setShowModal] = useState(false);
+    const [showMonthModal, setShowMonthModal] = useState(false);
+    const [monthCursor, setMonthCursor] = useState(() => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+    });
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showExtraActivityForm, setShowExtraActivityForm] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -47,6 +50,7 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     const removeExtraActivitiesOnDate = useUserStore((state) => state.removeExtraActivitiesOnDate);
     const updateWorkoutById = useUserStore((state) => state.updateWorkoutById);
     const removeWorkoutById = useUserStore((state) => state.removeWorkoutById);
+    const registerQuickCompletedWorkout = useUserStore((state) => state.registerQuickCompletedWorkout);
 
     // Get current week days (Monday as start)
     const getWeekDays = (offset = 0) => {
@@ -67,6 +71,7 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     const dayNames = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 
     const getDatePart = (value: string) => value.split('T')[0];
+    const normalizeDay = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     type ExerciseStatus = 'completed' | 'partial' | 'not_done';
     const filteredCatalogExercises = useMemo(() => {
         const query = extraCatalogSearch.trim().toLowerCase();
@@ -401,10 +406,34 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
             setSelectedDate(null);
             toast.success('Día marcado como saltado');
         } else {
-            const { setDayTracking } = useUserStore.getState();
-            setDayTracking(selectedDate, 'completed');
-            setShowModal(false);
-            setSelectedDate(null);
+            if (!hasRoutineConfigured) {
+                toast.error('Primero necesitas cargar una rutina');
+                return;
+            }
+
+            const exercisesForDay = getRoutineExercisesForDay(dayName);
+            if (exercisesForDay.length === 0) {
+                toast.error('No hay ejercicios configurados para este día');
+                return;
+            }
+
+            try {
+                await registerQuickCompletedWorkout({
+                    dateStr: selectedDate,
+                    dayName,
+                    routineName: perfil.rutina?.nombre || 'Rutina',
+                    exercises: exercisesForDay,
+                });
+                setShowModal(false);
+                setShowDetailsModal(true);
+                setEditingWorkoutId(null);
+                setWorkoutDraft(null);
+                setDeletingWorkoutId(null);
+                toast.success('Rutina registrada para este día');
+            } catch (error) {
+                console.error('Error registering quick workout:', error);
+                toast.error('No se pudo registrar la rutina');
+            }
         }
     };
 
@@ -509,9 +538,19 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
         const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
         const targetDay = dayNames[dayIndex];
         return perfil.horario.dias.find(d =>
-            d.dia.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-            targetDay.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            normalizeDay(d.dia) === normalizeDay(targetDay)
         );
+    };
+
+    const getRoutineExercisesForDay = (dayName: string) => {
+        const routineExercises = perfil.rutina?.ejercicios || [];
+        const normalizedDayName = normalizeDay(dayName);
+
+        return routineExercises.filter((exercise) => {
+            if (!exercise.dia) return true;
+            const normalizedExerciseDay = normalizeDay(exercise.dia);
+            return normalizedExerciseDay.includes(normalizedDayName) || normalizedDayName.includes(normalizedExerciseDay);
+        });
     };
 
     const activeDatesSet = useMemo(() => {
@@ -520,8 +559,34 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
         return new Set([...workoutDates, ...extraDates]);
     }, [perfil.actividadesExtras, perfil.historial]);
 
+    const getDayState = (date: Date) => {
+        const dateStr = formatDate(date);
+        const trackingStatus = weeklyTracking[dateStr];
+        const isSkipped = trackingStatus === 'skipped';
+        const hasActivity = activeDatesSet.has(dateStr);
+        const isCompleted = !isSkipped && hasActivity;
+        const isScheduled = Boolean(getDaySchedule(date.getDay())?.entrena);
+        const today = isToday(date);
+        const past = isPast(date);
+        const missedDay = past && isScheduled && !isCompleted && !isSkipped;
+        const isFuture = !past && !today;
+        const isRestDay = !isScheduled;
+
+        return {
+            dateStr,
+            isSkipped,
+            isCompleted,
+            isScheduled,
+            today,
+            past,
+            missedDay,
+            isFuture,
+            isRestDay,
+        };
+    };
+
     const completedDays = weekDays.filter(d => {
-        const dateStr = formatDate(d);
+        const { dateStr } = getDayState(d);
         const status = weeklyTracking[dateStr];
         // Skipped days do NOT count as completed
         if (status === 'skipped') return false;
@@ -531,6 +596,28 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
     const scheduledDays = weekDays.filter((_, i) => getDaySchedule((i + 1) % 7)?.entrena).length;
 
     const trainingDays = perfil.horario.dias.filter(d => d.entrena);
+    const hasRoutineConfigured = Boolean(perfil.rutina);
+    const monthLabel = monthCursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+    const monthWeekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+    const monthDays = (() => {
+        const year = monthCursor.getFullYear();
+        const month = monthCursor.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+        const cells: Array<{ date: Date | null; state: ReturnType<typeof getDayState> | null }> = [];
+
+        for (let i = 0; i < startOffset; i += 1) {
+            cells.push({ date: null, state: null });
+        }
+
+        for (let day = 1; day <= daysInMonth; day += 1) {
+            const date = new Date(year, month, day);
+            cells.push({ date, state: getDayState(date) });
+        }
+
+        return cells;
+    })();
 
     const defaultActivities = ['Running', 'Ciclismo', 'Natación', 'Fútbol', 'Yoga', 'Pilates', 'Crossfit', 'Boxeo', 'Trekking', 'Basket', 'Tenis'];
     const currentActivityCatalog = perfil.catalogoExtras?.length ? perfil.catalogoExtras : defaultActivities;
@@ -585,7 +672,11 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                     <button
                         type="button"
                         style={styles.monthButton}
-                        onClick={() => navigate('/progress')}
+                        onClick={() => {
+                            const now = new Date();
+                            setMonthCursor(new Date(now.getFullYear(), now.getMonth(), 1));
+                            setShowMonthModal(true);
+                        }}
                     >
                         <CalendarDays size={14} />
                         Ver mes
@@ -594,17 +685,14 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
 
                 <div style={styles.daysContainer}>
                     {weekDays.map((date, index) => {
-                        const dateStr = formatDate(date);
-                        const trackingStatus = weeklyTracking[dateStr];
-                        // IMPORTANT: skipped takes priority over completed
-                        const isSkipped = trackingStatus === 'skipped';
-                        const hasActivity = activeDatesSet.has(dateStr);
-                        const isCompleted = !isSkipped && hasActivity;
-                        const schedule = getDaySchedule((index + 1) % 7); // Adjust for Monday start
-                        const isScheduled = schedule?.entrena;
-                        const today = isToday(date);
-                        const past = isPast(date);
-                        const missedDay = past && isScheduled && !isCompleted && !isSkipped;
+                        const {
+                            dateStr,
+                            isSkipped,
+                            isCompleted,
+                            isScheduled,
+                            today,
+                            missedDay,
+                        } = getDayState(date);
 
                         return (
                             <button
@@ -662,6 +750,25 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                         );
                     })}
                 </div>
+
+                <div style={styles.legendRow}>
+                    <span style={styles.legendItem}>
+                        <span style={{ ...styles.legendDot, background: Colors.success }} />
+                        Entrenado
+                    </span>
+                    <span style={styles.legendItem}>
+                        <span style={{ ...styles.legendDot, background: Colors.error }} />
+                        No entrenado
+                    </span>
+                    <span style={styles.legendItem}>
+                        <span style={{ ...styles.legendDot, background: Colors.border }} />
+                        Descanso
+                    </span>
+                    <span style={styles.legendItem}>
+                        <span style={{ ...styles.legendDot, background: `${Colors.error}77` }} />
+                        Saltado
+                    </span>
+                </div>
             </div>
 
             {/* Modal for selecting routine */}
@@ -682,25 +789,47 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div style={styles.modalHeader}>
-                                <h3 style={styles.modalTitle}>¿Qué rutina hiciste?</h3>
+                                <h3 style={styles.modalTitle}>¿Qué rutina hiciste este día?</h3>
                                 <button onClick={() => setShowModal(false)} style={styles.closeBtn}>
                                     <X size={20} color={Colors.textSecondary} />
                                 </button>
                             </div>
+                            <p style={styles.modalHint}>
+                                Se registrará como rutina completa para este día y luego podrás editarla.
+                            </p>
                             <div style={styles.routineList}>
-                                {trainingDays.map((day) => (
-                                    <button
-                                        key={day.dia}
-                                        onClick={() => handleRoutineSelection(day.dia)}
-                                        style={styles.routineOption}
-                                    >
-                                        <Dumbbell size={18} color={Colors.primary} />
-                                        <div style={styles.routineInfo}>
-                                            <span style={styles.routineDay}>{day.dia}</span>
-                                            <span style={styles.routineMuscle}>{day.grupoMuscular}</span>
-                                        </div>
-                                    </button>
-                                ))}
+                                {!hasRoutineConfigured && (
+                                    <div style={styles.routineWarning}>
+                                        Carga una rutina para usar el registro rápido de entrenamientos.
+                                    </div>
+                                )}
+                                {trainingDays.map((day) => {
+                                    const dayExercises = getRoutineExercisesForDay(day.dia);
+                                    const disabled = !hasRoutineConfigured || dayExercises.length === 0;
+
+                                    return (
+                                        <button
+                                            key={day.dia}
+                                            onClick={() => handleRoutineSelection(day.dia)}
+                                            style={{
+                                                ...styles.routineOption,
+                                                opacity: disabled ? 0.45 : 1,
+                                                cursor: disabled ? 'not-allowed' : 'pointer',
+                                            }}
+                                            disabled={disabled}
+                                        >
+                                            <Dumbbell size={18} color={Colors.primary} />
+                                            <div style={styles.routineInfo}>
+                                                <span style={styles.routineDay}>{day.dia}</span>
+                                                <span style={styles.routineMuscle}>
+                                                    {disabled
+                                                        ? 'Sin ejercicios configurados'
+                                                        : `${day.grupoMuscular} · ${dayExercises.length} ejercicios`}
+                                                </span>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                                 <button
                                     onClick={() => handleRoutineSelection('Actividad Extra')}
                                     style={{
@@ -726,9 +855,133 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                                     <X size={18} color={Colors.error} />
                                     <div style={styles.routineInfo}>
                                         <span style={styles.routineDay}>Saltar día</span>
-                                        <span style={styles.routineMuscle}>No pude entrenar hoy</span>
+                                        <span style={styles.routineMuscle}>No pude entrenar este día</span>
                                     </div>
                                 </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Monthly Calendar Modal */}
+            <AnimatePresence>
+                {showMonthModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={styles.modalOverlay}
+                        onClick={() => setShowMonthModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.94, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.94, opacity: 0 }}
+                            style={{ ...styles.modal, maxWidth: '440px' }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div style={styles.modalHeader}>
+                                <button
+                                    type="button"
+                                    style={styles.monthNavButton}
+                                    onClick={() => {
+                                        setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+                                    }}
+                                    aria-label="Mes anterior"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <h3 style={{ ...styles.modalTitle, textTransform: 'capitalize' }}>{monthLabel}</h3>
+                                <button
+                                    type="button"
+                                    style={styles.monthNavButton}
+                                    onClick={() => {
+                                        setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+                                    }}
+                                    aria-label="Mes siguiente"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
+
+                            <div style={styles.monthLegendRow}>
+                                <span style={styles.monthLegendItem}>
+                                    <span style={{ ...styles.legendDot, background: Colors.success }} />
+                                    Entrenó
+                                </span>
+                                <span style={styles.monthLegendItem}>
+                                    <span style={{ ...styles.legendDot, background: Colors.error }} />
+                                    No entrenó
+                                </span>
+                                <span style={styles.monthLegendItem}>
+                                    <span style={{ ...styles.legendDot, background: Colors.border }} />
+                                    Descanso
+                                </span>
+                            </div>
+
+                            <div style={styles.monthGrid}>
+                                {monthWeekDays.map((dayLabel) => (
+                                    <span key={dayLabel} style={styles.monthWeekHeader}>
+                                        {dayLabel}
+                                    </span>
+                                ))}
+
+                                {monthDays.map((cell, idx) => {
+                                    if (!cell.date || !cell.state) {
+                                        return <div key={`empty_${idx}`} style={styles.monthDayEmpty} />;
+                                    }
+
+                                    const {
+                                        dateStr,
+                                        isCompleted,
+                                        isSkipped,
+                                        missedDay,
+                                        isRestDay,
+                                        today,
+                                        isFuture,
+                                    } = cell.state;
+
+                                    return (
+                                        <button
+                                            key={dateStr}
+                                            type="button"
+                                            onClick={() => {
+                                                setShowMonthModal(false);
+                                                handleDayClick(dateStr);
+                                            }}
+                                            style={{
+                                                ...styles.monthDayButton,
+                                                background: isCompleted
+                                                    ? `${Colors.success}22`
+                                                    : isSkipped || missedDay
+                                                        ? `${Colors.error}1F`
+                                                        : isRestDay
+                                                            ? `${Colors.surfaceLight}`
+                                                            : 'transparent',
+                                                border: `1px solid ${isCompleted
+                                                    ? Colors.success
+                                                    : isSkipped || missedDay
+                                                        ? Colors.error
+                                                        : today
+                                                            ? Colors.primary
+                                                            : isRestDay
+                                                                ? Colors.border
+                                                                : Colors.border}55`,
+                                                color: isCompleted
+                                                    ? Colors.success
+                                                    : isSkipped || missedDay
+                                                        ? Colors.error
+                                                        : today
+                                                            ? Colors.primary
+                                                            : Colors.text,
+                                                opacity: isFuture ? 0.55 : 1,
+                                            }}
+                                        >
+                                            <span>{cell.date.getDate()}</span>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </motion.div>
                     </motion.div>
@@ -1341,6 +1594,26 @@ const styles: Record<string, React.CSSProperties> = {
         gridTemplateColumns: 'repeat(7, 1fr)',
         gap: '8px',
     },
+    legendRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '12px',
+        marginTop: '12px',
+    },
+    legendItem: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontSize: '11px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+    },
+    legendDot: {
+        width: '8px',
+        height: '8px',
+        borderRadius: '50%',
+        display: 'inline-block',
+    },
     dayButton: {
         position: 'relative',
         padding: '12px 4px',
@@ -1408,16 +1681,84 @@ const styles: Record<string, React.CSSProperties> = {
         color: Colors.text,
         margin: 0,
     },
+    monthNavButton: {
+        width: '32px',
+        height: '32px',
+        borderRadius: '10px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.surfaceLight,
+        color: Colors.text,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+    monthLegendRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '10px',
+        marginBottom: '14px',
+    },
+    monthLegendItem: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontSize: '11px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+    },
+    monthGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(7, 1fr)',
+        gap: '8px',
+    },
+    monthWeekHeader: {
+        fontSize: '11px',
+        fontWeight: 800,
+        color: Colors.textTertiary,
+        textAlign: 'center',
+    },
+    monthDayButton: {
+        height: '38px',
+        borderRadius: '10px',
+        border: `1px solid ${Colors.border}`,
+        background: 'transparent',
+        fontSize: '13px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'all 0.2s ease',
+    },
+    monthDayEmpty: {
+        height: '38px',
+    },
     closeBtn: {
         background: 'none',
         border: 'none',
         cursor: 'pointer',
         padding: '4px',
     },
+    modalHint: {
+        fontSize: '12px',
+        color: Colors.textSecondary,
+        margin: '0 0 12px 0',
+        lineHeight: 1.4,
+    },
     routineList: {
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
+    },
+    routineWarning: {
+        borderRadius: '12px',
+        border: `1px dashed ${Colors.warning}66`,
+        background: `${Colors.warning}15`,
+        color: Colors.warning,
+        fontSize: '12px',
+        fontWeight: 700,
+        padding: '10px 12px',
     },
     routineOption: {
         display: 'flex',
