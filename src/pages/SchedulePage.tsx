@@ -106,7 +106,7 @@ export const SchedulePage: React.FC = () => {
 const styles: Record<string, React.CSSProperties> = {
     container: {
         padding: '20px',
-        paddingBottom: '40px',
+        paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))',
         display: 'flex',
         flexDirection: 'column',
         gap: '20px',

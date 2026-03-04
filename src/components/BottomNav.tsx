@@ -76,6 +76,8 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.surface,
         borderTop: `1px solid ${Colors.border}`,
         position: 'relative',
+        zIndex: 100,
+        overflow: 'visible',
     },
     tab: {
         display: 'flex',

@@ -61,7 +61,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '24px 20px',
         height: '100%',
         overflowY: 'auto',
-        paddingBottom: '100px', // Space for bottom nav
+        paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))', // Space for bottom nav
     },
     header: {
         marginBottom: '24px',

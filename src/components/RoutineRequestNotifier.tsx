@@ -151,7 +151,7 @@ export const RoutineRequestNotifier: React.FC = () => {
 
     const handleAccept = async (request: RoutineRequest) => {
         try {
-            await routineRequestService.acceptRequest(request.id);
+            await routineRequestService.acceptRequest(request);
             setRequests((prev) => prev.filter((r) => r.id !== request.id));
             toast.success('Solicitud aceptada. Aplicando rutina...');
         } catch {
