@@ -347,6 +347,18 @@ export const firebaseService = {
             }
         }
 
+        // Auto-sync routine to partner if enabled and routine changed
+        // Replaces the Firebase Cloud Function trigger onProfileRoutineChanged
+        const rutinaChanged = Object.keys(patch).some(k => k === 'rutina' || k.startsWith('rutina.'));
+        if (rutinaChanged) {
+            const sync = nextProfile.routineSync;
+            if (sync?.enabled && sync.syncId && sync.partnerId) {
+                callPartnerAPI('sync-now', { targetUserId: sync.partnerId }).catch((e) => {
+                    debugLog('[saveProfileDiff] Auto sync-now skipped:', e?.message || e);
+                });
+            }
+        }
+
         return true;
     },
 
