@@ -103,7 +103,7 @@ const styles: Record<string, React.CSSProperties> = {
     container: {
         padding: '20px',
         paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))',
-        paddingBottom: '100px',
+        paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))',
         minHeight: '100%',
         overflowY: 'auto',
     },

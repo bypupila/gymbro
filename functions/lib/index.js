@@ -105,7 +105,7 @@ exports.cleanupExpiredInvitations = functions.pubsub
 exports.onLinkRequestAccepted = functions.firestore
     .document('linkRequests/{requestId}')
     .onUpdate(async (change) => {
-    var _a, _b;
+    var _a, _b, _c, _d;
     const before = change.before.data();
     const after = change.after.data();
     if (!before || !after)
@@ -126,10 +126,14 @@ exports.onLinkRequestAccepted = functions.firestore
     ]);
     if (!requesterProfileSnap.exists || !recipientProfileSnap.exists)
         return null;
-    const requesterAlias = ((_a = requesterUserSnap.data()) === null || _a === void 0 ? void 0 : _a.displayName) || after.requesterAlias || 'Partner';
-    const recipientAlias = ((_b = recipientUserSnap.data()) === null || _b === void 0 ? void 0 : _b.displayName) || 'Partner';
-    const requesterPartner = { id: recipientId, alias: recipientAlias, nombre: recipientAlias };
-    const recipientPartner = { id: requesterId, alias: requesterAlias, nombre: requesterAlias };
+    const requesterProfile = requesterProfileSnap.data() || {};
+    const recipientProfile = recipientProfileSnap.data() || {};
+    const requesterAlias = requesterProfile.alias || ((_a = requesterUserSnap.data()) === null || _a === void 0 ? void 0 : _a.displayName) || after.requesterAlias || 'Partner';
+    const requesterNombre = ((_b = requesterProfile.usuario) === null || _b === void 0 ? void 0 : _b.nombre) || requesterAlias;
+    const recipientAlias = recipientProfile.alias || ((_c = recipientUserSnap.data()) === null || _c === void 0 ? void 0 : _c.displayName) || 'Partner';
+    const recipientNombre = ((_d = recipientProfile.usuario) === null || _d === void 0 ? void 0 : _d.nombre) || recipientAlias;
+    const requesterPartner = { id: recipientId, alias: recipientAlias, nombre: recipientNombre };
+    const recipientPartner = { id: requesterId, alias: requesterAlias, nombre: requesterNombre };
     const batch = db.batch();
     batch.set(getProfileRef(requesterId), {
         partnerId: recipientId,

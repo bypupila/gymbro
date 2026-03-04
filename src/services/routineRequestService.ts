@@ -9,7 +9,7 @@ import {
     updateDoc,
     where,
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { auth, db } from '@/config/firebase';
 
 const debugLog = (...args: unknown[]) => {
     if (import.meta.env.DEV) {
@@ -118,13 +118,35 @@ export const routineRequestService = {
         });
     },
 
-    async acceptRequest(requestId: string): Promise<void> {
-        // Backend Cloud Function applies the copy and sync config.
-        await updateDoc(doc(db, 'routineRequests', requestId), {
+    async acceptRequest(request: RoutineRequest): Promise<void> {
+        // Mark accepted in Firestore first
+        await updateDoc(doc(db, 'routineRequests', request.id), {
             status: 'accepted',
             resolvedAt: new Date().toISOString(),
             applyStatus: 'pending',
         });
+
+        // Trigger the copy via Vercel API (replaces Cloud Function onRoutineRequestAccepted)
+        try {
+            const user = auth.currentUser;
+            if (user) {
+                const token = await user.getIdToken();
+                await fetch('/api/partner', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({
+                        action: 'accept-routine',
+                        routineRequestId: request.id,
+                        sourceUserId: request.sourceUserId,
+                        targetUserId: request.targetUserId,
+                        syncAfterAccept: request.syncAfterAccept,
+                    }),
+                });
+            }
+        } catch (error) {
+            // Non-fatal: the routine copy may be retried from the listener
+            debugLog('[routineRequestService.acceptRequest] API call failed:', error);
+        }
     },
 
     async declineRequest(requestId: string): Promise<void> {

@@ -2,7 +2,7 @@ import {
     doc, setDoc, getDoc, collection, addDoc, query,
     orderBy, limit, getDocs, onSnapshot, writeBatch, deleteDoc, where, updateDoc, deleteField
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { auth, db } from '../config/firebase';
 import type { PerfilCompleto, EntrenamientoRealizado, RutinaUsuario, ExtraActivity, PartnerInfo } from '../stores/userStore';
 import { useUserStore } from '../stores/userStore';
 import type { EjercicioBase } from '../data/exerciseDatabase';
@@ -39,6 +39,29 @@ const debugLog = (...args: unknown[]) => {
         console.log(...args);
     }
 };
+
+/**
+ * Calls the Vercel /api/partner endpoint for bidirectional partner operations.
+ * Replaces Firebase Cloud Functions (which require the paid Blaze plan).
+ * Falls back silently on local dev preview servers where the API route isn't available.
+ */
+async function callPartnerAPI(action: string, payload: Record<string, unknown>): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('callPartnerAPI: usuario no autenticado');
+    const token = await user.getIdToken();
+    const res = await fetch('/api/partner', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action, ...payload }),
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(`Partner API [${action}] error ${res.status}: ${body.error || 'Unknown'}`);
+    }
+}
 
 const stripUndefinedDeep = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -1092,9 +1115,22 @@ export const firebaseService = {
         await updateDoc(requestRef, {
             status: 'accepted',
             resolvedAt: new Date().toISOString(),
-            recipientAlias: recipientAlias, // Guardar el alias para que el requester lo vea
+            recipientAlias: recipientAlias,
         });
         debugLog('[acceptLinkRequest] Request actualizada a accepted');
+
+        // Update both profiles bidirectionally via Vercel API (replaces Cloud Function)
+        try {
+            await callPartnerAPI('accept-link', {
+                linkRequestId: request.id,
+                requesterId: request.requesterId,
+                recipientId: request.recipientId,
+            });
+            debugLog('[acceptLinkRequest] Perfiles de ambos usuarios actualizados via API');
+        } catch (error) {
+            console.error('[acceptLinkRequest] Error al actualizar perfiles via API:', error);
+            // Non-fatal: profiles will sync on next app load via linkRequests listener
+        }
     },
 
     async declineLinkRequest(requestId: string): Promise<void> {
@@ -1143,22 +1179,20 @@ export const firebaseService = {
             throw new Error(`Failed to mark linkRequests as unlinked: ${error}`);
         }
 
-        // PASO 1: Crear action principal (best-effort)
+        // PASO 1: Actualizar ambos perfiles bidireccionalente via Vercel API (reemplaza Cloud Function)
         try {
-            const actionDoc = await addDoc(collection(db, 'relationshipActions'), {
-                actionType: 'UNLINK',
-                initiatedBy: userId,
-                sourceUserId: userId,
-                targetUserId: partnerToRemove.id,
-                status: 'pending',
-                createdAt: new Date().toISOString(),
-            });
-            debugLog('[unlinkPartner] Action creada:', actionDoc.id);
+            await callPartnerAPI('unlink', { targetUserId: partnerToRemove.id });
+            debugLog('[unlinkPartner] Ambos perfiles actualizados via API');
+            // API ya actualizó mi perfil también, pero PASO 2 lo sincroniza con el store local
         } catch (error) {
-            console.error('[unlinkPartner] No se pudo crear action principal (continuando con cleanup):', error);
+            console.error('[unlinkPartner] Error API, haciendo cleanup local:', error);
+            // Fallback: update own profile directly if API unavailable (local dev without vercel dev)
+            await this.removePartnerFromOwnProfile(userId, partnerToRemove.id);
+            debugLog('[unlinkPartner] Perfil propio actualizado (fallback)');
+            return;
         }
 
-        // PASO 2: Actualizar mi perfil
+        // PASO 2: Actualizar mi perfil local para reflejar el estado en el store
         await this.removePartnerFromOwnProfile(userId, partnerToRemove.id);
         debugLog('[unlinkPartner] Perfil propio actualizado');
     },
@@ -1235,25 +1269,16 @@ export const firebaseService = {
     },
 
     async breakRoutineSync(userId: string, partnerId: string): Promise<void> {
-        await addDoc(collection(db, 'relationshipActions'), {
-            actionType: 'BREAK_SYNC',
-            initiatedBy: userId,
-            sourceUserId: userId,
-            targetUserId: partnerId,
-            status: 'pending',
-            createdAt: new Date().toISOString(),
+        await callPartnerAPI('break-sync', { targetUserId: partnerId });
+        // Also update own routineSync directly for immediate local effect
+        const profileRef = doc(db, 'users', userId, 'profile', 'main');
+        await updateDoc(profileRef, {
+            routineSync: { enabled: false, partnerId: null, mode: 'manual', syncId: null, updatedAt: new Date().toISOString() },
         });
     },
 
     async syncRoutineNow(userId: string, partnerId: string): Promise<void> {
-        await addDoc(collection(db, 'relationshipActions'), {
-            actionType: 'SYNC_NOW',
-            initiatedBy: userId,
-            sourceUserId: userId,
-            targetUserId: partnerId,
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-        });
+        await callPartnerAPI('sync-now', { targetUserId: partnerId });
     },
 
     async configureOwnRoutineSync(userId: string, partnerId: string, syncId: string): Promise<void> {

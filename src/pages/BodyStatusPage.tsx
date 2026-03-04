@@ -91,7 +91,7 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.background,
         padding: '24px',
         paddingTop: 'calc(24px + env(safe-area-inset-top, 0px))',
-        paddingBottom: '100px', // Space for bottom nav
+        paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))', // Space for bottom nav
     },
     header: {
         display: 'flex',

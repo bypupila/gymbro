@@ -118,10 +118,14 @@ export const onLinkRequestAccepted = functions.firestore
 
         if (!requesterProfileSnap.exists || !recipientProfileSnap.exists) return null;
 
-        const requesterAlias = (requesterUserSnap.data()?.displayName as string) || after.requesterAlias || 'Partner';
-        const recipientAlias = (recipientUserSnap.data()?.displayName as string) || 'Partner';
-        const requesterPartner = { id: recipientId, alias: recipientAlias, nombre: recipientAlias };
-        const recipientPartner = { id: requesterId, alias: requesterAlias, nombre: requesterAlias };
+        const requesterProfile = requesterProfileSnap.data() || {};
+        const recipientProfile = recipientProfileSnap.data() || {};
+        const requesterAlias = requesterProfile.alias || (requesterUserSnap.data()?.displayName as string) || after.requesterAlias || 'Partner';
+        const requesterNombre = requesterProfile.usuario?.nombre || requesterAlias;
+        const recipientAlias = recipientProfile.alias || (recipientUserSnap.data()?.displayName as string) || 'Partner';
+        const recipientNombre = recipientProfile.usuario?.nombre || recipientAlias;
+        const requesterPartner = { id: recipientId, alias: recipientAlias, nombre: recipientNombre };
+        const recipientPartner = { id: requesterId, alias: requesterAlias, nombre: requesterNombre };
 
         const batch = db.batch();
         batch.set(getProfileRef(requesterId), {

@@ -419,7 +419,7 @@ const styles: Record<string, React.CSSProperties> = {
         background: Colors.background,
         padding: '24px',
         paddingTop: 'calc(24px + env(safe-area-inset-top, 0px))',
-        paddingBottom: '100px',
+        paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))',
     },
     header: {
         display: 'flex',
