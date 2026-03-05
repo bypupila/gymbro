@@ -342,6 +342,7 @@ interface UserStore {
     userId: string | null;
     perfil: PerfilCompleto;
     activeSession: ActiveSession | null;
+    activeWorkoutView: 'expanded' | 'minimized';
     isSyncing: boolean;
     lastSyncError: string | null;
     linkRequests: LinkRequest[];
@@ -357,6 +358,8 @@ interface UserStore {
     enqueueWorkoutSync: (item: Omit<PendingWorkoutSyncItem, 'createdAt' | 'attempts'>) => void;
     flushPendingWorkoutSync: () => Promise<void>;
     clearCompletedWorkoutSummary: () => void;
+    minimizeActiveWorkout: () => void;
+    resumeActiveWorkout: () => void;
     setDatosPersonales: (datos: Partial<DatosPersonales>) => void;
     setDatosPareja: (datos: DatosPersonales | null) => void;
     setHorario: (horario: HorarioSemanal) => void;
@@ -438,6 +441,7 @@ export const useUserStore = create<UserStore>()(
                 linkSetupPendingPartnerId: null,
             },
             activeSession: null,
+            activeWorkoutView: 'expanded',
             isSyncing: false,
             lastSyncError: null,
             linkRequests: [],
@@ -515,6 +519,8 @@ export const useUserStore = create<UserStore>()(
                 }
             },
             clearCompletedWorkoutSummary: () => set({ lastCompletedWorkoutSummary: null }),
+            minimizeActiveWorkout: () => set({ activeWorkoutView: 'minimized' }),
+            resumeActiveWorkout: () => set({ activeWorkoutView: 'expanded' }),
             setPartnerId: (id) => set((state) => ({
                 perfil: {
                     ...state.perfil,
@@ -820,7 +826,8 @@ export const useUserStore = create<UserStore>()(
                         selectedPartnerName: selectedPartner?.nombre,
                         trackingDate: trackingDate,
                         liveSessionId,
-                    }
+                    },
+                    activeWorkoutView: 'expanded',
                 });
             },
 
@@ -1193,7 +1200,8 @@ export const useUserStore = create<UserStore>()(
                             energyAtEnd: postWorkoutData?.energy,
                             exerciseDetails: userWorkout.exerciseDetails || [],
                         },
-                        activeSession: null
+                        activeSession: null,
+                        activeWorkoutView: 'expanded'
                     };
                 });
 
@@ -1316,7 +1324,7 @@ export const useUserStore = create<UserStore>()(
                 // Profile changes are synced by CloudSyncManager debounced auto-save.
             },
 
-            cancelSession: () => set({ activeSession: null }),
+            cancelSession: () => set({ activeSession: null, activeWorkoutView: 'expanded' }),
 
             resetear: () => set({
                 perfil: {
@@ -1341,6 +1349,7 @@ export const useUserStore = create<UserStore>()(
                     linkSetupPendingPartnerId: null,
                 },
                 activeSession: null,
+                activeWorkoutView: 'expanded',
                 pendingWorkoutSync: [],
                 lastCompletedWorkoutSummary: null,
             }),
@@ -1369,6 +1378,7 @@ export const useUserStore = create<UserStore>()(
                     linkSetupPendingPartnerId: null,
                 },
                 activeSession: null,
+                activeWorkoutView: 'expanded',
                 pendingWorkoutSync: [],
                 lastCompletedWorkoutSummary: null,
             }),

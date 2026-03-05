@@ -6,6 +6,7 @@
 import { Card } from '@/components/Card';
 import { ExerciseSelector } from '@/components/ExerciseSelector';
 import { TimeInput } from '@/components/TimeInput';
+import { ENABLE_API_FEATURES } from '@/config/featureFlags';
 import { EjercicioBase, GRUPOS_MUSCULARES, GrupoMuscularEjercicio } from '@/data/exerciseDatabase';
 import { getExerciseImage } from '@/data/exerciseMedia';
 import { useUserStore, EjercicioRutina, RutinaUsuario } from '@/stores/userStore';
@@ -1380,7 +1381,7 @@ export const RoutineDetailPage: React.FC = () => {
     const [newExerciseDays, setNewExerciseDays] = useState<string[]>([]);
 
     const handleIAOrganize = async () => {
-        if (!rutina || isReorganizing) return;
+        if (!ENABLE_API_FEATURES || !rutina || isReorganizing) return;
 
         setIsReorganizing(true);
         try {
@@ -1503,12 +1504,14 @@ export const RoutineDetailPage: React.FC = () => {
                     <button style={styles.addExerciseSubmitBtn} onClick={handleCreateManualRoutine}>
                         <Plus size={20} /> Comenzar a editar
                     </button>
-                    <button style={{ ...styles.selectFromDbBtn, marginTop: '10px' }} onClick={() => setShowRecalibrateModal(true)}>
-                        <Sparkles size={16} style={{ marginRight: '6px' }} />
-                        Crear con IA
-                    </button>
+                    {ENABLE_API_FEATURES && (
+                        <button style={{ ...styles.selectFromDbBtn, marginTop: '10px' }} onClick={() => setShowRecalibrateModal(true)}>
+                            <Sparkles size={16} style={{ marginRight: '6px' }} />
+                            Crear con IA
+                        </button>
+                    )}
                 </Card>
-                {showRecalibrateModal && (
+                {ENABLE_API_FEATURES && showRecalibrateModal && (
                     <RoutineUpload
                         onComplete={() => setShowRecalibrateModal(false)}
                         onCancel={() => setShowRecalibrateModal(false)}
@@ -1665,14 +1668,16 @@ export const RoutineDetailPage: React.FC = () => {
                     >
                         <Share2 size={20} color={Colors.primary} />
                     </button>
-                    <button
-                        style={{ ...styles.actionBtn, background: `${Colors.accent}20` }}
-                        onClick={handleIAOrganize}
-                        disabled={isReorganizing}
-                        title="Organizar con IA"
-                    >
-                        <Sparkles size={20} color={Colors.accent} className={isReorganizing ? 'animate-spin' : ''} />
-                    </button>
+                    {ENABLE_API_FEATURES && (
+                        <button
+                            style={{ ...styles.actionBtn, background: `${Colors.accent}20` }}
+                            onClick={handleIAOrganize}
+                            disabled={isReorganizing}
+                            title="Organizar con IA"
+                        >
+                            <Sparkles size={20} color={Colors.accent} className={isReorganizing ? 'animate-spin' : ''} />
+                        </button>
+                    )}
                     <button style={styles.deleteBtn} onClick={() => setShowDeleteModal(true)}>
                         <Trash2 size={20} color={Colors.error} />
                     </button>
@@ -1710,7 +1715,9 @@ export const RoutineDetailPage: React.FC = () => {
                             {(routineInfo.expirada || routineInfo.proximaACaducar) && (
                                 <button style={styles.renewBtn} onClick={handleRenewRoutine}><RotateCcw size={16} /> Renovar</button>
                             )}
-                            <button style={styles.recalibrateBtn} onClick={() => setShowRecalibrateModal(true)}><Sparkles size={16} /> Nueva Rutina IA</button>
+                            {ENABLE_API_FEATURES && (
+                                <button style={styles.recalibrateBtn} onClick={() => setShowRecalibrateModal(true)}><Sparkles size={16} /> Nueva Rutina IA</button>
+                            )}
                         </div>
                     </div>
                 )}
@@ -2062,7 +2069,7 @@ export const RoutineDetailPage: React.FC = () => {
             }
 
             {
-                showRecalibrateModal && (
+                ENABLE_API_FEATURES && showRecalibrateModal && (
                     <RoutineUpload onComplete={() => setShowRecalibrateModal(false)} onCancel={() => setShowRecalibrateModal(false)} />
                 )
             }

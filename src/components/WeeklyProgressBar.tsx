@@ -237,6 +237,15 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
         return 'No realizado';
     };
 
+    const getMoodEmoji = (mood?: number): string => {
+        if (!mood || mood <= 0) return '';
+        if (mood === 1) return '\uD83D\uDE2D';
+        if (mood === 2) return '\uD83D\uDE15';
+        if (mood === 3) return '\uD83D\uDE10';
+        if (mood === 4) return '\uD83D\uDE42';
+        return '\uD83D\uDD25';
+    };
+
     const handleDayClick = (dateStr: string) => {
         const hasActivity = activeDatesSet.has(dateStr);
         if (hasActivity) {
@@ -1084,6 +1093,11 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                                                             {details.map((detail) => {
                                                                 const status = deriveStatusFromDetail(detail);
                                                                 const statusColor = getExerciseStatusColor(status, Boolean(detail.isExtraAdded));
+                                                                const visibleSets = isEditing
+                                                                    ? detail.sets
+                                                                    : detail.sets.filter((set) =>
+                                                                        set.completed || set.skipped || set.reps > 0 || set.peso > 0 || (set.duration || 0) > 0
+                                                                    );
                                                                 return (
                                                                     <div key={detail.exerciseId} style={styles.exerciseItem}>
                                                                         <div style={styles.exerciseHeader}>
@@ -1131,10 +1145,10 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                                                                         </div>
 
                                                                         <div style={styles.setsGrid}>
-                                                                            {detail.sets.length === 0 && (
+                                                                            {visibleSets.length === 0 && (
                                                                                 <span style={styles.emptySetLabel}>Sin series registradas</span>
                                                                             )}
-                                                                            {detail.sets.map((set, setIdx) => (
+                                                                            {visibleSets.map((set, setIdx) => (
                                                                                 isEditing ? (
                                                                                     <div key={`${detail.exerciseId}_${setIdx}`} style={styles.setEditorCard}>
                                                                                         <span style={styles.setEditorTitle}>Serie {setIdx + 1}</span>
@@ -1188,7 +1202,7 @@ export const WeeklyProgressBar: React.FC<WeeklyProgressBarProps> = ({
                                                             <div style={styles.moodBadge}>
                                                                 <span>Estado post-entreno:</span>
                                                                 <span style={styles.moodValue}>
-                                                                    {currentWorkout.moodPost === 1 ? '&#128555;' : currentWorkout.moodPost === 2 ? '&#128533;' : currentWorkout.moodPost === 3 ? '&#128528;' : currentWorkout.moodPost === 4 ? '&#128578;' : '&#128293;'}
+                                                                    {getMoodEmoji(currentWorkout.moodPost)}
                                                                 </span>
                                                             </div>
                                                         )}

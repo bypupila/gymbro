@@ -41,6 +41,7 @@ export const HomePage: React.FC = () => {
     const perfil = useUserStore((state) => state.perfil);
     const getEntrenamientoHoy = useUserStore((state) => state.getEntrenamientoHoy);
     const activeSession = useUserStore((state) => state.activeSession);
+    const activeWorkoutView = useUserStore((state) => state.activeWorkoutView);
     const startSession = useUserStore((state) => state.startSession);
     const entrenamientoHoy = getEntrenamientoHoy();
 
@@ -383,7 +384,7 @@ export const HomePage: React.FC = () => {
 
     return (
         <div style={styles.container}>
-            {activeSession && (
+            {activeSession && activeWorkoutView === 'expanded' && (
                 <ActiveWorkout
                     onFinish={() => { }}
                     onCancel={() => { }}

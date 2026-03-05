@@ -13,6 +13,8 @@ import { AuthProvider } from './components/AuthProvider';
 import { TrainingInvitationNotifier } from './components/TrainingInvitationNotifier';
 import { RoutineRequestNotifier } from './components/RoutineRequestNotifier';
 import { WorkoutCompletionSummaryModal } from './components/WorkoutCompletionSummaryModal';
+import { AppUpdateNotifier } from './components/AppUpdateNotifier';
+import { ENABLE_API_FEATURES } from './config/featureFlags';
 
 // Lazy load pages
 const BodyStatusPage = lazy(() => import('./pages/BodyStatusPage').then(module => ({ default: module.BodyStatusPage })));
@@ -90,6 +92,7 @@ function App() {
                         border: '1px solid rgba(255,255,255,0.1)'
                     }
                 }} />
+                <AppUpdateNotifier />
                 <CloudSyncManager />
                 <TrainingInvitationNotifier />
                 <RoutineRequestNotifier />
@@ -129,10 +132,14 @@ function App() {
                             <Route path="catalog" element={<CatalogPage />} />
 
                             {/* New "Pencil" Windows */}
-                            <Route path="coach" element={<CoachPage />} />
+                            {ENABLE_API_FEATURES && (
+                                <Route path="coach" element={<CoachPage />} />
+                            )}
                             <Route path="body-status" element={<BodyStatusPage />} />
                             <Route path="dual-training" element={<DualTrainingPage />} />
-                            <Route path="migrator" element={<MigratorPage />} />
+                            {ENABLE_API_FEATURES && (
+                                <Route path="migrator" element={<MigratorPage />} />
+                            )}
                         </Route>
 
                         {/* Catch all - redirect to home or onboarding */}

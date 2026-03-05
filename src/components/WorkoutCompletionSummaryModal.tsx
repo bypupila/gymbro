@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
-import { AnimatePresence, motion } from 'framer-motion';
 
 const formatMinutes = (minutes: number): string => {
-    if (!minutes || minutes <= 0) return '<1 min';
+    if (!minutes || minutes <= 0) return '';
     const hours = Math.floor(minutes / 60);
     const remaining = minutes % 60;
     if (hours === 0) return `${remaining} min`;
@@ -13,7 +13,7 @@ const formatMinutes = (minutes: number): string => {
 };
 
 const formatSeconds = (seconds: number): string => {
-    if (!seconds || seconds <= 0) return '0s';
+    if (!seconds || seconds <= 0) return '';
     if (seconds >= 3600) {
         const hours = seconds / 3600;
         return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} h`;
@@ -26,7 +26,7 @@ const formatSeconds = (seconds: number): string => {
 };
 
 const formatMood = (value?: number): string => {
-    if (!value || value <= 0) return '--';
+    if (!value || value <= 0) return '';
     if (value <= 1) return '1/5 (Muy bajo)';
     if (value === 2) return '2/5 (Bajo)';
     if (value === 3) return '3/5 (Normal)';
@@ -53,6 +53,7 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
             const maxWeight = detail.sets.reduce((acc, set) => Math.max(acc, set.peso || 0), 0);
             const totalDurationSec = detail.sets.reduce((acc, set) => acc + (set.duration || 0), 0);
             const status = detail.completionStatus || (completedSets === totalSets ? 'completed' : completedSets > 0 ? 'partial' : 'not_done');
+
             return {
                 id: detail.exerciseId,
                 name: detail.nombre,
@@ -72,6 +73,29 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
         return allCompleted ? 'Completa' : 'Incompleta';
     }, [detailRows]);
 
+    const metricRows = useMemo(() => {
+        if (!summary) return [];
+
+        const rows: Array<{ label: string; value: string; tone?: string }> = [];
+
+        const moodStart = formatMood(summary.moodAtStart);
+        if (moodStart) rows.push({ label: 'Animo al llegar', value: moodStart });
+
+        const moodEnd = formatMood(summary.moodAtEnd);
+        if (moodEnd) rows.push({ label: 'Animo al irte', value: moodEnd });
+
+        const durationLabel = formatMinutes(summary.totalDurationMin);
+        if (durationLabel) rows.push({ label: 'Duracion total', value: durationLabel });
+
+        rows.push({
+            label: 'Rutina',
+            value: routineStatus,
+            tone: routineStatus === 'Completa' ? Colors.success : Colors.warning,
+        });
+
+        return rows;
+    }, [routineStatus, summary]);
+
     const exerciseTimes = useMemo(() => {
         return detailRows
             .filter((row) => row.totalDurationSec > 0)
@@ -79,7 +103,8 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
                 id: row.id,
                 label: row.name,
                 value: formatSeconds(row.totalDurationSec),
-            }));
+            }))
+            .filter((row) => Boolean(row.value));
     }, [detailRows]);
 
     if (!summary) return null;
@@ -98,33 +123,20 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
         <div style={styles.overlay}>
             <div style={styles.card}>
                 <h2 style={styles.title}>Entrenamiento completado</h2>
-                <p style={styles.subtitle}>Buen trabajo. Ya quedó registrado.</p>
+                <p style={styles.subtitle}>Buen trabajo. Ya quedo registrado.</p>
 
-                <div style={styles.metricList}>
-                    <div style={styles.metricRow}>
-                        <span style={styles.metricLabel}>Ánimo al llegar</span>
-                        <strong style={styles.metricValue}>{formatMood(summary.moodAtStart)}</strong>
+                {metricRows.length > 0 && (
+                    <div style={styles.metricList}>
+                        {metricRows.map((metric, index) => (
+                            <div key={`${metric.label}_${index}`} style={styles.metricRow}>
+                                <span style={styles.metricLabel}>{metric.label}</span>
+                                <strong style={{ ...styles.metricValue, ...(metric.tone ? { color: metric.tone } : {}) }}>
+                                    {metric.value}
+                                </strong>
+                            </div>
+                        ))}
                     </div>
-                    <div style={styles.metricRow}>
-                        <span style={styles.metricLabel}>Ánimo al irte</span>
-                        <strong style={styles.metricValue}>{formatMood(summary.moodAtEnd)}</strong>
-                    </div>
-                    <div style={styles.metricRow}>
-                        <span style={styles.metricLabel}>Duración total</span>
-                        <strong style={styles.metricValue}>{formatMinutes(summary.totalDurationMin)}</strong>
-                    </div>
-                    <div style={styles.metricRow}>
-                        <span style={styles.metricLabel}>Rutina</span>
-                        <strong
-                            style={{
-                                ...styles.metricValue,
-                                color: routineStatus === 'Completa' ? Colors.success : Colors.warning,
-                            }}
-                        >
-                            {routineStatus}
-                        </strong>
-                    </div>
-                </div>
+                )}
 
                 {exerciseTimes.length > 0 && (
                     <div style={styles.exerciseTimesContainer}>
@@ -140,7 +152,7 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
                 )}
 
                 <button onClick={() => setShowDetails((value) => !value)} style={styles.secondaryButton}>
-                    {showDetails ? 'Ocultar detalle' : 'Ver más en detalle'}
+                    {showDetails ? 'Ocultar detalle' : 'Ver mas en detalle'}
                 </button>
 
                 {showDetails && (
@@ -151,21 +163,25 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
                                 : row.status === 'partial'
                                     ? Colors.warning
                                     : Colors.error;
+
                             const detailMetaParts = [
-                                `${row.completedSets}/${row.totalSets} series`,
-                                ...(row.maxWeight > 0 ? [`${row.maxWeight} kg máx`] : []),
+                                ...(row.totalSets > 0 ? [`${row.completedSets}/${row.totalSets} series`] : []),
+                                ...(row.maxWeight > 0 ? [`${row.maxWeight} kg max`] : []),
                                 ...(row.totalDurationSec > 0 ? [formatSeconds(row.totalDurationSec)] : []),
-                            ];
+                            ].filter(Boolean);
+
                             return (
                                 <div key={`${row.id}_${rowIdx}`} style={styles.detailRow}>
                                     <div style={{ minWidth: 0 }}>
                                         <div style={styles.detailName}>
                                             {row.name}
-                                            {row.replaced && <span style={{ color: Colors.warning }}> • Reemplazado</span>}
+                                            {row.replaced && <span style={{ color: Colors.warning }}> | Reemplazado</span>}
                                         </div>
-                                        <div style={styles.detailMeta}>
-                                            {detailMetaParts.join(' • ')}
-                                        </div>
+                                        {detailMetaParts.length > 0 && (
+                                            <div style={styles.detailMeta}>
+                                                {detailMetaParts.join(' - ')}
+                                            </div>
+                                        )}
                                     </div>
                                     <span style={{
                                         ...styles.detailStatus,
@@ -183,7 +199,7 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
 
                 {pendingWorkoutSyncCount > 0 && (
                     <p style={styles.syncText}>
-                        Sincronización pendiente: {pendingWorkoutSyncCount} entrenamiento(s).
+                        Sincronizacion pendiente: {pendingWorkoutSyncCount} entrenamiento(s).
                     </p>
                 )}
 
@@ -221,7 +237,7 @@ export const WorkoutCompletionSummaryModal: React.FC = () => {
                                 animate={{ opacity: 1, y: 0 }}
                                 style={styles.celebrateText}
                             >
-                                ¡Felicitaciones! Llevas {totalWorkouts} entrenamiento(s) registrados.
+                                Felicitaciones. Llevas {totalWorkouts} entrenamiento(s) registrados.
                             </motion.div>
                         </motion.div>
                     )}
