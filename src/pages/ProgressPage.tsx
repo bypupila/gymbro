@@ -6,6 +6,7 @@ import { Card } from '@/components/Card';
 import { useUserStore, EntrenamientoRealizado, ExtraActivity } from '@/stores/userStore';
 import { WeeklyProgressBar } from '@/components/WeeklyProgressBar';
 import Colors from '@/styles/colors';
+import { ENABLE_API_FEATURES } from '@/config/featureFlags';
 import { Calendar, Camera, Flame, TrendingUp, Clock, Dumbbell, Weight, BarChart3, Trophy, Activity, Trash2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
@@ -246,12 +247,14 @@ export const ProgressPage: React.FC = () => {
                         )}
                     </div>
                 </div>
-                <button
-                    onClick={() => toast('Próximamente: análisis visual con IA', { icon: 'AI' })}
-                    style={styles.cameraBtn}
-                >
-                    <Camera size={24} color={Colors.primary} />
-                </button>
+                {ENABLE_API_FEATURES && (
+                    <button
+                        onClick={() => toast('Próximamente: análisis visual con IA', { icon: 'AI' })}
+                        style={styles.cameraBtn}
+                    >
+                        <Camera size={24} color={Colors.primary} />
+                    </button>
+                )}
             </div>
 
             <WeeklyProgressBar
@@ -1118,5 +1121,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ProgressPage;
-
 

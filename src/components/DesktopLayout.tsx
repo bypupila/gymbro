@@ -4,6 +4,7 @@ import { Home, Dumbbell, Zap, TrendingUp, User, Search, LogOut } from 'lucide-re
 import Colors from '@/styles/colors';
 import { Agentation } from 'agentation';
 import { useUserStore } from '@/stores/userStore';
+import ActiveSessionStickyBar from './ActiveSessionStickyBar';
 
 const sidebarItems = [
     { path: '/', icon: Home, label: 'Inicio' },
@@ -64,6 +65,7 @@ export const DesktopLayout: React.FC = () => {
                 </div>
             </main>
 
+            <ActiveSessionStickyBar layout="desktop" />
             {import.meta.env.DEV && <Agentation />}
         </div>
     );

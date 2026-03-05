@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 const email = process.env.GYMBRO_EMAIL;
 const password = process.env.GYMBRO_PASSWORD;
 const baseUrl = process.env.GYMBRO_BASE_URL || 'http://127.0.0.1:4173';
+const apiFeaturesEnabled = process.env.VITE_ENABLE_API_FEATURES === '1';
 
 test.describe('Live auth smoke', () => {
     test.skip(!email || !password, 'GYMBRO_EMAIL and GYMBRO_PASSWORD are required.');
@@ -42,7 +43,10 @@ test.describe('Live auth smoke', () => {
             .toBeFalsy();
 
         if (!page.url().includes('/onboarding')) {
-            const routesToSmoke = ['/', '/train', '/progress', '/profile', '/routine', '/catalog', '/coach'];
+            const routesToSmoke = ['/', '/train', '/progress', '/profile', '/routine', '/catalog'];
+            if (apiFeaturesEnabled) {
+                routesToSmoke.push('/coach');
+            }
             const mojibakeMarkers = ['�', 'Ã', 'Â', 'ï¿', 'ðŸ', 'â'];
             for (const route of routesToSmoke) {
                 const response = await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' });

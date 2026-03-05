@@ -5,6 +5,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import BottomNav from './BottomNav';
+import ActiveSessionStickyBar from './ActiveSessionStickyBar';
 
 import { Agentation } from 'agentation';
 
@@ -15,6 +16,7 @@ export const MobileLayout: React.FC = () => {
                 <Outlet />
             </main>
             <BottomNav />
+            <ActiveSessionStickyBar layout="mobile" />
             {import.meta.env.DEV && <Agentation />}
         </div>
     );

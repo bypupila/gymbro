@@ -6,20 +6,53 @@ import Colors from '@/styles/colors';
 
 const TrainPageComp: React.FC = () => {
     const activeSession = useUserStore((state) => state.activeSession);
+    const activeWorkoutView = useUserStore((state) => state.activeWorkoutView);
+    const resumeActiveWorkout = useUserStore((state) => state.resumeActiveWorkout);
     const navigate = useNavigate();
 
-    // If there is an active session, show the overlay
-    if (activeSession) {
+    if (activeSession && activeWorkoutView === 'expanded') {
         return (
             <ActiveWorkout
                 onFinish={() => {
-                    // Logic is handled inside ActiveWorkout/MoodCheckin
                     navigate('/');
                 }}
                 onCancel={() => {
                     navigate('/');
                 }}
             />
+        );
+    }
+
+    if (activeSession && activeWorkoutView === 'minimized') {
+        return (
+            <div style={styles.container}>
+                <div style={styles.header}>
+                    <h1 style={styles.title}>Entrenar Hoy</h1>
+                    <p style={styles.subtitle}>Tienes una sesion minimizada</p>
+                </div>
+
+                <div style={styles.content}>
+                    <div style={styles.emptyState}>
+                        <h3 style={styles.emptyText}>Sesion activa en pausa</h3>
+                        <p style={styles.emptySubtext}>Pulsa para retomar tu entrenamiento.</p>
+                        <button
+                            onClick={() => resumeActiveWorkout()}
+                            style={{
+                                marginTop: '20px',
+                                background: Colors.primary,
+                                color: '#000',
+                                border: 'none',
+                                padding: '12px 24px',
+                                borderRadius: '12px',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Continuar entrenamiento
+                        </button>
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -61,7 +94,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '24px 20px',
         height: '100%',
         overflowY: 'auto',
-        paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))', // Space for bottom nav
+        paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))',
     },
     header: {
         marginBottom: '24px',
@@ -109,4 +142,3 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export const TrainPage = TrainPageComp;
-
