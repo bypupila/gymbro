@@ -52,6 +52,12 @@ export interface SetUpdatePayload {
         startTime: number;
         duration: number;
         rest: number;
+        distanceValue: number;
+        distanceUnit: 'm' | 'km';
+        leftReps: number;
+        rightReps: number;
+        leftDuration: number;
+        rightDuration: number;
     }>;
 }
 

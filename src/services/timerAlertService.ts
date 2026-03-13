@@ -3,6 +3,10 @@ type TimerFinishedPayload = {
     body: string;
 };
 
+type TimerAlertOptions = {
+    showNotification?: boolean;
+};
+
 class TimerAlertService {
     private wakeLock: WakeLockSentinel | null = null;
     private audioContext: AudioContext | null = null;
@@ -30,10 +34,12 @@ class TimerAlertService {
         this.wakeLock = null;
     }
 
-    async triggerTimerFinished(payload: TimerFinishedPayload): Promise<void> {
+    async triggerTimerFinished(payload: TimerFinishedPayload, options?: TimerAlertOptions): Promise<void> {
         this.vibrate();
         await this.playTone();
-        await this.showNotification(payload);
+        if (options?.showNotification !== false) {
+            await this.showNotification(payload);
+        }
     }
 
     private vibrate(): void {
@@ -61,7 +67,7 @@ class TimerAlertService {
                 const endTime = startTime + duration;
 
                 gain.gain.setValueAtTime(0.0001, startTime);
-                gain.gain.linearRampToValueAtTime(0.14, startTime + 0.01);
+                gain.gain.linearRampToValueAtTime(0.8, startTime + 0.01);
                 gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
 
                 oscillator.connect(gain);
