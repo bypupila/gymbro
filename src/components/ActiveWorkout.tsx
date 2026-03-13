@@ -22,7 +22,13 @@ import {
     Activity
 } from 'lucide-react';
 import { Card } from './Card';
-import { EJERCICIOS_DATABASE, GRUPOS_MUSCULARES, EjercicioBase } from '@/data/exerciseDatabase';
+import {
+    EJERCICIOS_DATABASE,
+    GRUPOS_MUSCULARES,
+    EjercicioBase,
+    DistanceUnit,
+    ExerciseTrackingMode,
+} from '@/data/exerciseDatabase';
 import { getExerciseVideo, getExerciseImage } from '@/data/exerciseMedia';
 import { toTrustedExternalVideoUrl } from '@/utils/urlSafety';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -39,6 +45,15 @@ interface ActiveWorkoutProps {
 
 type DurationUnit = 's' | 'm' | 'h';
 
+const resolveTrackingModeValue = (trackingMode?: ExerciseTrackingMode): ExerciseTrackingMode => trackingMode || 'standard';
+
+const resolvePendingCompletionType = (trackingMode?: ExerciseTrackingMode): 'none' | 'distance' | 'per_side_time' => {
+    const mode = resolveTrackingModeValue(trackingMode);
+    if (mode === 'distance') return 'distance';
+    if (mode === 'per_side_time') return 'per_side_time';
+    return 'none';
+};
+
 export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel }) => {
     useRenderMetric('ActiveWorkout');
     const perfil = useUserStore((state) => state.perfil);
@@ -52,6 +67,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     const addExtraActivity = useUserStore((state) => state.addExtraActivity);
     const setRutinaInPlace = useUserStore((state) => state.setRutinaInPlace);
     const minimizeActiveWorkout = useUserStore((state) => state.minimizeActiveWorkout);
+    const setExerciseElapsedSeconds = useUserStore((state) => state.setExerciseElapsedSeconds);
 
     const [clockNow, setClockNow] = useState(() => Date.now());
     const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
@@ -77,6 +93,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
     }>({ active: false, exerciseId: null, setIndex: 0, phase: 'work', sequence: [], stepIndex: 0 });
     const [guidedWorkTimerStarted, setGuidedWorkTimerStarted] = useState(false);
     const [guidedSetStartedAt, setGuidedSetStartedAt] = useState<number | null>(null);
+    const [guidedPendingCompletion, setGuidedPendingCompletion] = useState<'none' | 'distance' | 'per_side_time'>('none');
+    const [guidedWarmupStartedAt, setGuidedWarmupStartedAt] = useState<number | null>(null);
+    const [guidedExerciseStartedAt, setGuidedExerciseStartedAt] = useState<number | null>(null);
     const [showGuidedExitModal, setShowGuidedExitModal] = useState(false);
     const previousTimerRef = useRef<number>(0);
     const restTransitionLockRef = useRef(false);
@@ -281,6 +300,44 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     const hasExplicitTimeFormat = (value: string): boolean => parseExplicitTimeSeconds(value) > 0;
 
+    const getTrackingMode = (exercise: ExerciseTracking): ExerciseTrackingMode => resolveTrackingModeValue(exercise.trackingMode);
+    const usesDistanceTracking = (exercise: ExerciseTracking): boolean => getTrackingMode(exercise) === 'distance';
+    const usesPerSideReps = (exercise: ExerciseTracking): boolean => getTrackingMode(exercise) === 'per_side_reps';
+    const usesPerSideTime = (exercise: ExerciseTracking): boolean => getTrackingMode(exercise) === 'per_side_time';
+    const getDistanceUnits = (exercise: ExerciseTracking): DistanceUnit[] => exercise.distanceUnitOptions?.length ? exercise.distanceUnitOptions : ['m', 'km'];
+
+    const hasGuidedCompletionInputs = (exercise: ExerciseTracking, setIndex: number): boolean => {
+        const targetSet = exercise.sets[setIndex];
+        if (!targetSet) return false;
+        if (usesDistanceTracking(exercise)) {
+            return (targetSet.distanceValue || 0) > 0;
+        }
+        if (usesPerSideTime(exercise)) {
+            return (targetSet.leftDuration || 0) > 0 && (targetSet.rightDuration || 0) > 0;
+        }
+        return true;
+    };
+
+    const getGuidedExerciseElapsed = (exercise: ExerciseTracking): number => {
+        if (exercise.categoria === 'calentamiento') {
+            if (!guidedWarmupStartedAt) return exercise.exerciseElapsedSeconds || 0;
+            return Math.max(0, Math.floor((clockNow - guidedWarmupStartedAt) / 1000));
+        }
+
+        if (guidedMode.active && guidedMode.exerciseId === exercise.id && guidedExerciseStartedAt) {
+            return Math.max(0, Math.floor((clockNow - guidedExerciseStartedAt) / 1000));
+        }
+
+        return exercise.exerciseElapsedSeconds || 0;
+    };
+
+    const storeGuidedElapsedForExercise = (exercise: ExerciseTracking) => {
+        const elapsed = getGuidedExerciseElapsed(exercise);
+        if (elapsed > 0) {
+            setExerciseElapsedSeconds(exercise.id, elapsed);
+        }
+    };
+
     // Helper to check if exercise is time-based
     const isTimeBased = (reps: string): boolean => {
         if (!reps) return false;
@@ -372,6 +429,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setIsTimerRunning(false);
         setGuidedWorkTimerStarted(false);
         setGuidedSetStartedAt(hasGuidedWorkTimer(exercise, firstStep.setIndex) ? null : Date.now());
+        setGuidedPendingCompletion('none');
+        setGuidedWarmupStartedAt(exercise.categoria === 'calentamiento' ? Date.now() : null);
+        setGuidedExerciseStartedAt(exercise.categoria === 'calentamiento' ? null : Date.now());
         toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
 
@@ -468,6 +528,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setActiveExerciseId(null);
         setGuidedWorkTimerStarted(false);
         setGuidedSetStartedAt(null);
+        setGuidedPendingCompletion('none');
+        setGuidedWarmupStartedAt(null);
+        setGuidedExerciseStartedAt(null);
         setShowGuidedExitModal(false);
         restTransitionLockRef.current = false;
         workTransitionLockRef.current = false;
@@ -475,13 +538,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
     const endGuidedFlow = () => {
         clearGuidedMode();
-        toast.success('Ejercicio finalizado', { id: 'exercise-finished', duration: 3000 });
     };
 
     const moveToGuidedStep = (stepIndex: number) => {
         const nextStep = guidedMode.sequence[stepIndex];
         const latestSession = useUserStore.getState().activeSession;
         const nextExercise = latestSession?.exercises.find((item) => item.id === nextStep?.exerciseId);
+        const currentExercise = latestSession?.exercises.find((item) => item.id === guidedMode.exerciseId);
 
         if (!nextStep || !nextExercise) {
             endGuidedFlow();
@@ -501,6 +564,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setIsTimerRunning(false);
         setGuidedWorkTimerStarted(false);
         setGuidedSetStartedAt(hasGuidedWorkTimer(nextExercise, nextStep.setIndex) ? null : Date.now());
+        setGuidedPendingCompletion('none');
+        if (nextExercise.categoria === 'calentamiento') {
+            setGuidedExerciseStartedAt(null);
+            setGuidedWarmupStartedAt((prev) => prev || Date.now());
+        } else {
+            setGuidedWarmupStartedAt(null);
+            setGuidedExerciseStartedAt((currentExercise?.id === nextExercise.id && guidedExerciseStartedAt)
+                ? guidedExerciseStartedAt
+                : Date.now());
+        }
         restTransitionLockRef.current = false;
         workTransitionLockRef.current = false;
     };
@@ -511,6 +584,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         if (!latestExercise) return;
         const allDone = latestExercise.sets.every((set) => set.completed || set.skipped);
         if (allDone) {
+            storeGuidedElapsedForExercise(latestExercise);
             markExerciseAsCompleted(exerciseId, false);
         }
     };
@@ -523,6 +597,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
         const exercise = activeSession?.exercises.find((e) => e.id === currentStep.exerciseId);
         if (!exercise) return;
+        if (!hasGuidedCompletionInputs(exercise, currentStep.setIndex)) return;
 
         const finishedAt = Date.now();
         const startedAt = guidedSetStartedAt || finishedAt;
@@ -540,9 +615,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setIsTimerRunning(true);
         setGuidedWorkTimerStarted(false);
         setGuidedSetStartedAt(null);
+        setGuidedPendingCompletion('none');
         restTransitionLockRef.current = false;
         workTransitionLockRef.current = false;
-        toast.success('Descanso iniciado', { id: 'rest-started', duration: 3000 });
     };
 
     const handleGuidedMoveStep = (direction: 'prev' | 'next') => {
@@ -599,13 +674,39 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         }
         setGuidedWorkTimerStarted(true);
         setIsTimerRunning(true);
+        setGuidedPendingCompletion('none');
     };
 
     const handleGuidedWorkReset = (exercise: ExerciseTracking) => {
-        setTimerSeconds(getGuidedWorkSeconds(exercise, guidedMode.setIndex));
+        const resetSeconds = guidedMode.phase === 'rest'
+            ? (exercise.sets[guidedMode.setIndex]?.rest || 30)
+            : getGuidedWorkSeconds(exercise, guidedMode.setIndex);
+        setTimerSeconds(resetSeconds);
         setGuidedWorkTimerStarted(false);
         setIsTimerRunning(false);
         setGuidedSetStartedAt(null);
+        setGuidedPendingCompletion('none');
+    };
+
+    const handleGuidedTimerToggle = (exercise: ExerciseTracking) => {
+        const canToggle = guidedMode.phase === 'rest' || hasGuidedWorkTimer(exercise, guidedMode.setIndex);
+        if (!canToggle) return;
+        if (guidedPendingCompletion !== 'none') return;
+
+        if (isTimerRunning) {
+            setIsTimerRunning(false);
+            return;
+        }
+
+        if (guidedMode.phase === 'work' && !guidedWorkTimerStarted) {
+            handleGuidedWorkPlay(exercise);
+            return;
+        }
+
+        if (!guidedSetStartedAt && guidedMode.phase === 'work') {
+            setGuidedSetStartedAt(Date.now());
+        }
+        setIsTimerRunning(true);
     };
 
     const applyPendingReplacement = (scope: 'session' | 'routine') => {
@@ -626,6 +727,8 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 descanso: currentExercise.sets[0]?.rest || 60,
                 categoria: currentExercise.categoria || 'maquina',
                 imagen: pendingReplacement.newExercise.imagen,
+                trackingMode: pendingReplacement.newExercise.trackingMode,
+                distanceUnitOptions: pendingReplacement.newExercise.distanceUnitOptions,
             },
             { replacementScope: scope }
         );
@@ -699,15 +802,28 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 : hasExplicitTime;
             return Boolean((targetSet && typeof targetSet.duration === 'number' && targetSet.duration > 0) || isTimedByTarget);
         })());
+        const pendingType = guidedExercise && guidedMode.phase === 'work'
+            ? resolvePendingCompletionType(guidedExercise.trackingMode)
+            : 'none';
 
         void timerAlertService.triggerTimerFinished({
             title: isRestPhase ? 'Descanso terminado' : 'Tiempo finalizado',
             body: isRestPhase
                 ? 'Sigue con la siguiente serie.'
                 : isGuidedTimedWork
-                    ? 'Iniciando descanso automaticamente.'
+                    ? pendingType === 'distance'
+                        ? 'Carga el recorrido para completar la serie.'
+                        : pendingType === 'per_side_time'
+                            ? 'Carga el tiempo de ambos lados para completar la serie.'
+                            : 'Iniciando descanso automaticamente.'
                     : 'Completa la serie cuando estes listo.',
-        });
+        }, { showNotification: false });
+
+        if (!isRestPhase && pendingType !== 'none') {
+            setGuidedPendingCompletion(pendingType);
+            setIsTimerRunning(false);
+            return;
+        }
 
         if (!isRestPhase && !isGuidedTimedWork) {
             setIsTimerRunning(false);
@@ -723,8 +839,14 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
 
         const exercise = activeSession?.exercises.find((item) => item.id === guidedMode.exerciseId);
         const timedWork = Boolean(exercise && hasGuidedWorkTimer(exercise, guidedMode.setIndex));
+        const pendingType = exercise ? resolvePendingCompletionType(exercise.trackingMode) : 'none';
 
         if (!timedWork) {
+            workTransitionLockRef.current = false;
+            return;
+        }
+
+        if (pendingType !== 'none' || guidedPendingCompletion !== 'none') {
             workTransitionLockRef.current = false;
             return;
         }
@@ -735,7 +857,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         handleGuidedNext();
         // handleGuidedNext is intentionally not a dependency to avoid effect churn while the timer ticks.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeSession?.exercises, guidedMode.active, guidedMode.exerciseId, guidedMode.phase, guidedMode.setIndex, hasGuidedWorkTimer, isTimerRunning, timerSeconds]);
+    }, [activeSession?.exercises, guidedMode.active, guidedMode.exerciseId, guidedMode.phase, guidedMode.setIndex, guidedPendingCompletion, hasGuidedWorkTimer, isTimerRunning, timerSeconds]);
 
     // Rest phases move forward automatically when timer ends.
     useEffect(() => {
@@ -1113,7 +1235,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         series: addConfig.series,
                                                         repeticiones: addConfig.unit !== 'reps' ? `${addConfig.repeticiones}${addConfig.unit}` : addConfig.repeticiones,
                                                         descanso: addConfig.descanso,
-                                                        categoria: 'maquina'
+                                                        categoria: 'maquina',
+                                                        trackingMode: selectedExerciseForAdd.trackingMode,
+                                                        distanceUnitOptions: selectedExerciseForAdd.distanceUnitOptions,
                                                     }, false);
                                                     setShowAddModal(false);
                                                     setSelectedExerciseForAdd(null);
@@ -1610,10 +1734,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     const showWorkStart = workHasTimer && !guidedWorkTimerStarted && !isTimerRunning;
                     const showWorkPaused = workHasTimer && guidedWorkTimerStarted && !isTimerRunning;
                     const showCircularTimer = isRestPhase || (isWorkPhase && workHasTimer && (isTimerRunning || showWorkPaused));
+                    const showTimerPausedControls = showCircularTimer && !isTimerRunning;
                     const shouldShowGuidedSummary = ex.categoria === 'calentamiento' || hasGuidedWorkTimer(ex, guidedMode.setIndex);
                     const seriesIndicator = `${guidedMode.setIndex + 1}/${ex.sets.length}`;
                     const canGoPrev = guidedMode.stepIndex > 0;
                     const canGoNext = guidedMode.stepIndex < guidedMode.sequence.length - 1;
+                    const canCompleteGuidedStep = isRestPhase || hasGuidedCompletionInputs(ex, guidedMode.setIndex);
+                    const currentExerciseElapsed = getGuidedExerciseElapsed(ex);
+                    const showDistanceInput = isWorkPhase && usesDistanceTracking(ex);
+                    const showPerSideRepsInputs = isWorkPhase && usesPerSideReps(ex);
+                    const showPerSideTimeInputs = isWorkPhase && usesPerSideTime(ex);
 
                     return (
                         <div style={styles.modalOverlay}>
@@ -1623,17 +1753,14 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 style={styles.guidedContainer}
                             >
-                                <div style={{
-                                    ...styles.guidedStatsRow,
-                                    gridTemplateColumns: isNarrowMobile ? '1fr' : styles.guidedStatsRow.gridTemplateColumns
-                                }}>
+                                <div style={styles.guidedStatsRow}>
                                     <div style={styles.guidedStatChip}>
                                         <span style={styles.guidedStatLabel}>Tiempo total</span>
                                         <strong style={styles.guidedStatValue}>{formatTime(sessionElapsedSeconds)}</strong>
                                     </div>
                                     <div style={styles.guidedStatChip}>
-                                        <span style={styles.guidedStatLabel}>Ejercicio</span>
-                                        <strong style={styles.guidedStatValue}>{isRestPhase ? 'Descanso' : ex.nombre}</strong>
+                                        <span style={styles.guidedStatLabel}>Tiempo del ejercicio</span>
+                                        <strong style={styles.guidedStatValue}>{formatTime(currentExerciseElapsed)}</strong>
                                     </div>
                                     <div style={styles.guidedStatChip}>
                                         <span style={styles.guidedStatLabel}>Serie</span>
@@ -1645,7 +1772,16 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                         <h2 style={styles.guidedTitle}>{isRestPhase ? 'Descanso' : ex.nombre}</h2>
                                         {isRestPhase && (
                                             <p style={styles.guidedSubtitle}>
-                                                {`Siguiente: ${nextExercise?.nombre || ex.nombre} - serie ${nextSetNumber}`}
+                                                {ex.categoria === 'calentamiento'
+                                                    ? `Siguiente: ${nextExercise?.nombre || ex.nombre}`
+                                                    : `Siguiente: ${nextExercise?.nombre || ex.nombre} - serie ${nextSetNumber}`}
+                                            </p>
+                                        )}
+                                        {guidedPendingCompletion !== 'none' && isWorkPhase && (
+                                            <p style={styles.guidedPendingHint}>
+                                                {guidedPendingCompletion === 'distance'
+                                                    ? 'Carga el recorrido para completar esta serie.'
+                                                    : 'Carga el tiempo del lado izquierdo y derecho para completar esta serie.'}
                                             </p>
                                         )}
                                     </div>
@@ -1704,12 +1840,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     <>
                                         <button
                                             style={styles.guidedTimerContainer}
-                                            onClick={() => {
-                                                if (isWorkPhase && workHasTimer && isTimerRunning) {
-                                                    setIsTimerRunning(false);
-                                                }
-                                            }}
-                                            disabled={!(isWorkPhase && workHasTimer && isTimerRunning)}
+                                            onClick={() => handleGuidedTimerToggle(ex)}
                                         >
                                             <div style={{
                                                 ...styles.guidedTimerCircle,
@@ -1727,10 +1858,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                             </div>
                                         </button>
 
-                                        {showWorkPaused && (
+                                        {showTimerPausedControls && (
                                             <div style={styles.guidedPausedActions}>
                                                 <button
-                                                    onClick={() => setIsTimerRunning(true)}
+                                                    onClick={() => handleGuidedTimerToggle(ex)}
                                                     style={styles.guidedSecondaryBtn}
                                                 >
                                                     <Play size={16} /> Reanudar
@@ -1749,7 +1880,11 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 {guidedMode.phase === 'work' && currentSet && (
                                     <div style={{
                                         ...styles.guidedSetInputGrid,
-                                        gridTemplateColumns: isNarrowMobile ? '1fr' : '1fr 1fr'
+                                        gridTemplateColumns: isNarrowMobile
+                                            ? '1fr'
+                                            : showPerSideRepsInputs || showPerSideTimeInputs
+                                                ? '1fr 1fr 1fr'
+                                                : '1fr 1fr'
                                     }}>
                                         <div>
                                             <label style={styles.inputLabel}>Peso (kg)</label>
@@ -1761,20 +1896,112 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 style={styles.searchInput}
                                             />
                                         </div>
-                                        <div>
-                                            <label style={styles.inputLabel}>Reps hechas</label>
-                                            <input
-                                                type="number"
-                                                value={currentSet.reps || ''}
-                                                onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { reps: parseInt(e.target.value) || 0 })}
-                                                placeholder="0"
-                                                style={styles.searchInput}
-                                            />
-                                        </div>
+                                        {showPerSideRepsInputs ? (
+                                            <>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Reps izquierda</label>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.leftReps || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { leftReps: parseInt(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Reps derecha</label>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.rightReps || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { rightReps: parseInt(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                            </>
+                                        ) : showPerSideTimeInputs ? (
+                                            <>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Tiempo izquierdo (s)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.leftDuration || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { leftDuration: parseInt(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={styles.inputLabel}>Tiempo derecho (s)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.rightDuration || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { rightDuration: parseInt(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={styles.searchInput}
+                                                    />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div>
+                                                <label style={styles.inputLabel}>Reps hechas</label>
+                                                <input
+                                                    type="number"
+                                                    value={currentSet.reps || ''}
+                                                    onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { reps: parseInt(e.target.value) || 0 })}
+                                                    placeholder="0"
+                                                    style={styles.searchInput}
+                                                />
+                                            </div>
+                                        )}
+                                        {showDistanceInput && (
+                                            <div style={{ gridColumn: isNarrowMobile ? 'auto' : '1 / -1' }}>
+                                                <label style={styles.inputLabel}>Recorrido</label>
+                                                <div style={styles.guidedDistanceRow}>
+                                                    <input
+                                                        type="number"
+                                                        value={currentSet.distanceValue || ''}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { distanceValue: parseFloat(e.target.value) || 0 })}
+                                                        placeholder="0"
+                                                        style={{ ...styles.searchInput, flex: 1 }}
+                                                    />
+                                                    <select
+                                                        value={currentSet.distanceUnit || getDistanceUnits(ex)[0]}
+                                                        onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { distanceUnit: e.target.value as DistanceUnit })}
+                                                        style={styles.guidedUnitSelect}
+                                                    >
+                                                        {getDistanceUnits(ex).map((unit) => (
+                                                            <option key={unit} value={unit}>{unit}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
                                 <div style={styles.guidedActions}>
+                                    <button
+                                        onClick={handleGuidedNext}
+                                        style={{
+                                            ...styles.guidedActionBtn,
+                                            background: guidedMode.phase === 'work' ? Colors.primary : Colors.success,
+                                            opacity: canCompleteGuidedStep ? 1 : 0.55,
+                                            cursor: canCompleteGuidedStep ? 'pointer' : 'not-allowed'
+                                        }}
+                                        disabled={!canCompleteGuidedStep}
+                                    >
+                                        {guidedMode.phase === 'work' ? (
+                                            <>
+                                                <Check size={24} /> Completado
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Play size={24} /> Saltar descanso
+                                            </>
+                                        )}
+                                    </button>
+
                                     <div style={styles.guidedNavRow}>
                                         <button
                                             onClick={() => handleGuidedMoveStep('prev')}
@@ -1801,25 +2028,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     </div>
 
                                     <button
-                                        onClick={handleGuidedNext}
-                                        style={{
-                                            ...styles.guidedActionBtn,
-                                            background: guidedMode.phase === 'work' ? Colors.primary : Colors.success
-                                        }}
-                                    >
-                                        {guidedMode.phase === 'work' ? (
-                                            <>
-                                                <Check size={24} /> Completar serie
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Play size={24} /> Saltar descanso
-                                            </>
-                                        )}
-                                    </button>
-
-                                    <button
-                                        style={styles.guidedCancelBtn}
+                                        style={styles.guidedExitDangerBtn}
                                         onClick={() => setShowGuidedExitModal(true)}
                                     >
                                         Salir
@@ -2135,6 +2344,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const imageSrc = ex.imagen || getExerciseImage(ex.nombre);
         const maxWeight = ex.sets.reduce((acc, set) => Math.max(acc, set.weight || 0), 0);
         const totalDuration = ex.sets.reduce((acc, set) => acc + (set.duration || 0), 0);
+        const isPerSideRepsExercise = usesPerSideReps(ex);
+        const isPerSideTimeExercise = usesPerSideTime(ex);
+        const isPerSideExercise = isPerSideRepsExercise || isPerSideTimeExercise;
         const exerciseMetaParts = [
             `${ex.targetSeries} series`,
             ...(maxWeight > 0 ? [`${maxWeight} kg`] : []),
@@ -2143,6 +2355,10 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         const singleSetGridTemplate = isNarrowMobile
             ? '1fr 1fr 1.2fr 1fr 0.9fr'
             : '0.8fr 1.2fr 1.2fr 1.2fr 1.2fr 1fr';
+        const perSideGridTemplate = isNarrowMobile
+            ? '1fr 1fr 1fr 0.9fr 0.9fr'
+            : '0.8fr 1.1fr 1.1fr 1.1fr 1fr 1fr';
+        const setGridTemplate = isPerSideExercise ? perSideGridTemplate : singleSetGridTemplate;
 
         return (
             <Card key={ex.id} style={{
@@ -2285,7 +2501,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     <>
                                         <div style={{
                                             display: 'grid',
-                                            gridTemplateColumns: singleSetGridTemplate,
+                                            gridTemplateColumns: setGridTemplate,
                                             gap: isNarrowMobile ? '6px' : '8px',
                                             marginBottom: '12px',
                                             marginTop: '8px',
@@ -2295,8 +2511,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>#</span>
                                             )}
                                             <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>PESO (kg)</span>
-                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>REPS</span>
-                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>TIEMPO (s)</span>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>
+                                                {isPerSideTimeExercise ? 'TIEMPO IZQ. (s)' : isPerSideRepsExercise ? 'REPS IZQ.' : 'REPS'}
+                                            </span>
+                                            <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>
+                                                {isPerSideTimeExercise ? 'TIEMPO DER. (s)' : isPerSideRepsExercise ? 'REPS DER.' : 'TIEMPO (s)'}
+                                            </span>
                                             <span style={{ fontSize: '10px', fontWeight: 800, color: Colors.textTertiary, textAlign: 'center' }}>DESC. (s)</span>
                                             <span></span>
                                         </div>
@@ -2306,7 +2526,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     key={sIdx}
                                                     style={{
                                                         display: 'grid',
-                                                        gridTemplateColumns: singleSetGridTemplate,
+                                                        gridTemplateColumns: setGridTemplate,
                                                         gap: isNarrowMobile ? '6px' : '8px',
                                                         alignItems: 'center',
                                                         background: set.completed ? `${Colors.success}10` : set.skipped ? `${Colors.surfaceLight}` : Colors.surface,
@@ -2334,67 +2554,129 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
                                                     />
 
-                                                    <input
-                                                        type="number"
-                                                        placeholder="0"
-                                                        value={set.reps || ''}
-                                                        onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
-                                                        style={{
-                                                            ...styles.newInput,
-                                                            padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
-                                                            fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
-                                                        }}
-                                                        disabled={set.completed || set.skipped}
-                                                        onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
-                                                    />
+                                                    {isPerSideRepsExercise ? (
+                                                        <>
+                                                            <input
+                                                                type="number"
+                                                                placeholder="0"
+                                                                value={set.leftReps || ''}
+                                                                onChange={(e) => updateSet(ex.id, sIdx, { leftReps: parseInt(e.target.value) || 0 })}
+                                                                style={{
+                                                                    ...styles.newInput,
+                                                                    padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                                    fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                }}
+                                                                disabled={set.completed || set.skipped}
+                                                                onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                            />
+                                                            <input
+                                                                type="number"
+                                                                placeholder="0"
+                                                                value={set.rightReps || ''}
+                                                                onChange={(e) => updateSet(ex.id, sIdx, { rightReps: parseInt(e.target.value) || 0 })}
+                                                                style={{
+                                                                    ...styles.newInput,
+                                                                    padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                                    fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                }}
+                                                                disabled={set.completed || set.skipped}
+                                                                onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                            />
+                                                        </>
+                                                    ) : isPerSideTimeExercise ? (
+                                                        <>
+                                                            <input
+                                                                type="number"
+                                                                placeholder="0"
+                                                                value={set.leftDuration || ''}
+                                                                onChange={(e) => updateSet(ex.id, sIdx, { leftDuration: parseInt(e.target.value) || 0 })}
+                                                                style={{
+                                                                    ...styles.newInput,
+                                                                    padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                                    fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                }}
+                                                                disabled={set.completed || set.skipped}
+                                                                onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                            />
+                                                            <input
+                                                                type="number"
+                                                                placeholder="0"
+                                                                value={set.rightDuration || ''}
+                                                                onChange={(e) => updateSet(ex.id, sIdx, { rightDuration: parseInt(e.target.value) || 0 })}
+                                                                style={{
+                                                                    ...styles.newInput,
+                                                                    padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                                    fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                }}
+                                                                disabled={set.completed || set.skipped}
+                                                                onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                            />
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <input
+                                                                type="number"
+                                                                placeholder="0"
+                                                                value={set.reps || ''}
+                                                                onChange={(e) => updateSet(ex.id, sIdx, { reps: parseInt(e.target.value) || 0 })}
+                                                                style={{
+                                                                    ...styles.newInput,
+                                                                    padding: isNarrowMobile ? '6px 2px' : styles.newInput.padding,
+                                                                    fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                }}
+                                                                disabled={set.completed || set.skipped}
+                                                                onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                            />
 
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                                        <input
-                                                            type="number"
-                                                            placeholder="-"
-                                                            value={(() => {
-                                                                const val = set.duration || 0;
-                                                                const unit = durationUnits[`${ex.id}-${sIdx}`] || 's';
-                                                                if (unit === 'm') return parseFloat((val / 60).toFixed(2));
-                                                                if (unit === 'h') return parseFloat((val / 3600).toFixed(2));
-                                                                return val;
-                                                            })() || ''}
-                                                            onChange={(e) => {
-                                                                const val = parseFloat(e.target.value) || 0;
-                                                                const unit = durationUnits[`${ex.id}-${sIdx}`] || 's';
-                                                                let multiplier = 1;
-                                                                if (unit === 'm') multiplier = 60;
-                                                                if (unit === 'h') multiplier = 3600;
-                                                                updateSet(ex.id, sIdx, { duration: Math.round(val * multiplier) });
-                                                            }}
-                                                            style={{
-                                                                ...styles.newInput,
-                                                                padding: isNarrowMobile ? '6px 2px' : '8px 2px',
-                                                                fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
-                                                                minWidth: 0
-                                                            }}
-                                                            disabled={set.completed || set.skipped}
-                                                            onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
-                                                        />
-                                                        <select
-                                                            value={durationUnits[`${ex.id}-${sIdx}`] || 's'}
-                                                            onChange={(e) => setDurationUnits({ ...durationUnits, [`${ex.id}-${sIdx}`]: e.target.value as DurationUnit })}
-                                                            style={{
-                                                                background: 'transparent',
-                                                                border: 'none',
-                                                                color: Colors.textSecondary,
-                                                                fontSize: isNarrowMobile ? '9px' : '10px',
-                                                                padding: 0,
-                                                                cursor: 'pointer',
-                                                                width: isNarrowMobile ? '24px' : '30px'
-                                                            }}
-                                                            disabled={set.completed || set.skipped}
-                                                        >
-                                                            <option value="s">s</option>
-                                                            <option value="m">m</option>
-                                                            <option value="h">h</option>
-                                                        </select>
-                                                    </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    placeholder="-"
+                                                                    value={(() => {
+                                                                        const val = set.duration || 0;
+                                                                        const unit = durationUnits[`${ex.id}-${sIdx}`] || 's';
+                                                                        if (unit === 'm') return parseFloat((val / 60).toFixed(2));
+                                                                        if (unit === 'h') return parseFloat((val / 3600).toFixed(2));
+                                                                        return val;
+                                                                    })() || ''}
+                                                                    onChange={(e) => {
+                                                                        const val = parseFloat(e.target.value) || 0;
+                                                                        const unit = durationUnits[`${ex.id}-${sIdx}`] || 's';
+                                                                        let multiplier = 1;
+                                                                        if (unit === 'm') multiplier = 60;
+                                                                        if (unit === 'h') multiplier = 3600;
+                                                                        updateSet(ex.id, sIdx, { duration: Math.round(val * multiplier) });
+                                                                    }}
+                                                                    style={{
+                                                                        ...styles.newInput,
+                                                                        padding: isNarrowMobile ? '6px 2px' : '8px 2px',
+                                                                        fontSize: isNarrowMobile ? '12px' : styles.newInput.fontSize,
+                                                                        minWidth: 0
+                                                                    }}
+                                                                    disabled={set.completed || set.skipped}
+                                                                    onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                                />
+                                                                <select
+                                                                    value={durationUnits[`${ex.id}-${sIdx}`] || 's'}
+                                                                    onChange={(e) => setDurationUnits({ ...durationUnits, [`${ex.id}-${sIdx}`]: e.target.value as DurationUnit })}
+                                                                    style={{
+                                                                        background: 'transparent',
+                                                                        border: 'none',
+                                                                        color: Colors.textSecondary,
+                                                                        fontSize: isNarrowMobile ? '9px' : '10px',
+                                                                        padding: 0,
+                                                                        cursor: 'pointer',
+                                                                        width: isNarrowMobile ? '24px' : '30px'
+                                                                    }}
+                                                                    disabled={set.completed || set.skipped}
+                                                                >
+                                                                    <option value="s">s</option>
+                                                                    <option value="m">m</option>
+                                                                    <option value="h">h</option>
+                                                                </select>
+                                                            </div>
+                                                        </>
+                                                    )}
 
                                                     <input
                                                         type="number"
@@ -2452,6 +2734,33 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                             </button>
                                                         )}
                                                     </div>
+
+                                                    {usesDistanceTracking(ex) && (
+                                                        <div style={styles.distanceCellRow}>
+                                                            <label style={styles.distanceCellLabel}>Recorrido</label>
+                                                            <div style={styles.distanceCellControls}>
+                                                                <input
+                                                                    type="number"
+                                                                    placeholder="0"
+                                                                    value={set.distanceValue || ''}
+                                                                    onChange={(e) => updateSet(ex.id, sIdx, { distanceValue: parseFloat(e.target.value) || 0 })}
+                                                                    style={{ ...styles.newInput, flex: 1 }}
+                                                                    disabled={set.completed || set.skipped}
+                                                                    onFocus={(e) => { setActiveExerciseId(ex.id); e.target.select(); }}
+                                                                />
+                                                                <select
+                                                                    value={set.distanceUnit || getDistanceUnits(ex)[0]}
+                                                                    onChange={(e) => updateSet(ex.id, sIdx, { distanceUnit: e.target.value as DistanceUnit })}
+                                                                    style={styles.guidedUnitSelect}
+                                                                    disabled={set.completed || set.skipped}
+                                                                >
+                                                                    {getDistanceUnits(ex).map((unit) => (
+                                                                        <option key={unit} value={unit}>{unit}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -2473,7 +2782,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 markExerciseAsCompleted(ex.id, isPartner);
                                                 setIsTimerRunning(false);
                                                 setTimerSeconds(0);
-                                                toast.success('Ejercicio finalizado', { id: 'exercise-manual-finished', duration: 3000 });
                                             }}
                                         >
                                             <Check size={20} />
@@ -3364,6 +3672,7 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'grid',
         gridTemplateColumns: '1fr 1fr 1fr',
         gap: '8px',
+        width: '100%',
     },
     guidedStatChip: {
         background: `${Colors.primary}14`,
@@ -3373,6 +3682,7 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'flex',
         flexDirection: 'column' as const,
         gap: '2px',
+        minWidth: 0,
     },
     guidedStatLabel: {
         fontSize: '10px',
@@ -3388,6 +3698,7 @@ const styles: Record<string, React.CSSProperties> = {
         whiteSpace: 'nowrap' as const,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
+        minWidth: 0,
     },
     guidedHeaderRow: {
         display: 'flex',
@@ -3459,6 +3770,13 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: '10px',
+    },
+    guidedPendingHint: {
+        margin: '8px 0 0 0',
+        color: Colors.warning,
+        fontSize: '12px',
+        fontWeight: 700,
+        lineHeight: 1.4,
     },
     guidedHeader: {
         textAlign: 'center' as const,
@@ -3537,6 +3855,23 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: '8px',
+    },
+    guidedDistanceRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+    },
+    guidedUnitSelect: {
+        minWidth: '78px',
+        borderRadius: '12px',
+        border: `1px solid ${Colors.border}`,
+        background: Colors.surface,
+        color: Colors.text,
+        padding: '0 10px',
+        height: '48px',
+        fontSize: '14px',
+        fontWeight: 700,
+        outline: 'none',
     },
     guidedSecondaryBtn: {
         border: `1px solid ${Colors.border}`,
@@ -3619,6 +3954,7 @@ const styles: Record<string, React.CSSProperties> = {
         gap: '8px',
     },
     guidedExitDangerBtn: {
+        width: '100%',
         border: 'none',
         borderRadius: '12px',
         background: Colors.error,
@@ -3629,6 +3965,7 @@ const styles: Record<string, React.CSSProperties> = {
         cursor: 'pointer',
     },
     guidedExitPrimaryBtn: {
+        width: '100%',
         border: '1px solid ' + Colors.primary + '55',
         borderRadius: '12px',
         background: Colors.primary + '18',
@@ -3637,6 +3974,27 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '14px',
         padding: '12px',
         cursor: 'pointer',
+    },
+    distanceCellRow: {
+        gridColumn: '1 / -1',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '10px',
+        paddingTop: '2px',
+    },
+    distanceCellLabel: {
+        fontSize: '11px',
+        fontWeight: 700,
+        color: Colors.textSecondary,
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.3px',
+    },
+    distanceCellControls: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        flex: 1,
     },
     variantSearchContainer: {
         display: 'flex',

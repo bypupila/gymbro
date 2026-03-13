@@ -19,6 +19,7 @@ import { NivelExperiencia, ObjetivoFitness } from '@/stores/userStore';
 import { LinkRequestsNotifier } from '@/components/LinkRequestsNotifier';
 import { RoutineCopyModal } from '@/components/RoutineCopyModal';
 import { useRenderMetric } from '@/utils/renderMetrics';
+import { requestManualAppUpdate } from '@/services/appUpdateService';
 
 interface FirebaseAuthError {
     code: string;
@@ -69,6 +70,7 @@ export const ProfilePage: React.FC = () => {
     const [showAvatarModal, setShowAvatarModal] = useState(false);
     const [showRoutineCopyModal, setShowRoutineCopyModal] = useState(false);
     const [isSyncingRoutine, setIsSyncingRoutine] = useState(false);
+    const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false);
     const [tempAvatar, setTempAvatar] = useState<string>(userInfo.avatar || '');
 
     // New state for partner linking flow
@@ -221,6 +223,16 @@ export const ProfilePage: React.FC = () => {
 
     const handleAvatarSelect = (seed: string) => {
         setTempAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4`);
+    };
+
+    const handleManualAppUpdate = async () => {
+        if (isCheckingAppUpdate) return;
+        setIsCheckingAppUpdate(true);
+        try {
+            await requestManualAppUpdate();
+        } finally {
+            setIsCheckingAppUpdate(false);
+        }
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -704,7 +716,20 @@ export const ProfilePage: React.FC = () => {
                     </button>
                 ))}
 
-                <button style={{ ...styles.menuItem, marginTop: '20px' }} onClick={handleLogout}>
+                <button
+                    style={{ ...styles.menuItem, marginTop: '20px', opacity: isCheckingAppUpdate ? 0.75 : 1 }}
+                    onClick={handleManualAppUpdate}
+                    disabled={isCheckingAppUpdate}
+                >
+                    <div style={{ ...styles.menuIcon, background: Colors.primary }}>
+                        {isCheckingAppUpdate ? <Loader2 size={20} color="#000" /> : <RefreshCw size={20} color="#000" />}
+                    </div>
+                    <span style={styles.menuText}>
+                        {isCheckingAppUpdate ? 'Buscando actualizacion...' : 'Actualizar app (sin cerrar sesion)'}
+                    </span>
+                </button>
+
+                <button style={{ ...styles.menuItem, marginTop: '8px' }} onClick={handleLogout}>
                     <div style={{ ...styles.menuIcon, background: Colors.textSecondary }}>
                         <LogOut size={20} color="#FFF" />
                     </div>

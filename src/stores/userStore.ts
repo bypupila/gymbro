@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { liveSessionService, GranularLiveUpdate } from '../services/liveSessionService';
 import { firebaseService, type LinkRequest } from '../services/firebaseService';
+import {
+    getExerciseCatalogEntry,
+    type DistanceUnit,
+    type ExerciseTrackingMode,
+} from '../data/exerciseDatabase';
 
 // Types
 export type NivelExperiencia = 'principiante' | 'intermedio' | 'avanzado';
@@ -52,6 +57,8 @@ export interface EjercicioRutina {
     grupoMuscular?: string; // Ej: "pectoral", "espalda", etc.
     imagen?: string;
     isOptional?: boolean;
+    trackingMode?: ExerciseTrackingMode;
+    distanceUnitOptions?: DistanceUnit[];
 }
 
 export interface RutinaUsuario {
@@ -101,6 +108,12 @@ export interface ExerciseSetDetail {
     skipped: boolean;
     rest?: number;
     duration?: number;
+    distanceValue?: number;
+    distanceUnit?: DistanceUnit;
+    leftReps?: number;
+    rightReps?: number;
+    leftDuration?: number;
+    rightDuration?: number;
 }
 
 export interface ExerciseWorkoutDetail {
@@ -113,6 +126,8 @@ export interface ExerciseWorkoutDetail {
     isReplaced?: boolean;
     replacedFromName?: string;
     replacementScope?: ExerciseReplacementScope;
+    trackingMode?: ExerciseTrackingMode;
+    exerciseElapsedSeconds?: number;
     sets: ExerciseSetDetail[];
 }
 
@@ -260,6 +275,29 @@ const parseTargetReps = (value: string): number => {
     return parsed;
 };
 
+const hasExplicitTimeTarget = (value: string): boolean => {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+    return /(\d+):(\d+)(?::(\d+))?/.test(normalized)
+        || /(\d+)\s*(minutos?|min|m\b)/i.test(normalized)
+        || /(\d+)\s*(segundos?|seg|s|'|")/i.test(normalized);
+};
+
+const resolveExerciseTrackingMode = (exercise: Pick<EjercicioRutina, 'id' | 'nombre' | 'repeticiones' | 'trackingMode'>): ExerciseTrackingMode => {
+    const catalogEntry = getExerciseCatalogEntry(exercise);
+    const baseMode = exercise.trackingMode || catalogEntry?.trackingMode || 'standard';
+
+    if (baseMode === 'per_side_reps' && hasExplicitTimeTarget(exercise.repeticiones || '')) {
+        return 'per_side_time';
+    }
+
+    return baseMode;
+};
+
+const resolveDistanceUnitOptions = (exercise: Pick<EjercicioRutina, 'id' | 'nombre' | 'distanceUnitOptions'>): DistanceUnit[] | undefined => {
+    return exercise.distanceUnitOptions || getExerciseCatalogEntry(exercise)?.distanceUnitOptions;
+};
+
 const estimateQuickWorkoutDurationMinutes = (exercises: EjercicioRutina[]): number => {
     const totalSets = exercises.reduce((acc, exercise) => {
         const safeSeries = Number.isFinite(exercise.series) ? exercise.series : 0;
@@ -276,6 +314,12 @@ export interface SetTracking {
     startTime?: number; // timestamp
     duration?: number; // seconds
     rest?: number; // seconds
+    distanceValue?: number;
+    distanceUnit?: DistanceUnit;
+    leftReps?: number;
+    rightReps?: number;
+    leftDuration?: number;
+    rightDuration?: number;
 }
 
 export interface ExerciseTracking {
@@ -286,6 +330,9 @@ export interface ExerciseTracking {
     sets: SetTracking[];
     categoria?: 'calentamiento' | 'maquina'; // For separating warmup from main exercises
     imagen?: string;
+    trackingMode?: ExerciseTrackingMode;
+    distanceUnitOptions?: DistanceUnit[];
+    exerciseElapsedSeconds?: number;
     isCompleted?: boolean;
     isOptional?: boolean;
     isSkipped?: boolean;
@@ -370,6 +417,7 @@ interface UserStore {
     getEntrenamientoHoy: () => { entrena: boolean; grupoMuscular: GrupoMuscular; hora: string; dia: string };
     startSession: (dayName: string, exercises: EjercicioRutina[], routineName: string, sessionMode?: 'solo' | 'shared' | 'linked', preWorkoutMood?: number, preWorkoutEnergy?: number, preWorkoutNote?: string, selectedPartner?: PartnerInfo, trackingDate?: string, liveSessionId?: string) => void;
     updateSet: (exerciseId: string, setIndex: number, fields: Partial<SetTracking>, isPartner?: boolean) => void;
+    setExerciseElapsedSeconds: (exerciseId: string, elapsedSeconds: number, isPartner?: boolean) => void;
     skipSet: (exerciseId: string, setIndex: number, isPartner?: boolean) => void;
     replaceExerciseInSession: (
         oldExerciseId: string,
@@ -787,6 +835,8 @@ export const useUserStore = create<UserStore>()(
                 const isDual = mode === 'shared' || mode === 'linked';
 
                 const createExerciseTracking = (ex: EjercicioRutina): ExerciseTracking => ({
+                    trackingMode: resolveExerciseTrackingMode(ex),
+                    distanceUnitOptions: resolveDistanceUnitOptions(ex),
                     id: ex.id,
                     nombre: ex.nombre,
                     targetSeries: ex.series,
@@ -803,7 +853,13 @@ export const useUserStore = create<UserStore>()(
                         weight: 0,
                         reps: parseInt(ex.repeticiones) || 10,
                         duration: ex.segundos || 0,
-                        rest: ex.descanso || 60
+                        rest: ex.descanso || 60,
+                        distanceValue: 0,
+                        distanceUnit: resolveDistanceUnitOptions(ex)?.[0],
+                        leftReps: 0,
+                        rightReps: 0,
+                        leftDuration: 0,
+                        rightDuration: 0,
                     }))
                 });
 
@@ -840,9 +896,25 @@ export const useUserStore = create<UserStore>()(
 
                 const newExercises = targetArray.map(ex => {
                     if (ex.id !== exerciseId) return ex;
-                    const newSets = [...ex.sets];
+                    let newSets = [...ex.sets];
                     if (newSets[setIndex]) {
-                        newSets[setIndex] = { ...newSets[setIndex], ...fields };
+                        const updatedSet = { ...newSets[setIndex], ...fields };
+                        newSets[setIndex] = updatedSet;
+
+                        const shouldPropagateWeight = !isPartner
+                            && typeof fields.weight === 'number'
+                            && fields.weight > 0
+                            && ex.categoria !== 'calentamiento'
+                            && !ex.isExtraAdded;
+
+                        if (shouldPropagateWeight) {
+                            newSets = newSets.map((set, index) => {
+                                if (index === setIndex) return updatedSet;
+                                if (set.completed || set.skipped) return set;
+                                if ((set.weight || 0) > 0) return set;
+                                return { ...set, weight: fields.weight as number };
+                            });
+                        }
                     }
                     return { ...ex, sets: newSets };
                 });
@@ -870,6 +942,34 @@ export const useUserStore = create<UserStore>()(
                         console.error("Failed to send granular SET_UPDATE to liveSessionService:", e);
                     });
                 }
+            },
+
+            setExerciseElapsedSeconds: (exerciseId, elapsedSeconds, isPartner = false) => {
+                set((state) => {
+                    if (!state.activeSession) return state;
+
+                    const updateExercise = (exercise: ExerciseTracking) => (
+                        exercise.id === exerciseId
+                            ? { ...exercise, exerciseElapsedSeconds: elapsedSeconds }
+                            : exercise
+                    );
+
+                    if (isPartner && state.activeSession.partnerExercises) {
+                        return {
+                            activeSession: {
+                                ...state.activeSession,
+                                partnerExercises: state.activeSession.partnerExercises.map(updateExercise),
+                            }
+                        };
+                    }
+
+                    return {
+                        activeSession: {
+                            ...state.activeSession,
+                            exercises: state.activeSession.exercises.map(updateExercise),
+                        }
+                    };
+                });
             },
 
             skipSet: (exerciseId, setIndex, isPartner = false) => {
@@ -923,6 +1023,8 @@ export const useUserStore = create<UserStore>()(
                         nombre: newExercise.nombre,
                         targetSeries: newExercise.series,
                         targetReps: newExercise.repeticiones,
+                        trackingMode: resolveExerciseTrackingMode(newExercise),
+                        distanceUnitOptions: resolveDistanceUnitOptions(newExercise),
                         categoria: newExercise.categoria,
                         imagen: newExercise.imagen,
                         isCompleted: false,
@@ -936,7 +1038,13 @@ export const useUserStore = create<UserStore>()(
                             weight: 0,
                             reps: parseInt(newExercise.repeticiones) || 10,
                             duration: newExercise.segundos || 0,
-                            rest: newExercise.descanso || 60
+                            rest: newExercise.descanso || 60,
+                            distanceValue: 0,
+                            distanceUnit: resolveDistanceUnitOptions(newExercise)?.[0],
+                            leftReps: 0,
+                            rightReps: 0,
+                            leftDuration: 0,
+                            rightDuration: 0,
                         }))
                     };
                 });
@@ -951,6 +1059,8 @@ export const useUserStore = create<UserStore>()(
                     nombre: newExercise.nombre,
                     targetSeries: newExercise.series,
                     targetReps: newExercise.repeticiones,
+                    trackingMode: resolveExerciseTrackingMode(newExercise),
+                    distanceUnitOptions: resolveDistanceUnitOptions(newExercise),
                     categoria: newExercise.categoria,
                     imagen: newExercise.imagen,
                     isCompleted: false,
@@ -961,7 +1071,13 @@ export const useUserStore = create<UserStore>()(
                         weight: 0,
                         reps: parseInt(newExercise.repeticiones) || 10,
                         duration: newExercise.segundos || 0,
-                        rest: newExercise.descanso || 60
+                        rest: newExercise.descanso || 60,
+                        distanceValue: 0,
+                        distanceUnit: resolveDistanceUnitOptions(newExercise)?.[0],
+                        leftReps: 0,
+                        rightReps: 0,
+                        leftDuration: 0,
+                        rightDuration: 0,
                     }))
                 };
 
@@ -1097,7 +1213,16 @@ export const useUserStore = create<UserStore>()(
                     ejercicios: trackedExercises.map(ex => ({
                         nombre: ex.nombre,
                         sets: ex.sets
-                            .filter(s => s.completed || (s.weight > 0 || s.reps > 0))
+                            .filter((s) => (
+                                s.completed
+                                || s.weight > 0
+                                || s.reps > 0
+                                || (s.distanceValue || 0) > 0
+                                || (s.leftReps || 0) > 0
+                                || (s.rightReps || 0) > 0
+                                || (s.leftDuration || 0) > 0
+                                || (s.rightDuration || 0) > 0
+                            ))
                             .map((s, i) => ({
                                 numero: i + 1,
                                 reps: s.reps,
@@ -1107,7 +1232,15 @@ export const useUserStore = create<UserStore>()(
                     exerciseDetails: trackedExercises.map((ex) => {
                         const allSetsDone = ex.sets.every((set) => set.completed || set.skipped);
                         const hasAnyProgress = ex.sets.some((set) =>
-                            set.completed || set.skipped || set.reps > 0 || set.weight > 0
+                            set.completed
+                            || set.skipped
+                            || set.reps > 0
+                            || set.weight > 0
+                            || (set.distanceValue || 0) > 0
+                            || (set.leftReps || 0) > 0
+                            || (set.rightReps || 0) > 0
+                            || (set.leftDuration || 0) > 0
+                            || (set.rightDuration || 0) > 0
                         );
                         const isCompleted = Boolean(ex.isCompleted || allSetsDone);
 
@@ -1120,6 +1253,8 @@ export const useUserStore = create<UserStore>()(
                             isReplaced: ex.isReplaced,
                             replacedFromName: ex.replacedFromName,
                             replacementScope: ex.replacementScope,
+                            trackingMode: ex.trackingMode,
+                            exerciseElapsedSeconds: ex.exerciseElapsedSeconds,
                             sets: ex.sets.map((set, index) => ({
                                 numero: index + 1,
                                 reps: set.reps || 0,
@@ -1128,6 +1263,12 @@ export const useUserStore = create<UserStore>()(
                                 skipped: Boolean(set.skipped),
                                 rest: set.rest,
                                 duration: set.duration,
+                                distanceValue: set.distanceValue,
+                                distanceUnit: set.distanceUnit,
+                                leftReps: set.leftReps,
+                                rightReps: set.rightReps,
+                                leftDuration: set.leftDuration,
+                                rightDuration: set.rightDuration,
                             })),
                             completionStatus: isCompleted ? 'completed' : hasAnyProgress ? 'partial' : 'not_done',
                         };

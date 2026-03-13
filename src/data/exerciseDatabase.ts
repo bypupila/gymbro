@@ -18,6 +18,9 @@ export type GrupoMuscularEjercicio =
     | 'piernas'
     | 'gluteos';
 
+export type DistanceUnit = 'm' | 'km';
+export type ExerciseTrackingMode = 'standard' | 'distance' | 'per_side_reps' | 'per_side_time';
+
 export interface EjercicioBase {
     id: string;
     nombre: string;
@@ -28,6 +31,8 @@ export interface EjercicioBase {
     descripcion?: string;
     videoUrl?: string;
     imagen?: string;
+    trackingMode?: ExerciseTrackingMode;
+    distanceUnitOptions?: DistanceUnit[];
 }
 
 // =====================================================
@@ -35,11 +40,11 @@ export interface EjercicioBase {
 // =====================================================
 
 const ejerciciosCardio: EjercicioBase[] = [
-    { id: 'cardio-001', nombre: 'Cinta', grupoMuscular: 'cardio', esCompuesto: false },
-    { id: 'cardio-002', nombre: 'Eliptico', grupoMuscular: 'cardio', esCompuesto: false },
-    { id: 'cardio-003', nombre: 'Bicicleta', grupoMuscular: 'cardio', esCompuesto: false },
-    { id: 'cardio-004', nombre: 'Spinning', grupoMuscular: 'cardio', esCompuesto: false },
-    { id: 'cardio-005', nombre: 'Remo', grupoMuscular: 'cardio', esCompuesto: true },
+    { id: 'cardio-001', nombre: 'Cinta', grupoMuscular: 'cardio', esCompuesto: false, trackingMode: 'distance', distanceUnitOptions: ['m', 'km'] },
+    { id: 'cardio-002', nombre: 'Eliptico', grupoMuscular: 'cardio', esCompuesto: false, trackingMode: 'distance', distanceUnitOptions: ['m', 'km'] },
+    { id: 'cardio-003', nombre: 'Bicicleta', grupoMuscular: 'cardio', esCompuesto: false, trackingMode: 'distance', distanceUnitOptions: ['m', 'km'] },
+    { id: 'cardio-004', nombre: 'Spinning', grupoMuscular: 'cardio', esCompuesto: false, trackingMode: 'distance', distanceUnitOptions: ['m', 'km'] },
+    { id: 'cardio-005', nombre: 'Remo', grupoMuscular: 'cardio', esCompuesto: true, trackingMode: 'distance', distanceUnitOptions: ['m', 'km'] },
 ];
 
 // =====================================================
@@ -71,9 +76,9 @@ const ejerciciosAbdominales: EjercicioBase[] = [
 // =====================================================
 
 const ejerciciosOblicuos: EjercicioBase[] = [
-    { id: 'obl-001', nombre: 'Oblicuos en Colchoneta', grupoMuscular: 'oblicuos', equipamiento: 'Colchoneta', esCompuesto: false },
-    { id: 'obl-002', nombre: 'Oblicuos en Banco', grupoMuscular: 'oblicuos', equipamiento: 'Banco', esCompuesto: false },
-    { id: 'obl-003', nombre: 'Plancha Lateral', grupoMuscular: 'oblicuos', equipamiento: 'Colchoneta', esCompuesto: true },
+    { id: 'obl-001', nombre: 'Oblicuos en Colchoneta', grupoMuscular: 'oblicuos', equipamiento: 'Colchoneta', esCompuesto: false, trackingMode: 'per_side_reps' },
+    { id: 'obl-002', nombre: 'Oblicuos en Banco', grupoMuscular: 'oblicuos', equipamiento: 'Banco', esCompuesto: false, trackingMode: 'per_side_reps' },
+    { id: 'obl-003', nombre: 'Plancha Lateral', grupoMuscular: 'oblicuos', equipamiento: 'Colchoneta', esCompuesto: true, trackingMode: 'per_side_reps' },
     { id: 'obl-004', nombre: 'Oblicuos Cruzados', grupoMuscular: 'oblicuos', equipamiento: 'Colchoneta', esCompuesto: false },
 ];
 
@@ -114,8 +119,8 @@ const ejerciciosEspalda: EjercicioBase[] = [
     { id: 'esp-109', nombre: 'Remo con Barra', grupoMuscular: 'espalda', equipamiento: 'Barra', esCompuesto: true },
     { id: 'esp-110', nombre: 'Remo en Polea', grupoMuscular: 'espalda', equipamiento: 'Polea', esCompuesto: true },
     { id: 'esp-111', nombre: 'Dominadas', grupoMuscular: 'espalda', equipamiento: 'Barra fija', esCompuesto: true },
-    { id: 'esp-112', nombre: 'Remo a un Brazo con Mancuerna', grupoMuscular: 'espalda', equipamiento: 'Mancuerna', esCompuesto: true },
-    { id: 'esp-113', nombre: 'Remo a un Brazo en Polea', grupoMuscular: 'espalda', equipamiento: 'Polea', esCompuesto: true },
+    { id: 'esp-112', nombre: 'Remo a un Brazo con Mancuerna', grupoMuscular: 'espalda', equipamiento: 'Mancuerna', esCompuesto: true, trackingMode: 'per_side_reps' },
+    { id: 'esp-113', nombre: 'Remo a un Brazo en Polea', grupoMuscular: 'espalda', equipamiento: 'Polea', esCompuesto: true, trackingMode: 'per_side_reps' },
 ];
 
 // =====================================================
@@ -157,11 +162,11 @@ const ejerciciosBiceps: EjercicioBase[] = [
     { id: 'bic-001', nombre: 'Arm Curl (Biceps en Maquina)', grupoMuscular: 'biceps', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'bic-002', nombre: 'Curl con Mancuernas', grupoMuscular: 'biceps', equipamiento: 'Mancuernas', esCompuesto: false },
     { id: 'bic-003', nombre: 'Curl en Polea', grupoMuscular: 'biceps', equipamiento: 'Polea', esCompuesto: false },
-    { id: 'bic-004', nombre: 'Curl Alternado', grupoMuscular: 'biceps', equipamiento: 'Mancuernas', esCompuesto: false },
+    { id: 'bic-004', nombre: 'Curl Alternado', grupoMuscular: 'biceps', equipamiento: 'Mancuernas', esCompuesto: false, trackingMode: 'per_side_reps' },
     { id: 'bic-005', nombre: 'Curl 21', grupoMuscular: 'biceps', equipamiento: 'Barra/Mancuernas', esCompuesto: false },
     { id: 'bic-006', nombre: 'Curl Parado con Barra', grupoMuscular: 'biceps', equipamiento: 'Barra', esCompuesto: false },
     { id: 'bic-007', nombre: 'Banco Scott', grupoMuscular: 'biceps', equipamiento: 'Banco Scott', esCompuesto: false },
-    { id: 'bic-008', nombre: 'Curl Concentrado', grupoMuscular: 'biceps', equipamiento: 'Mancuerna', esCompuesto: false },
+    { id: 'bic-008', nombre: 'Curl Concentrado', grupoMuscular: 'biceps', equipamiento: 'Mancuerna', esCompuesto: false, trackingMode: 'per_side_reps' },
 ];
 
 // =====================================================
@@ -177,9 +182,9 @@ const ejerciciosTriceps: EjercicioBase[] = [
     { id: 'tri-006', nombre: 'Press Cerrado con Smith', grupoMuscular: 'triceps', equipamiento: 'Smith', esCompuesto: true },
     { id: 'tri-007', nombre: 'Fondos en Banco', grupoMuscular: 'triceps', equipamiento: 'Banco', esCompuesto: true },
     { id: 'tri-008', nombre: 'Fondos en Paralelas', grupoMuscular: 'triceps', equipamiento: 'Paralelas', esCompuesto: true },
-    { id: 'tri-009', nombre: 'Triceps Concentrado con Mancuerna', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false },
-    { id: 'tri-010', nombre: 'Triceps Concentrado en Polea', grupoMuscular: 'triceps', equipamiento: 'Polea', esCompuesto: false },
-    { id: 'tri-011', nombre: 'Patada de Triceps', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false },
+    { id: 'tri-009', nombre: 'Triceps Concentrado con Mancuerna', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false, trackingMode: 'per_side_reps' },
+    { id: 'tri-010', nombre: 'Triceps Concentrado en Polea', grupoMuscular: 'triceps', equipamiento: 'Polea', esCompuesto: false, trackingMode: 'per_side_reps' },
+    { id: 'tri-011', nombre: 'Patada de Triceps', grupoMuscular: 'triceps', equipamiento: 'Mancuerna', esCompuesto: false, trackingMode: 'per_side_reps' },
 ];
 
 // =====================================================
@@ -194,7 +199,7 @@ const ejerciciosPiernas: EjercicioBase[] = [
     { id: 'pier-005', nombre: 'Gemelos', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'pier-006', nombre: 'Maquina Aductores', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
     { id: 'pier-007', nombre: 'Maquina Abductores', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
-    { id: 'pier-008', nombre: 'Multi-Hip', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false },
+    { id: 'pier-008', nombre: 'Multi-Hip', grupoMuscular: 'piernas', equipamiento: 'Maquina', esCompuesto: false, trackingMode: 'per_side_reps' },
     { id: 'pier-009', nombre: 'Sentadilla Sissy', grupoMuscular: 'piernas', equipamiento: 'Maquina Sissy', esCompuesto: true },
     { id: 'pier-010', nombre: 'Sentadilla con Barra', grupoMuscular: 'piernas', equipamiento: 'Barra', esCompuesto: true },
     { id: 'pier-011', nombre: 'Sentadilla con Smith', grupoMuscular: 'piernas', equipamiento: 'Smith', esCompuesto: true },
@@ -207,7 +212,7 @@ const ejerciciosGluteos: EjercicioBase[] = [
     { id: 'glut-001', nombre: 'Hip Thrust con Barra', grupoMuscular: 'gluteos', equipamiento: 'Barra/Banco', esCompuesto: true },
     { id: 'glut-002', nombre: 'Hip Thrust con Smith', grupoMuscular: 'gluteos', equipamiento: 'Smith/Banco', esCompuesto: true },
     { id: 'glut-003', nombre: 'Hip Thrust en Colchoneta', grupoMuscular: 'gluteos', equipamiento: 'Colchoneta', esCompuesto: true },
-    { id: 'glut-004', nombre: 'Gluteos en Polea', grupoMuscular: 'gluteos', equipamiento: 'Polea', esCompuesto: false },
+    { id: 'glut-004', nombre: 'Gluteos en Polea', grupoMuscular: 'gluteos', equipamiento: 'Polea', esCompuesto: false, trackingMode: 'per_side_reps' },
 ];
 
 // =====================================================
@@ -237,10 +242,10 @@ export const EJERCICIOS_DATABASE: EjercicioBase[] = [
     ...ejerciciosTriceps,
     ...ejerciciosPiernas,
     // Add Leg Exercises
-    { id: 'pier-201', nombre: 'Estocadas con Mancuernas', grupoMuscular: 'piernas', equipamiento: 'Mancuernas', esCompuesto: true },
-    { id: 'pier-202', nombre: 'Estocadas Caminando', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Sin equipo', esCompuesto: true },
-    { id: 'pier-203', nombre: 'Sentadilla Bulgara', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Banco', esCompuesto: true },
-    { id: 'pier-204', nombre: 'Subida al Cajon (Step Up)', grupoMuscular: 'piernas', equipamiento: 'Cajon/Mancuernas', esCompuesto: true },
+    { id: 'pier-201', nombre: 'Estocadas con Mancuernas', grupoMuscular: 'piernas', equipamiento: 'Mancuernas', esCompuesto: true, trackingMode: 'per_side_reps' },
+    { id: 'pier-202', nombre: 'Estocadas Caminando', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Sin equipo', esCompuesto: true, trackingMode: 'per_side_reps' },
+    { id: 'pier-203', nombre: 'Sentadilla Bulgara', grupoMuscular: 'piernas', equipamiento: 'Mancuernas/Banco', esCompuesto: true, trackingMode: 'per_side_reps' },
+    { id: 'pier-204', nombre: 'Subida al Cajon (Step Up)', grupoMuscular: 'piernas', equipamiento: 'Cajon/Mancuernas', esCompuesto: true, trackingMode: 'per_side_reps' },
 
     ...ejerciciosGluteos,
 ];
@@ -273,6 +278,14 @@ export const buscarEjercicios = (query: string): EjercicioBase[] => {
         ej.nombre.toLowerCase().includes(lowerQuery) ||
         ej.equipamiento?.toLowerCase().includes(lowerQuery) ||
         ej.descripcion?.toLowerCase().includes(lowerQuery)
+    );
+};
+
+export const getExerciseCatalogEntry = (exercise: { id?: string; nombre?: string } | null | undefined): EjercicioBase | undefined => {
+    if (!exercise) return undefined;
+    return EJERCICIOS_DATABASE.find((item) =>
+        (exercise.id && item.id === exercise.id) ||
+        (exercise.nombre && item.nombre.toLowerCase() === exercise.nombre.toLowerCase())
     );
 };
 
