@@ -1761,13 +1761,13 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                     const showWorkPaused = workHasTimer && guidedWorkTimerStarted && !isTimerRunning;
                     const showCircularTimer = isRestPhase || (isWorkPhase && workHasTimer && (isTimerRunning || showWorkPaused));
                     const showTimerPausedControls = showCircularTimer && !isTimerRunning;
-                    const shouldShowGuidedSummary = ex.categoria === 'calentamiento' || hasGuidedWorkTimer(ex, guidedMode.setIndex);
+
                     const seriesIndicator = `${guidedMode.setIndex + 1}/${ex.sets.length}`;
                     const canGoPrev = guidedMode.stepIndex > 0;
                     const canGoNext = guidedMode.stepIndex < guidedMode.sequence.length - 1;
                     const canCompleteGuidedStep = isRestPhase || hasGuidedCompletionInputs(ex, guidedMode.setIndex);
                     const currentExerciseElapsed = getGuidedExerciseElapsed(ex);
-                    const showDistanceInput = isWorkPhase && usesDistanceTracking(ex);
+
                     const showPerSideRepsInputs = isWorkPhase && usesPerSideReps(ex);
                     const showPerSideTimeInputs = isWorkPhase && usesPerSideTime(ex);
 
