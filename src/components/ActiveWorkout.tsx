@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useUserStore, ExerciseTracking, ExtraActivity } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import {
@@ -19,7 +19,9 @@ import {
     Shuffle,
     Search,
     Info,
-    Activity
+    Activity,
+    Music,
+    Zap
 } from 'lucide-react';
 import { Card } from './Card';
 import {
@@ -432,6 +434,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
         setGuidedPendingCompletion('none');
         setGuidedWarmupStartedAt(exercise.categoria === 'calentamiento' ? Date.now() : null);
         setGuidedExerciseStartedAt(exercise.categoria === 'calentamiento' ? null : Date.now());
+        timerAlertService.warmUp();
         toast.success(`Entrenamiento iniciado`, { id: 'exercise-started', duration: 3000 });
     };
 
@@ -914,9 +917,32 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                 >
                     <X size={24} color={Colors.textSecondary} />
                 </button>
-                <div style={styles.timerBadge}>
-                    <Clock size={14} color={Colors.primary} />
-                    <span>{formatTime(sessionElapsedSeconds)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                        onClick={() => {
+                            const isIos = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                            window.open(isIos ? 'spotify://' : 'https://open.spotify.com', '_blank');
+                        }}
+                        style={{
+                            background: '#1DB954',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                        }}
+                        title="Abrir Spotify"
+                    >
+                        <Music size={14} color="#fff" />
+                    </button>
+                    <div style={styles.timerBadge}>
+                        <Clock size={14} color={Colors.primary} />
+                        <span>{formatTime(sessionElapsedSeconds)}</span>
+                    </div>
                 </div>
                 <button
                     onClick={() => {
@@ -1755,16 +1781,20 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                             >
                                 <div style={styles.guidedStatsRow}>
                                     <div style={styles.guidedStatChip}>
-                                        <span style={styles.guidedStatLabel}>Tiempo total</span>
+                                        <span style={styles.guidedStatLabel}>Total</span>
                                         <strong style={styles.guidedStatValue}>{formatTime(sessionElapsedSeconds)}</strong>
                                     </div>
                                     <div style={styles.guidedStatChip}>
-                                        <span style={styles.guidedStatLabel}>Tiempo del ejercicio</span>
+                                        <span style={styles.guidedStatLabel}>Ejercicio</span>
                                         <strong style={styles.guidedStatValue}>{formatTime(currentExerciseElapsed)}</strong>
                                     </div>
                                     <div style={styles.guidedStatChip}>
                                         <span style={styles.guidedStatLabel}>Serie</span>
                                         <strong style={styles.guidedStatValue}>{seriesIndicator}</strong>
+                                    </div>
+                                    <div style={styles.guidedStatChip}>
+                                        <span style={styles.guidedStatLabel}>Reps</span>
+                                        <strong style={styles.guidedStatValue}>{ex.targetReps}</strong>
                                     </div>
                                 </div>
                                 <div style={styles.guidedHeaderRow}>
@@ -1810,22 +1840,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     )}
                                 </button>
 
-                                {shouldShowGuidedSummary && (
-                                    <div style={styles.guidedSummaryCard}>
-                                        <div style={styles.guidedSummaryRow}>
-                                            <span style={styles.guidedSummaryLabel}>Series objetivo</span>
-                                            <strong>{ex.targetSeries}</strong>
-                                        </div>
-                                        <div style={styles.guidedSummaryRow}>
-                                            <span style={styles.guidedSummaryLabel}>Reps objetivo</span>
-                                            <strong>{ex.targetReps}</strong>
-                                        </div>
-                                        <div style={styles.guidedSummaryRow}>
-                                            <span style={styles.guidedSummaryLabel}>Descanso</span>
-                                            <strong>{currentSet?.rest || 30}s</strong>
-                                        </div>
-                                    </div>
-                                )}
+
 
                                 {showWorkStart && (
                                     <button
@@ -1877,14 +1892,56 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                     </>
                                 )}
 
-                                {guidedMode.phase === 'work' && currentSet && (
+                                {/* Completion / Undo button — above inputs */}
+                                {currentSet && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                        {currentSet.completed ? (
+                                            <button
+                                                onClick={() => updateSet(ex.id, guidedMode.setIndex, { completed: false, skipped: false })}
+                                                style={{
+                                                    ...styles.guidedActionBtn,
+                                                    background: Colors.surfaceLight,
+                                                    border: `2px solid ${Colors.success}`,
+                                                    color: Colors.success,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '8px',
+                                                }}
+                                            >
+                                                <RotateCcw size={20} /> Deshacer completado
+                                            </button>
+                                        ) : isWorkPhase ? (
+                                            <button
+                                                onClick={handleGuidedNext}
+                                                style={{
+                                                    ...styles.guidedActionBtn,
+                                                    background: Colors.primary,
+                                                    opacity: canCompleteGuidedStep ? 1 : 0.55,
+                                                    cursor: canCompleteGuidedStep ? 'pointer' : 'not-allowed'
+                                                }}
+                                                disabled={!canCompleteGuidedStep}
+                                            >
+                                                <Check size={24} /> Completado
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleGuidedNext}
+                                                style={{
+                                                    ...styles.guidedActionBtn,
+                                                    background: Colors.success,
+                                                }}
+                                            >
+                                                <Play size={24} /> Saltar descanso
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {currentSet && (
                                     <div style={{
                                         ...styles.guidedSetInputGrid,
-                                        gridTemplateColumns: isNarrowMobile
-                                            ? '1fr'
-                                            : showPerSideRepsInputs || showPerSideTimeInputs
-                                                ? '1fr 1fr 1fr'
-                                                : '1fr 1fr'
+                                        gridTemplateColumns: '1fr',
                                     }}>
                                         <div>
                                             <label style={styles.inputLabel}>Peso (kg)</label>
@@ -1894,6 +1951,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                 onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { weight: parseFloat(e.target.value) || 0 })}
                                                 placeholder="0"
                                                 style={styles.searchInput}
+                                                onFocus={(e) => e.target.select()}
                                             />
                                         </div>
                                         {showPerSideRepsInputs ? (
@@ -1906,6 +1964,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { leftReps: parseInt(e.target.value) || 0 })}
                                                         placeholder="0"
                                                         style={styles.searchInput}
+                                                        onFocus={(e) => e.target.select()}
                                                     />
                                                 </div>
                                                 <div>
@@ -1916,6 +1975,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { rightReps: parseInt(e.target.value) || 0 })}
                                                         placeholder="0"
                                                         style={styles.searchInput}
+                                                        onFocus={(e) => e.target.select()}
                                                     />
                                                 </div>
                                             </>
@@ -1929,6 +1989,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { leftDuration: parseInt(e.target.value) || 0 })}
                                                         placeholder="0"
                                                         style={styles.searchInput}
+                                                        onFocus={(e) => e.target.select()}
                                                     />
                                                 </div>
                                                 <div>
@@ -1939,6 +2000,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { rightDuration: parseInt(e.target.value) || 0 })}
                                                         placeholder="0"
                                                         style={styles.searchInput}
+                                                        onFocus={(e) => e.target.select()}
                                                     />
                                                 </div>
                                             </>
@@ -1951,11 +2013,12 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                     onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { reps: parseInt(e.target.value) || 0 })}
                                                     placeholder="0"
                                                     style={styles.searchInput}
+                                                    onFocus={(e) => e.target.select()}
                                                 />
                                             </div>
                                         )}
-                                        {showDistanceInput && (
-                                            <div style={{ gridColumn: isNarrowMobile ? 'auto' : '1 / -1' }}>
+                                        {usesDistanceTracking(ex) && (
+                                            <div>
                                                 <label style={styles.inputLabel}>Recorrido</label>
                                                 <div style={styles.guidedDistanceRow}>
                                                     <input
@@ -1964,6 +2027,7 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                                         onChange={(e) => updateSet(ex.id, guidedMode.setIndex, { distanceValue: parseFloat(e.target.value) || 0 })}
                                                         placeholder="0"
                                                         style={{ ...styles.searchInput, flex: 1 }}
+                                                        onFocus={(e) => e.target.select()}
                                                     />
                                                     <select
                                                         value={currentSet.distanceUnit || getDistanceUnits(ex)[0]}
@@ -1981,26 +2045,6 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 )}
 
                                 <div style={styles.guidedActions}>
-                                    <button
-                                        onClick={handleGuidedNext}
-                                        style={{
-                                            ...styles.guidedActionBtn,
-                                            background: guidedMode.phase === 'work' ? Colors.primary : Colors.success,
-                                            opacity: canCompleteGuidedStep ? 1 : 0.55,
-                                            cursor: canCompleteGuidedStep ? 'pointer' : 'not-allowed'
-                                        }}
-                                        disabled={!canCompleteGuidedStep}
-                                    >
-                                        {guidedMode.phase === 'work' ? (
-                                            <>
-                                                <Check size={24} /> Completado
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Play size={24} /> Saltar descanso
-                                            </>
-                                        )}
-                                    </button>
 
                                     <div style={styles.guidedNavRow}>
                                         <button
@@ -2439,16 +2483,35 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ onFinish, onCancel
                                 {/* Start Exercise Button or Timer Display */}
                                 {activeExerciseId !== ex.id ? (
                                     <div style={styles.guidedInlineStartContainer}>
-                                        <button
-                                            style={styles.guidedInlineStartBtn}
-                                            onClick={() => handleStartExercise(ex.id)}
-                                        >
-                                            <Play size={16} color={Colors.background} />
-                                            <span>Modo guiado</span>
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                                            <button
+                                                style={{ ...styles.guidedInlineStartBtn, flex: 1 }}
+                                                onClick={() => handleStartExercise(ex.id)}
+                                            >
+                                                <Zap size={16} color={Colors.background} />
+                                                <span>Guiado</span>
+                                            </button>
+                                            <button
+                                                style={{
+                                                    ...styles.guidedInlineStartBtn,
+                                                    flex: 1,
+                                                    background: Colors.surfaceLight,
+                                                    color: Colors.text,
+                                                    border: `1px solid ${Colors.border}`,
+                                                }}
+                                                onClick={() => {
+                                                    setActiveExerciseId(ex.id);
+                                                    timerAlertService.warmUp();
+                                                    toast.success('Modo rápido activado', { id: 'quick-mode', duration: 2000 });
+                                                }}
+                                            >
+                                                <Play size={16} color={Colors.text} />
+                                                <span>Rápido</span>
+                                            </button>
+                                        </div>
                                         <div style={styles.quickModeHint}>
                                             <Info size={14} />
-                                            <span>Modo rápido no cronometra automáticamente el tiempo por ejercicio; modo guiado sí.</span>
+                                            <span>Guiado: te guía serie por serie con temporizador. Rápido: rellenas a tu ritmo.</span>
                                         </div>
                                     </div>
                                 ) : isTimeBased(ex.targetReps) && isTimerRunning && activeExerciseId === ex.id ? (

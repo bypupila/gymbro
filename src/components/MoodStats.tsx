@@ -2,7 +2,7 @@ import React from 'react';
 import { useUserStore } from '@/stores/userStore';
 import Colors from '@/styles/colors';
 import { Card } from './Card';
-import { Zap, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Zap, TrendingUp, Battery, ArrowRight, Flame } from 'lucide-react';
 
 export const MoodStats: React.FC = () => {
     const perfil = useUserStore((state) => state.perfil);
@@ -19,66 +19,81 @@ export const MoodStats: React.FC = () => {
     const avgPre = sessionsWithMood.reduce((acc, curr) => acc + (curr.energyPre ?? curr.moodPre ?? 0), 0) / sessionsWithMood.length;
     const avgPost = sessionsWithMood.reduce((acc, curr) => acc + (curr.energyPost ?? curr.moodPost ?? 0), 0) / sessionsWithMood.length;
     const diff = avgPost - avgPre;
+    
+    // Calculate percentage increase
+    const boostPercentage = avgPre > 0 ? Math.round((diff / avgPre) * 100) : 0;
+    const isPositive = diff > 0;
+
+    const getMessage = () => {
+        if (boostPercentage > 30) return "¡Un cambio brutal! Entrenar te revive por completo al salir.";
+        if (boostPercentage > 10) return "Tu energía sube notablemente después de cada sesión.";
+        if (boostPercentage > 0) return "Siempre salís con más energía de la que entrás. ¡Suma!";
+        if (boostPercentage === 0) return "Mantenés tu nivel de energía parejo.";
+        return "El entreno te deja exhausto, pero más fuerte.";
+    };
 
     return (
         <Card style={styles.card}>
+            {/* Header */}
             <div style={styles.header}>
-                <div>
-                    <h3 style={styles.title}>Impacto del Entreno</h3>
-                    <p style={styles.subtitle}>Tu energia antes vs. despues</p>
-                </div>
-                <div style={{
-                    ...styles.badge,
-                    background: diff > 0 ? `${Colors.success}20` : diff < 0 ? `${Colors.error}20` : `${Colors.textSecondary}20`,
-                    color: diff > 0 ? Colors.success : diff < 0 ? Colors.error : Colors.textSecondary
-                }}>
-                    {diff > 0 ? <TrendingUp size={16} /> : diff < 0 ? <TrendingDown size={16} /> : <Minus size={16} />}
-                    <span>{Math.abs(diff).toFixed(1)} pts</span>
-                </div>
-            </div>
-
-            <div style={styles.statsRow}>
-                <div style={styles.statBox}>
-                    <span style={styles.statLabel}>PRE-ENTRENO</span>
-                    <div style={styles.statValueRow}>
-                        <Zap size={16} color={Colors.textSecondary} />
-                        <span style={styles.statValue}>{avgPre.toFixed(1)}</span>
+                <div style={styles.titleContainer}>
+                    <div style={styles.iconWrapper}>
+                        <Zap size={18} color={Colors.primary} fill={Colors.primary} />
+                    </div>
+                    <div>
+                        <h3 style={styles.title}>Data For Dummies 🧠</h3>
+                        <p style={styles.subtitle}>Impacto de tus últimos 7 entrenos</p>
                     </div>
                 </div>
-                <div style={styles.divider} />
-                <div style={styles.statBox}>
-                    <span style={styles.statLabel}>POST-ENTRENO</span>
-                    <div style={styles.statValueRow}>
-                        <Zap size={16} color={Colors.primary} fill={Colors.primary} />
-                        <span style={{ ...styles.statValue, color: Colors.primary }}>{avgPost.toFixed(1)}</span>
+                {isPositive && (
+                    <div style={styles.badge}>
+                        <TrendingUp size={14} color={Colors.background} strokeWidth={3} />
+                        <span>+{boostPercentage}% Energía</span>
                     </div>
-                </div>
+                )}
             </div>
 
-            <div style={styles.chartContainer}>
-                {sessionsWithMood.map((session) => (
-                    <div key={session.id} style={styles.chartCol}>
-                        <div style={styles.barsArea}>
-                            {/* Post Bar (Background/Overlap?) or Side by side? Let's do Side by Side thin bars */}
-                            <div style={styles.barPair}>
-                                <div style={{
-                                    ...styles.bar,
-                                    height: `${(((session.energyPre ?? session.moodPre) || 0) / 5) * 100}%`,
-                                    background: Colors.textSecondary,
-                                    opacity: 0.5
-                                }} />
-                                <div style={{
-                                    ...styles.bar,
-                                    height: `${(((session.energyPost ?? session.moodPost) || 0) / 5) * 100}%`,
-                                    background: Colors.primary
-                                }} />
-                            </div>
+            {/* Visual Transformation */}
+            <div style={styles.transformationContainer}>
+                {/* PRE */}
+                <div style={styles.stateCol}>
+                    <span style={styles.stateLabel}>Llegás</span>
+                    <div style={styles.circlePre}>
+                        <Battery size={24} color={Colors.textSecondary} />
+                        <div style={styles.valueRow}>
+                            <span style={styles.circleValuePre}>{avgPre.toFixed(1)}</span>
+                            <span style={styles.maxValue}>/5</span>
                         </div>
-                        <span style={styles.dayLabel}>
-                            {new Date(session.fecha).toLocaleDateString('es-ES', { weekday: 'narrow' })}
-                        </span>
                     </div>
-                ))}
+                    <span style={styles.stateDesc}>Batería media</span>
+                </div>
+
+                {/* ARROW */}
+                <div style={styles.arrowContainer}>
+                    <div style={styles.arrowLine} />
+                    <div style={styles.arrowIconWrap}>
+                        <ArrowRight size={20} color={Colors.primary} />
+                    </div>
+                </div>
+
+                {/* POST */}
+                <div style={styles.stateCol}>
+                    <span style={styles.stateLabel}>Salís</span>
+                    <div style={styles.circlePost}>
+                        <Flame size={28} color={Colors.primary} fill={Colors.primary} />
+                        <div style={styles.valueRow}>
+                            <span style={styles.circleValuePost}>{avgPost.toFixed(1)}</span>
+                            <span style={styles.maxValueAccented}>/5</span>
+                        </div>
+                    </div>
+                    <span style={{ ...styles.stateDesc, color: Colors.primary }}>¡A tope!</span>
+                </div>
+            </div>
+
+            {/* Message/Insight Footer */}
+            <div style={styles.insightBox}>
+                <div style={styles.insightIcon}>✨</div>
+                <p style={styles.insightText}>{getMessage()}</p>
             </div>
         </Card>
     );
@@ -88,15 +103,33 @@ const styles: Record<string, React.CSSProperties> = {
     card: {
         background: Colors.surface,
         borderRadius: '24px',
-        padding: '20px',
+        padding: '24px',
         border: `1px solid ${Colors.border}`,
         marginBottom: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '24px',
+        position: 'relative',
+        overflow: 'hidden',
     },
     header: {
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: '20px',
+        alignItems: 'center',
+    },
+    titleContainer: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+    },
+    iconWrapper: {
+        width: '40px',
+        height: '40px',
+        borderRadius: '12px',
+        background: `${Colors.primary}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     title: {
         fontSize: '16px',
@@ -112,86 +145,134 @@ const styles: Record<string, React.CSSProperties> = {
     badge: {
         display: 'flex',
         alignItems: 'center',
-        gap: '4px',
-        padding: '4px 8px',
-        borderRadius: '8px',
-        fontSize: '12px',
-        fontWeight: 700,
+        gap: '6px',
+        padding: '6px 12px',
+        borderRadius: '20px',
+        background: Colors.primary,
+        color: Colors.background,
+        fontSize: '13px',
+        fontWeight: 800,
+        boxShadow: `0 4px 12px ${Colors.primary}40`,
     },
-    statsRow: {
+    transformationContainer: {
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-around',
-        marginBottom: '24px',
-        background: Colors.background,
-        padding: '12px',
-        borderRadius: '16px',
+        justifyContent: 'space-between',
+        padding: '10px 10px',
     },
-    statBox: {
+    stateCol: {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '4px',
+        gap: '10px',
+        zIndex: 2,
     },
-    statLabel: {
-        fontSize: '10px',
-        fontWeight: 700,
+    stateLabel: {
+        fontSize: '13px',
+        fontWeight: 800,
+        color: Colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: '1.5px',
+    },
+    stateDesc: {
+        fontSize: '12px',
+        fontWeight: 600,
         color: Colors.textTertiary,
-        letterSpacing: '0.5px',
     },
-    statValueRow: {
+    circlePre: {
+        width: '85px',
+        height: '85px',
+        borderRadius: '50%',
+        background: Colors.surfaceLight,
+        border: `2px solid ${Colors.border}`,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: '6px',
     },
-    statValue: {
-        fontSize: '20px',
-        fontWeight: 800,
-        color: Colors.text,
-    },
-    divider: {
-        width: '1px',
-        height: '30px',
-        background: Colors.border,
-    },
-    chartContainer: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-end',
-        height: '100px',
-        paddingTop: '10px',
-    },
-    chartCol: {
+    circlePost: {
+        width: '95px',
+        height: '95px',
+        borderRadius: '50%',
+        background: `${Colors.primary}10`,
+        border: `2px solid ${Colors.primary}50`,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '8px',
-        flex: 1,
-        height: '100%',
-    },
-    barsArea: {
-        flex: 1,
-        width: '100%',
-        display: 'flex',
-        alignItems: 'flex-end',
         justifyContent: 'center',
+        gap: '6px',
+        boxShadow: `0 0 24px ${Colors.primary}25`,
     },
-    barPair: {
+    valueRow: {
         display: 'flex',
-        alignItems: 'flex-end',
-        gap: '4px',
-        height: '100%',
+        alignItems: 'baseline',
+        gap: '2px',
     },
-    bar: {
-        width: '6px',
-        borderRadius: '4px',
-        minHeight: '4px',
-        transition: 'height 0.5s ease',
+    circleValuePre: {
+        fontSize: '20px',
+        fontWeight: 800,
+        color: Colors.textSecondary,
     },
-    dayLabel: {
-        fontSize: '10px',
+    circleValuePost: {
+        fontSize: '24px',
+        fontWeight: 900,
+        color: Colors.text,
+    },
+    maxValue: {
+        fontSize: '12px',
+        fontWeight: 700,
         color: Colors.textTertiary,
-        textTransform: 'uppercase',
+    },
+    maxValueAccented: {
+        fontSize: '14px',
+        fontWeight: 800,
+        color: Colors.primary,
+        opacity: 0.8,
+    },
+    arrowContainer: {
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        padding: '0 15px',
+    },
+    arrowLine: {
+        position: 'absolute',
+        top: '50%',
+        left: '0',
+        right: '0',
+        height: '3px',
+        background: `linear-gradient(90deg, ${Colors.border} 0%, ${Colors.primary}80 100%)`,
+        transform: 'translateY(-50%)',
+        borderRadius: '2px',
+        zIndex: 1,
+    },
+    arrowIconWrap: {
+        background: Colors.surface,
+        padding: '6px',
+        borderRadius: '50%',
+        zIndex: 2,
+        border: `2px solid ${Colors.border}`,
+    },
+    insightBox: {
+        background: Colors.surfaceLight,
+        borderRadius: '16px',
+        padding: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        border: `1px solid ${Colors.borderLight}`,
+    },
+    insightIcon: {
+        fontSize: '22px',
+    },
+    insightText: {
+        margin: 0,
+        fontSize: '14px',
+        color: Colors.text,
+        fontWeight: 600,
+        lineHeight: 1.4,
     },
 };
-

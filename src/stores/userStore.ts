@@ -463,6 +463,9 @@ interface UserStore {
     importRoutine: (routine: RutinaUsuario, activate?: boolean) => void; // New function for importing routines
 }
 
+// Debounce timers for weight propagation (module-level so it persists across renders)
+const _weightPropTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useUserStore = create<UserStore>()(
     persist(
         (set, get) => ({
@@ -894,30 +897,55 @@ export const useUserStore = create<UserStore>()(
                 const targetArray = isPartner ? state.activeSession.partnerExercises : state.activeSession.exercises;
                 if (!targetArray) return;
 
+                // Update only the target set immediately (no weight propagation yet)
                 const newExercises = targetArray.map(ex => {
                     if (ex.id !== exerciseId) return ex;
-                    let newSets = [...ex.sets];
+                    const newSets = [...ex.sets];
                     if (newSets[setIndex]) {
-                        const updatedSet = { ...newSets[setIndex], ...fields };
-                        newSets[setIndex] = updatedSet;
-
-                        const shouldPropagateWeight = !isPartner
-                            && typeof fields.weight === 'number'
-                            && fields.weight > 0
-                            && ex.categoria !== 'calentamiento'
-                            && !ex.isExtraAdded;
-
-                        if (shouldPropagateWeight) {
-                            newSets = newSets.map((set, index) => {
-                                if (index === setIndex) return updatedSet;
-                                if (set.completed || set.skipped) return set;
-                                if ((set.weight || 0) > 0) return set;
-                                return { ...set, weight: fields.weight as number };
-                            });
-                        }
+                        newSets[setIndex] = { ...newSets[setIndex], ...fields };
                     }
                     return { ...ex, sets: newSets };
                 });
+
+                // Debounced weight propagation: copy weight to empty sibling sets after
+                // the user stops typing (500ms). This prevents typing "30" from first
+                // setting all siblings to "3".
+                const shouldSchedulePropagation = !isPartner
+                    && typeof fields.weight === 'number'
+                    && fields.weight > 0;
+
+                if (shouldSchedulePropagation) {
+                    const timerKey = `${exerciseId}`;
+                    const existingTimer = _weightPropTimers.get(timerKey);
+                    if (existingTimer) clearTimeout(existingTimer);
+                    _weightPropTimers.set(timerKey, setTimeout(() => {
+                        _weightPropTimers.delete(timerKey);
+                        const latestState = get();
+                        if (!latestState.activeSession) return;
+                        const latestArray = isPartner ? latestState.activeSession.partnerExercises : latestState.activeSession.exercises;
+                        if (!latestArray) return;
+                        const ex = latestArray.find(e => e.id === exerciseId);
+                        if (!ex || ex.categoria === 'calentamiento' || ex.isExtraAdded) return;
+                        const sourceWeight = ex.sets[setIndex]?.weight;
+                        if (!sourceWeight || sourceWeight <= 0) return;
+                        const propagatedSets = ex.sets.map((s, idx) => {
+                            if (idx === setIndex) return s;
+                            if (s.completed || s.skipped) return s;
+                            if ((s.weight || 0) > 0) return s;
+                            return { ...s, weight: sourceWeight };
+                        });
+                        const hasChanges = propagatedSets.some((s, idx) => s !== ex.sets[idx]);
+                        if (!hasChanges) return;
+                        set((st) => {
+                            if (!st.activeSession) return st;
+                            const arr = isPartner ? st.activeSession.partnerExercises : st.activeSession.exercises;
+                            if (!arr) return st;
+                            const updated = arr.map(e => e.id === exerciseId ? { ...e, sets: propagatedSets } : e);
+                            if (isPartner) return { activeSession: { ...st.activeSession, partnerExercises: updated } };
+                            return { activeSession: { ...st.activeSession, exercises: updated } };
+                        });
+                    }, 500));
+                }
 
                 // Update local state immediately
                 set((state) => {
