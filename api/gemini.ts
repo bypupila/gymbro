@@ -331,7 +331,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 return res.status(400).json({ error: 'Invalid generate-content payload' });
             }
 
-            const result = await model.generateContent(input as string | Array<unknown>);
+            const result = await model.generateContent(input as any);
             const response = await result.response;
             return res.status(200).json({ text: response.text() });
         }
@@ -343,7 +343,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 return res.status(400).json({ error: 'Missing chat message' });
             }
 
-            const chat = model.startChat({ history: history as Array<unknown> });
+            const chat = model.startChat({ history: history as any[] });
             const result = await chat.sendMessage(message);
             const response = await result.response;
             return res.status(200).json({ text: response.text() });
